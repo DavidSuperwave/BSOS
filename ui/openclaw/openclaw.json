@@ -1,0 +1,49 @@
+{
+  "gateway": {
+    "http": {
+      "port": 18789,
+      "endpoints": {
+        "chatCompletions": {
+          "enabled": true
+        }
+      }
+    },
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
+    "models": {
+      "providers": [
+        {
+          "id": "openrouter",
+          "name": "OpenRouter",
+          "baseUrl": "https://openrouter.ai/api/v1",
+          "apiKey": "${OPENROUTER_API_KEY}",
+          "models": [
+            {
+              "id": "minimax/MiniMax-M2.1",
+              "name": "MiniMax M2.1"
+            },
+            {
+              "id": "anthropic/claude-sonnet-4-20250514",
+              "name": "Claude Sonnet 4"
+            }
+          ]
+        }
+      ]
+    },
+    "agents": {
+      "main": {
+        "model": "minimax/MiniMax-M2.1",
+        "systemPrompt": "You are Julian, a helpful GTM AI assistant.",
+        "skills": ["/data/skills/gtm-engine"]
+      }
+    },
+    "plugins": {
+      "supermemory": {
+        "enabled": true,
+        "apiKey": "${SUPERMEMORY_API_KEY}"
+      }
+    }
+  }
+}

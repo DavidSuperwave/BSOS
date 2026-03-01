@@ -1,0 +1,1224 @@
+openapi: 3.1.0
+info:
+  title: Blitzscale Agent Tools API
+  version: 1.0.0
+  description: >
+    OpenAPI contract for the agent orchestration, tool gateway, and subagent task runtime
+    described in TOOLS.md.
+servers:
+  - url: http://localhost:3000
+    description: Local development
+tags:
+  - name: Chat
+  - name: Sessions
+  - name: Messages
+  - name: Tasks
+  - name: Tools
+  - name: AgentData
+security:
+  - userSessionAuth: []
+paths:
+  /api/chat:
+    post:
+      tags: [Chat]
+      summary: Orchestrate chat request
+      description: >
+        Main chat entrypoint. Returns SSE stream when stream=true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatRequest'
+      responses:
+        '200':
+          description: Chat response (SSE or JSON)
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: SSE event stream
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/chat/sessions:
+    get:
+      tags: [Sessions]
+      summary: List chat sessions
+      parameters:
+        - in: query
+          name: companyId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: sessionType
+          required: false
+          schema:
+            $ref: '#/components/schemas/SessionType'
+        - in: query
+          name: sessionId
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session list
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      sessions:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ChatSession'
+                  - type: object
+                    properties:
+                      session:
+                        $ref: '#/components/schemas/ChatSessionExpanded'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Sessions]
+      summary: Create session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: Created session
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session:
+                    $ref: '#/components/schemas/ChatSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    delete:
+      tags: [Sessions]
+      summary: Delete or archive a session
+      parameters:
+        - in: query
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: hard
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Deleted/archived
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  hardDeleted:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/chat/messages:
+    get:
+      tags: [Messages]
+      summary: Get session messages
+      parameters:
+        - in: query
+          name: sessionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - in: query
+          name: includeCompacted
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Session messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChatMessage'
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/chat/tasks:
+    get:
+      tags: [Tasks]
+      summary: List tasks for a parent session
+      parameters:
+        - in: query
+          name: sessionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tasks:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/AgentTask'
+                        - type: object
+                          properties:
+                            health:
+                              $ref: '#/components/schemas/TaskHealth'
+                            events:
+                              type: array
+                              items:
+                                $ref: '#/components/schemas/AgentTaskStep'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [Tasks]
+      summary: Create subagent task
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTaskRequest'
+      responses:
+        '201':
+          description: Created task
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: '#/components/schemas/AgentTask'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/chat/tasks/{id}:
+    get:
+      tags: [Tasks]
+      summary: Get task by id
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  task:
+                    $ref: '#/components/schemas/AgentTask'
+                  health:
+                    $ref: '#/components/schemas/TaskHealth'
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentTaskStep'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/chat/tasks/{id}/events:
+    get:
+      tags: [Tasks]
+      summary: Get ordered task events
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task event stream payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  health:
+                    $ref: '#/components/schemas/TaskHealth'
+                  events:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AgentTaskStep'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/chat/tasks/{id}/cancel:
+    post:
+      tags: [Tasks]
+      summary: Cancel a task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: '#/components/schemas/AgentTask'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/chat/tasks/{id}/approve:
+    post:
+      tags: [Tasks]
+      summary: Resolve task approval
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision:
+                  type: string
+                  enum: [approved, rejected]
+      responses:
+        '200':
+          description: Approval resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: '#/components/schemas/AgentTask'
+                  worker:
+                    $ref: '#/components/schemas/TaskWorkerRunResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/chat/tasks/{id}/retry:
+    post:
+      tags: [Tasks]
+      summary: Retry failed/cancelled task
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task retried
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  task:
+                    $ref: '#/components/schemas/AgentTask'
+                  worker:
+                    $ref: '#/components/schemas/TaskWorkerRunResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/chat/tasks/sweep:
+    post:
+      tags: [Tasks]
+      summary: Sweep company task health and dead-letter stalled tasks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [companyId]
+              properties:
+                companyId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Sweep completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  checked:
+                    type: integer
+                  deadLettered:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/tools:
+    get:
+      tags: [Tools]
+      summary: List tool catalog filtered by agent type
+      parameters:
+        - in: query
+          name: agentType
+          required: false
+          schema:
+            $ref: '#/components/schemas/AgentType'
+      responses:
+        '200':
+          description: Tool catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ToolDefinition'
+                  descriptions:
+                    type: string
+                  policies:
+                    type: object
+                    properties:
+                      agentType:
+                        $ref: '#/components/schemas/AgentType'
+                      allowedTools:
+                        type: array
+                        items:
+                          type: string
+    post:
+      tags: [Tools]
+      summary: Execute tool through gateway
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolExecutionRequest'
+      responses:
+        '200':
+          description: Tool execution result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  result:
+                    $ref: '#/components/schemas/ToolExecutionResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/tools/data/campaigns:
+    get:
+      tags: [AgentData]
+      summary: Get campaigns (agent-token route)
+      security:
+        - agentTokenHeader: []
+      responses:
+        '200':
+          description: Campaign list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  campaigns:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tools/data/events:
+    get:
+      tags: [AgentData]
+      summary: Get events (agent-token route)
+      security:
+        - agentTokenHeader: []
+      responses:
+        '200':
+          description: Events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [AgentData]
+      summary: Create event (agent-token route)
+      security:
+        - agentTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [event_type, title]
+              properties:
+                event_type:
+                  type: string
+                title:
+                  type: string
+                description:
+                  type: string
+                priority:
+                  type: string
+                actions:
+                  type: array
+                  items:
+                    type: object
+      responses:
+        '201':
+          description: Event created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  event:
+                    type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tools/data/inbox/messages:
+    get:
+      tags: [AgentData]
+      summary: Get inbox messages (agent-token route)
+      security:
+        - agentTokenHeader: []
+      responses:
+        '200':
+          description: Inbox messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tools/data/inbox/messages/tag-batch:
+    post:
+      tags: [AgentData]
+      summary: Tag inbox messages for analysis batch (agent-token route)
+      security:
+        - agentTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [batch_id]
+              properties:
+                batch_id:
+                  type: string
+                message_ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                filter:
+                  type: object
+                  properties:
+                    campaign_id:
+                      type: string
+                    status:
+                      type: string
+                    since:
+                      type: string
+                      format: date-time
+      responses:
+        '200':
+          description: Batch tagged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  batch_id:
+                    type: string
+                  tagged_count:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tools/data/knowledge:
+    get:
+      tags: [AgentData]
+      summary: Get knowledge docs (agent-token route)
+      security:
+        - agentTokenHeader: []
+      responses:
+        '200':
+          description: Knowledge docs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  documents:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tools/data/skills:
+    get:
+      tags: [AgentData]
+      summary: Get company skills status (agent-token route)
+      security:
+        - agentTokenHeader: []
+      responses:
+        '200':
+          description: Skill operations and list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operations:
+                    type: array
+                    items:
+                      type: string
+                  skills:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [AgentData]
+      summary: Execute company skill operation (agent-token route)
+      security:
+        - agentTokenHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [operation]
+              properties:
+                operation:
+                  type: string
+                  enum:
+                    - create_skill
+                    - learn_skill
+                    - install_skill
+                    - update_skill_env
+                    - share_skill
+                    - import_skill
+                params:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Operation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  operation:
+                    type: string
+                  result:
+                    type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tools/inboxing/domains:
+    get:
+      tags: [AgentData]
+      summary: Get inboxing domains (agent-token route)
+      security:
+        - agentTokenHeader: []
+      responses:
+        '200':
+          description: Domain list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/tools/inboxing/health:
+    get:
+      tags: [AgentData]
+      summary: Get inboxing domain health (agent-token route)
+      security:
+        - agentTokenHeader: []
+      responses:
+        '200':
+          description: Health summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domains:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: true
+                  summary:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+components:
+  securitySchemes:
+    userSessionAuth:
+      type: apiKey
+      in: cookie
+      name: sb-access-token
+      description: Supabase SSR cookie session
+    agentTokenHeader:
+      type: apiKey
+      in: header
+      name: x-agent-token
+      description: Token mapped to company agent context
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+  schemas:
+    AgentType:
+      type: string
+      enum: [main, campaigns, crm, inbox, research, knowledge]
+    SessionType:
+      type: string
+      enum: [main, campaigns, crm, inbox, group, isolated]
+    ChatRequest:
+      type: object
+      required: [message, companyId]
+      properties:
+        message:
+          type: string
+        companyId:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        sessionType:
+          $ref: '#/components/schemas/SessionType'
+        componentContext:
+          type: object
+          additionalProperties: true
+        stream:
+          type: boolean
+          default: true
+        actionBudget:
+          $ref: '#/components/schemas/ActionBudget'
+    ChatResponse:
+      type: object
+      properties:
+        response:
+          type: string
+        toolCalls:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        sessionId:
+          type: string
+    ChatSession:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+          nullable: true
+        session_type:
+          $ref: '#/components/schemas/SessionType'
+        status:
+          type: string
+        title:
+          type: string
+          nullable: true
+        message_count:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ChatSessionExpanded:
+      allOf:
+        - $ref: '#/components/schemas/ChatSession'
+        - type: object
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: '#/components/schemas/ChatMessage'
+    CreateSessionRequest:
+      type: object
+      required: [companyId]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        title:
+          type: string
+        sessionType:
+          $ref: '#/components/schemas/SessionType'
+        contextRef:
+          type: string
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        session_id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [user, assistant, system, tool]
+        content:
+          type: string
+        tool_calls:
+          type: object
+          nullable: true
+          additionalProperties: true
+        reasoning_content:
+          type: string
+          nullable: true
+        reasoning_duration:
+          type: integer
+          nullable: true
+        content_parts:
+          type: array
+          nullable: true
+          items:
+            type: object
+            additionalProperties: true
+        is_compacted:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        limit:
+          type: integer
+        total:
+          type: integer
+        pages:
+          type: integer
+    CreateTaskRequest:
+      type: object
+      required: [companyId, parentSessionId, objective]
+      properties:
+        companyId:
+          type: string
+          format: uuid
+        parentSessionId:
+          type: string
+          format: uuid
+        agentType:
+          $ref: '#/components/schemas/AgentType'
+        objective:
+          type: string
+        inputs:
+          type: object
+          additionalProperties: true
+        priority:
+          type: string
+          enum: [low, normal, high]
+          default: normal
+        requiresApproval:
+          type: boolean
+          default: false
+        flowId:
+          type: string
+        stepId:
+          type: string
+        attempt:
+          type: integer
+          minimum: 1
+          default: 1
+        maxActions:
+          type: integer
+          minimum: 1
+        actionsUsed:
+          type: integer
+          minimum: 0
+          default: 0
+        hardStopBehavior:
+          type: string
+          enum: [summarize, ask_approval, abort]
+    AgentTask:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        company_id:
+          type: string
+          format: uuid
+        parent_session_id:
+          type: string
+          format: uuid
+        child_session_id:
+          type: string
+          format: uuid
+          nullable: true
+        agent_type:
+          $ref: '#/components/schemas/AgentType'
+        objective:
+          type: string
+        inputs:
+          type: object
+          additionalProperties: true
+        priority:
+          type: string
+          enum: [low, normal, high]
+        status:
+          type: string
+          enum: [queued, running, blocked, completed, failed, cancelled]
+        progress:
+          type: integer
+        current_step:
+          type: string
+          nullable: true
+        result:
+          type: object
+          nullable: true
+          additionalProperties: true
+        error_message:
+          type: string
+          nullable: true
+        requires_approval:
+          type: boolean
+        approval_status:
+          type: string
+          nullable: true
+          enum: [pending, approved, rejected]
+        flow_id:
+          type: string
+          nullable: true
+        step_id:
+          type: string
+          nullable: true
+        attempt:
+          type: integer
+          minimum: 1
+          nullable: true
+        max_actions:
+          type: integer
+          nullable: true
+        actions_used:
+          type: integer
+          nullable: true
+        hard_stop_behavior:
+          type: string
+          nullable: true
+          enum: [summarize, ask_approval, abort]
+        worker_heartbeat_at:
+          type: string
+          format: date-time
+          nullable: true
+        dead_lettered_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ActionBudget:
+      type: object
+      properties:
+        flowId:
+          type: string
+        maxActions:
+          type: integer
+          minimum: 1
+        actionsUsed:
+          type: integer
+          minimum: 0
+        hardStopBehavior:
+          type: string
+          enum: [summarize, ask_approval, abort]
+    TaskHealth:
+      type: object
+      properties:
+        state:
+          type: string
+          enum: [ok, stalled, dead-letter]
+        reason:
+          type: string
+          nullable: true
+    TaskWorkerRunResult:
+      type: object
+      properties:
+        started:
+          type: boolean
+        reason:
+          type: string
+          nullable: true
+        task:
+          $ref: '#/components/schemas/AgentTask'
+    AgentTaskStep:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        task_id:
+          type: string
+          format: uuid
+        event_type:
+          type: string
+        status:
+          type: string
+          enum: [queued, running, blocked, completed, failed, cancelled]
+        message:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+    ToolDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+    ToolExecutionRequest:
+      type: object
+      required: [tool, companyId, sessionKey]
+      properties:
+        tool:
+          type: string
+        params:
+          type: object
+          additionalProperties: true
+        companyId:
+          type: string
+          format: uuid
+        sessionKey:
+          type: string
+        agentType:
+          $ref: '#/components/schemas/AgentType'
+        sessionId:
+          type: string
+          format: uuid
+    ToolExecutionResult:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        tool:
+          type: string
+        data:
+          type: object
+          nullable: true
+          additionalProperties: true
+        error:
+          type: string
+          nullable: true
+        durationMs:
+          type: integer
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string

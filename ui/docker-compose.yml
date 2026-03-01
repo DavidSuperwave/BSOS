@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  nextjs:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - PLUSVIBE_API_KEY=${PLUSVIBE_API_KEY}
+      - PLUSVIBE_WORKSPACE_ID=${PLUSVIBE_WORKSPACE_ID}
+      - SUPERMEMORY_API_KEY=${SUPERMEMORY_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - INBOXING_API_KEY=${INBOXING_API_KEY}
+      - CALENDLY_API_KEY=${CALENDLY_API_KEY}
+      - CALENDLY_USER_URI=${CALENDLY_USER_URI}
+      - CLOSE_API_KEY=${CLOSE_API_KEY}
+      - OPENCLAW_URL=http://openclaw:18789
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+    depends_on:
+      - openclaw
+    networks:
+      - blitzscale
+    restart: unless-stopped
+
+  openclaw:
+    build:
+      context: .
+      dockerfile: Dockerfile.openclaw
+    volumes:
+      - openclaw-data:/data
+    environment:
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - SUPERMEMORY_API_KEY=${SUPERMEMORY_API_KEY}
+    networks:
+      - blitzscale
+    restart: unless-stopped
+
+volumes:
+  openclaw-data:
+
+networks:
+  blitzscale:
+    driver: bridge

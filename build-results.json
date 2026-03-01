@@ -1,0 +1,143 @@
+{
+  "timestamp": "2026-02-09T23:21:21.810Z",
+  "passed": 22,
+  "failed": 0,
+  "warnings": 5,
+  "tests": [
+    {
+      "test": "ENV File",
+      "status": "PASS",
+      "message": ".env exists"
+    },
+    {
+      "test": "ENV PLUSVIBE_API_KEY",
+      "status": "WARN",
+      "message": "Missing or placeholder"
+    },
+    {
+      "test": "ENV CLOSE_API_KEY",
+      "status": "WARN",
+      "message": "Missing or placeholder"
+    },
+    {
+      "test": "ENV TELEGRAM_BOT_TOKEN",
+      "status": "WARN",
+      "message": "Missing or placeholder"
+    },
+    {
+      "test": "ENV TELEGRAM_CHAT_ID",
+      "status": "WARN",
+      "message": "Missing or placeholder"
+    },
+    {
+      "test": "Dependencies",
+      "status": "PASS",
+      "message": "node_modules exists"
+    },
+    {
+      "test": "Module lib/plusvibe-client.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module lib/supermemory-client.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module lib/insight-surface-engine.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module campaign-detector-v2.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module campaign-detector-v3.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module reply-monitor.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module lead-alerts.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module cron-scheduler.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module data-sync-monitor.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "Module integration-health.js",
+      "status": "PASS",
+      "message": "Loads successfully"
+    },
+    {
+      "test": "PlusVibe API",
+      "status": "PASS",
+      "message": "34 campaigns accessible"
+    },
+    {
+      "test": "Close CRM API",
+      "status": "PASS",
+      "message": "Authenticated"
+    },
+    {
+      "test": "Perplexity API",
+      "status": "PASS",
+      "message": "Key configured"
+    },
+    {
+      "test": "State .campaign-detector-state.json",
+      "status": "PASS",
+      "message": "Exists"
+    },
+    {
+      "test": "State .sync-state.json",
+      "status": "PASS",
+      "message": "Exists"
+    },
+    {
+      "test": "State .cron-pid",
+      "status": "WARN",
+      "message": "Will be created on first run"
+    },
+    {
+      "test": "Companies Config",
+      "status": "PASS",
+      "message": "1 companies configured"
+    },
+    {
+      "test": "Data Directory",
+      "status": "PASS",
+      "message": "Created"
+    },
+    {
+      "test": "UI Directory",
+      "status": "PASS",
+      "message": "Exists"
+    },
+    {
+      "test": "UI Package.json",
+      "status": "PASS",
+      "message": "Exists"
+    },
+    {
+      "test": "UI Source",
+      "status": "PASS",
+      "message": "src/ exists"
+    }
+  ]
+}

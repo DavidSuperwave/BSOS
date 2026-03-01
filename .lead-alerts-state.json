@@ -1,0 +1,22 @@
+{
+  "lastCheck": "2026-02-09T15:37:57.440Z",
+  "lowLeadCampaigns": [
+    {
+      "id": "2",
+      "name": "SMB Package Deals",
+      "status": "active",
+      "leadCount": 800,
+      "leadsRemaining": 450
+    },
+    {
+      "id": "4",
+      "name": "Demo Follow-up",
+      "status": "active",
+      "leadCount": 300,
+      "leadsRemaining": 250
+    }
+  ],
+  "lastAlertDate": "2026-02-11",
+  "alertsSent": 2,
+  "lastLeadCount": 0
+}

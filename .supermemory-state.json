@@ -1,0 +1,42 @@
+{
+  "lastCampaignCheck": null,
+  "lastReplyCheck": null,
+  "storedDocuments": [
+    {
+      "type": "campaign",
+      "timestamp": "2026-02-09T16:22:32.087Z"
+    },
+    {
+      "type": "campaign",
+      "timestamp": "2026-02-09T16:26:47.727Z"
+    },
+    {
+      "type": "campaign",
+      "timestamp": "2026-02-09T16:51:41.672Z"
+    },
+    {
+      "type": "icp",
+      "timestamp": "2026-02-09T16:51:41.688Z"
+    },
+    {
+      "type": "icp",
+      "timestamp": "2026-02-09T16:51:42.891Z"
+    },
+    {
+      "type": "campaign",
+      "timestamp": "2026-02-09T16:51:44.190Z"
+    },
+    {
+      "type": "targeting",
+      "timestamp": "2026-02-09T16:51:45.268Z"
+    },
+    {
+      "type": "deliverability",
+      "timestamp": "2026-02-09T16:51:46.369Z"
+    },
+    {
+      "type": "campaign",
+      "timestamp": "2026-02-09T17:18:12.035Z"
+    }
+  ]
+}

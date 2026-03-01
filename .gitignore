@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js (in ui/ folder)
+ui/.next/
+ui/out/
+ui/build/
+ui/dist/
+
+# Environment
+.env
+.env.local
+.env.*.local
+ui/.env
+ui/.env.local
+ui/.env.*.local
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data files (might contain sensitive info)
+data/*.json
+companies/*.json
+*.state.json
+.last-health-check
+.health-logs.json
+.volume-tracker-state.json
+
+# SSH keys
+*.pem
+*.key
+blitzscale-provisioner
+blitzscale-provisioner.pub
+
+# Test artifacts
+*_test*.js
+*_search*.js
+*_ws*.js
+test-ssh*.js
+_run_*.js
+_search*.mjs
+
+# Windows artifacts
+nul
+
+# Sentry
+.sentryclirc
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo

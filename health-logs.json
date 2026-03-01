@@ -1,0 +1,126 @@
+[
+  {
+    "timestamp": "2026-02-11T00:53:01.027Z",
+    "overall": "degraded",
+    "services": {
+      "backend": {
+        "status": "unhealthy",
+        "error": "Status 307"
+      },
+      "ui": {
+        "status": "warning",
+        "statusCode": 307
+      },
+      "webhooks": [
+        {
+          "endpoint": "/webhook/gtm-engine-replies",
+          "status": "registered",
+          "statusCode": 307
+        },
+        {
+          "endpoint": "/webhook/plusvibe-interested-lead",
+          "status": "registered",
+          "statusCode": 307
+        }
+      ]
+    },
+    "environment": {
+      "required": [
+        {
+          "key": "CLOSE_API_KEY",
+          "configured": true
+        },
+        {
+          "key": "TELEGRAM_BOT_TOKEN",
+          "configured": true
+        },
+        {
+          "key": "PLUSVIBE_API_KEY",
+          "configured": true
+        },
+        {
+          "key": "SUPABASE_URL",
+          "configured": false
+        },
+        {
+          "key": "SUPABASE_ANON_KEY",
+          "configured": false
+        }
+      ],
+      "optional": [
+        {
+          "key": "OPENAI_API_KEY",
+          "configured": false
+        },
+        {
+          "key": "SUPERMEMORY_API_KEY",
+          "configured": true
+        }
+      ]
+    },
+    "missingEnvVars": [
+      "SUPABASE_URL",
+      "SUPABASE_ANON_KEY"
+    ]
+  },
+  {
+    "timestamp": "2026-02-11T01:01:38.107Z",
+    "overall": "degraded",
+    "services": {
+      "backend": {
+        "status": "unhealthy",
+        "error": "Status 307"
+      },
+      "ui": {
+        "status": "warning",
+        "statusCode": 307
+      },
+      "webhooks": [
+        {
+          "endpoint": "/webhook/gtm-engine-replies",
+          "status": "registered",
+          "statusCode": 307
+        },
+        {
+          "endpoint": "/webhook/plusvibe-interested-lead",
+          "status": "registered",
+          "statusCode": 307
+        }
+      ]
+    },
+    "environment": {
+      "required": [
+        {
+          "key": "CLOSE_API_KEY",
+          "configured": true
+        },
+        {
+          "key": "TELEGRAM_BOT_TOKEN",
+          "configured": true
+        },
+        {
+          "key": "PLUSVIBE_API_KEY",
+          "configured": true
+        },
+        {
+          "key": "SUPABASE_URL",
+          "configured": true
+        },
+        {
+          "key": "SUPABASE_ANON_KEY",
+          "configured": true
+        }
+      ],
+      "optional": [
+        {
+          "key": "OPENAI_API_KEY",
+          "configured": false
+        },
+        {
+          "key": "SUPERMEMORY_API_KEY",
+          "configured": true
+        }
+      ]
+    }
+  }
+]

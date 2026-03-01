@@ -1,0 +1,151 @@
+{
+  "lastKnownCampaigns": [
+    {
+      "id": "1",
+      "name": "Enterprise Outreach Q1",
+      "status": "active",
+      "type": "outbound",
+      "createdAt": "2026-01-15"
+    },
+    {
+      "id": "2",
+      "name": "SMB Package Deals",
+      "status": "active",
+      "type": "outbound",
+      "createdAt": "2026-01-20"
+    },
+    {
+      "id": "3",
+      "name": "NEW: Consulting Services",
+      "status": "active",
+      "type": "outbound",
+      "createdAt": "2026-02-09"
+    },
+    {
+      "id": "4",
+      "name": "Demo Follow-up",
+      "status": "active",
+      "type": "outbound",
+      "createdAt": "2026-02-01"
+    }
+  ],
+  "lastCheck": "2026-02-11T22:36:49.548Z",
+  "notifiedCampaigns": [],
+  "knownCampaigns": {
+    "6913e543a64dfcb79833ff0c": {
+      "status": "ACTIVE"
+    },
+    "6911202ef4c8cbc55c0b1758": {
+      "status": "ARCHIVED"
+    },
+    "691663d94262781d8742be01": {
+      "status": "ARCHIVED"
+    },
+    "694aabc322fd44bbb40bcd72": {
+      "status": "COMPLETED"
+    },
+    "68fe6282eacd8b5a0d705e70": {
+      "status": "DRAFT"
+    },
+    "68feb99ef3238a32c344dce9": {
+      "status": "DRAFT"
+    },
+    "690e1bd807dfc1887acee399": {
+      "status": "DRAFT"
+    },
+    "6977f929bdf2c2da2fe80951": {
+      "status": "DRAFT"
+    },
+    "6979465cb43c520c5f042770": {
+      "status": "DRAFT"
+    },
+    "69876cc3e2259240c66e0e38": {
+      "status": "DRAFT"
+    },
+    "698a14707d33011e4228ed47": {
+      "status": "DRAFT"
+    },
+    "698a147845fba752e31232dc": {
+      "status": "DRAFT"
+    },
+    "698a1479e2259240c66fbfc0": {
+      "status": "DRAFT"
+    },
+    "698a158b67ac6a7f06cae6ce": {
+      "status": "DRAFT"
+    },
+    "698a158d45fba752e312341c": {
+      "status": "DRAFT"
+    },
+    "698a158f67ac6a7f06cae6cf": {
+      "status": "DRAFT"
+    },
+    "698a172000f1c52e92833a87": {
+      "status": "DRAFT"
+    },
+    "698a17217d33011e4228f0c4": {
+      "status": "DRAFT"
+    },
+    "698a1722e2259240c66fc34f": {
+      "status": "DRAFT"
+    },
+    "698a17247d33011e4228f0c5": {
+      "status": "DRAFT"
+    },
+    "698a1725e2259240c66fc351": {
+      "status": "DRAFT"
+    },
+    "698a172600f1c52e92833a97": {
+      "status": "DRAFT"
+    },
+    "698a172800f1c52e92833aa3": {
+      "status": "DRAFT"
+    },
+    "698a172967ac6a7f06cae92a": {
+      "status": "DRAFT"
+    },
+    "698a172b67ac6a7f06cae92b": {
+      "status": "DRAFT"
+    },
+    "698a172c7d33011e4228f0d2": {
+      "status": "DRAFT"
+    },
+    "698a172d00f1c52e92833aa4": {
+      "status": "DRAFT"
+    },
+    "698a172f00f1c52e92833aa5": {
+      "status": "DRAFT"
+    },
+    "698a17307d33011e4228f0d3": {
+      "status": "DRAFT"
+    },
+    "698a173267ac6a7f06cae93c": {
+      "status": "DRAFT"
+    },
+    "698a1733e2259240c66fc368": {
+      "status": "DRAFT"
+    },
+    "698a173445fba752e3123689": {
+      "status": "DRAFT"
+    },
+    "698a1736e2259240c66fc369": {
+      "status": "DRAFT"
+    },
+    "698a173700f1c52e92833ab5": {
+      "status": "DRAFT"
+    },
+    "698b79964b825775c5672e0e": {
+      "status": "DRAFT"
+    },
+    "698cf1dc98b5daadac2b9dbc": {
+      "status": "DRAFT"
+    },
+    "698cf3cc4b825775c56aac9b": {
+      "status": "DRAFT"
+    },
+    "698cf3eb69531a307dde35be": {
+      "status": "DRAFT"
+    }
+  },
+  "detectedCount": 0
+}

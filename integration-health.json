@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-02-09T23:18:21.641Z",
+  "overall": "degraded",
+  "integrations": {
+    "plusvibe": {
+      "status": "healthy",
+      "campaigns": 34,
+      "endpoint": "auto-detected",
+      "lastCheck": "2026-02-09T23:18:22.506Z"
+    },
+    "close": {
+      "status": "healthy",
+      "user": "admin@superwave.io",
+      "lastCheck": "2026-02-09T23:18:22.905Z"
+    },
+    "supermemory": {
+      "status": "error",
+      "error": "HTTP 404",
+      "lastCheck": "2026-02-09T23:18:23.085Z"
+    },
+    "perplexity": {
+      "status": "healthy",
+      "lastCheck": "2026-02-09T23:18:27.451Z"
+    },
+    "calendly": {
+      "status": "error",
+      "error": "API key not configured (placeholder detected)",
+      "lastCheck": "2026-02-09T23:18:27.451Z"
+    },
+    "telegram": {
+      "status": "healthy",
+      "chatId": "1244663682",
+      "lastCheck": "2026-02-09T23:18:27.451Z"
+    },
+    "cron": {
+      "status": "error",
+      "error": "Cron scheduler not running (no PID file)",
+      "lastCheck": "2026-02-09T23:18:27.452Z"
+    }
+  }
+}

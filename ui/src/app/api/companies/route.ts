@@ -1,0 +1,211 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+import { createClient as createServerClient } from "@/lib/supabase/server";
+import { envConfig } from "@/lib/env";
+import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+let adminClient: ReturnType<typeof createClient> | null = null;
+function getAdmin() {
+  if (!adminClient) adminClient = createClient(supabaseUrl, supabaseServiceKey);
+  return adminClient;
+}
+
+export async function GET() {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const admin = getAdmin();
+
+    // Get user's account memberships
+    const { data: memberships } = await admin
+      .from("account_members")
+      .select("account_id")
+      .eq("user_id", user.id);
+
+    const accountIds = (memberships || []).map((m: any) => m.account_id);
+
+    if (accountIds.length === 0) {
+      // Fallback: try legacy user_id-based companies
+      const { data: legacyCompanies } = await admin
+        .from("companies")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("name");
+
+      return NextResponse.json({ companies: legacyCompanies || [] });
+    }
+
+    const { data: companies, error } = await admin
+      .from("companies")
+      .select("*")
+      .in("account_id", accountIds)
+      .order("name");
+
+    if (error) throw error;
+
+    return NextResponse.json({ companies: companies || [] });
+  } catch (err: any) {
+    console.error("[Companies API] GET error:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to fetch companies" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { name, slug, domain } = body;
+
+    if (!name || !slug) {
+      return NextResponse.json(
+        { error: "Name and slug are required" },
+        { status: 400 }
+      );
+    }
+
+    if (!/^[a-z0-9-]+$/.test(slug)) {
+      return NextResponse.json(
+        { error: "Slug must contain only lowercase letters, numbers, and hyphens" },
+        { status: 400 }
+      );
+    }
+
+    const admin = getAdmin();
+
+    // Get user's account
+    const { data: membership } = await admin
+      .from("account_members")
+      .select("account_id")
+      .eq("user_id", user.id)
+      .limit(1)
+      .single();
+
+    if (!membership) {
+      return NextResponse.json(
+        { error: "No account found. Please sign up again." },
+        { status: 400 }
+      );
+    }
+
+    const { data: company, error } = await admin
+      .from("companies")
+      .insert({
+        account_id: membership.account_id,
+        name,
+        slug,
+        domain: domain || null,
+        status: "onboarding",
+        supermemory_namespace: `blitzscale:company:${slug}`,
+        settings: { auto_analyze: false },
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        return NextResponse.json(
+          { error: "A company with this slug already exists" },
+          { status: 409 }
+        );
+      }
+      throw error;
+    }
+
+    // Initialize Supermemory namespace
+    const smKey = envConfig.supermemory.apiKey();
+    if (smKey) {
+      try {
+        await fetch("https://api.supermemory.ai/v3/memories", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${smKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            content: `# Company: ${name}\nSlug: ${slug}\nCreated: ${new Date().toISOString()}`,
+            containerTags: [`blitzscale:company:${slug}`, "company-info"],
+          }),
+        });
+      } catch {
+        // Non-blocking
+      }
+    }
+
+    // Seed default skill pack for every new company (idempotent)
+    try {
+      await applyDefaultSkillPackToCompany({
+        admin,
+        companyId: company.id,
+        createdBy: user.id,
+        agentTypes: ["main", "campaigns", "crm", "inbox"],
+      });
+    } catch (seedErr: any) {
+      console.warn("[Companies API] Default skill pack seed skipped:", seedErr?.message || seedErr);
+    }
+
+    return NextResponse.json({ company }, { status: 201 });
+  } catch (err: any) {
+    console.error("[Companies API] POST error:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to create company" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const supabase = await createServerClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { id, ...updateData } = body;
+
+    if (!id) {
+      return NextResponse.json(
+        { error: "Company ID is required" },
+        { status: 400 }
+      );
+    }
+
+    const admin = getAdmin();
+
+    const { data: company, error } = await admin
+      .from("companies")
+      .update(updateData)
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return NextResponse.json({ company });
+  } catch (err: any) {
+    console.error("[Companies API] PATCH error:", err);
+    return NextResponse.json(
+      { error: err.message || "Failed to update company" },
+      { status: 500 }
+    );
+  }
+}

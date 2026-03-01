@@ -1,0 +1,51 @@
+{
+  "lastTest": "2026-02-09T15:37:52.671Z",
+  "results": [
+    {
+      "provider": "Gmail",
+      "inboxRate": 89.43114868511827,
+      "spamRate": 8.674022743377526,
+      "missingRate": 8.322650434976037
+    },
+    {
+      "provider": "Outlook",
+      "inboxRate": 90.14108965926741,
+      "spamRate": 9.317622754150708,
+      "missingRate": 6.328383149958424
+    },
+    {
+      "provider": "Yahoo",
+      "inboxRate": 92.77597232773161,
+      "spamRate": 9.052294074586117,
+      "missingRate": 9.121850643744322
+    }
+  ],
+  "alerts": [],
+  "history": [
+    {
+      "date": "2026-02-09",
+      "inboxRate": 68.57,
+      "spamRate": 2.86,
+      "issues": [
+        "Inbox rate below 70%"
+      ],
+      "recommendations": [
+        "Verify email list before import"
+      ]
+    },
+    {
+      "date": "2026-02-10",
+      "inboxRate": 68.57,
+      "spamRate": 2.86,
+      "issues": [
+        "Inbox rate below 70%"
+      ],
+      "recommendations": [
+        "Verify email list before import"
+      ]
+    }
+  ],
+  "lastTestDate": "2026-02-10",
+  "inboxRate": 68.57,
+  "spamRate": 2.86
+}
