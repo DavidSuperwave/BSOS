@@ -1,9 +1,12 @@
 const { withSentryConfig } = require("@sentry/nextjs");
 
 /** @type {import('next').NextConfig} */
+const isVercel = process.env.VERCEL === "1";
+
 const nextConfig = {
   reactStrictMode: true,
-  output: "standalone",
+  // Standalone for Docker/DO; Vercel handles its own output
+  ...(isVercel ? {} : { output: "standalone" }),
   eslint: {
     ignoreDuringBuilds: true,
   },
