@@ -51,20 +51,30 @@ export function WizardShell({
             )}
           </div>
 
-          {/* Step indicators */}
-          <div className="flex items-center gap-1">
+          {/* Step indicators - Animated progress */}
+          <div className="flex items-center gap-2">
             {STEPS.map((step, i) => (
-              <div key={step.key} className="flex-1 flex items-center gap-1">
-                <div
-                  className={cn(
-                    "h-2 flex-1 rounded-full transition-colors",
-                    deploying || i < currentStep
-                      ? "bg-primary"
-                      : i === currentStep
-                        ? "bg-primary/40"
-                        : "bg-muted"
-                  )}
-                />
+              <div key={step.key} className="flex-1 flex items-center gap-2">
+                <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-700 ease-out",
+                      deploying || i < currentStep
+                        ? "bg-gradient-to-r from-primary to-emerald-500 w-full"
+                        : i === currentStep
+                          ? "bg-gradient-to-r from-primary/60 to-primary w-1/2 animate-pulse"
+                          : "w-0"
+                    )}
+                  />
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div
+                    className={cn(
+                      "w-2 h-2 rounded-full transition-colors duration-300",
+                      deploying || i < currentStep ? "bg-emerald-500" : "bg-muted"
+                    )}
+                  />
+                )}
               </div>
             ))}
           </div>
