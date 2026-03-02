@@ -13,8 +13,22 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
+  // Next 14.1+ uses top-level serverExternalPackages
+  serverExternalPackages: ["ssh2", "ws"],
   experimental: {
     serverComponentsExternalPackages: ["ssh2", "ws"],
+  },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = config.externals || [];
+      config.externals.push("ssh2");
+    }
+    // Ignore .node binary files
+    config.module.rules.push({
+      test: /\.node$/,
+      use: "node-loader",
+    });
+    return config;
   },
 };
 

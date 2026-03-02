@@ -2,5 +2,23 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install",
   "framework": "nextjs",
-  "outputDirectory": ".next"
+  "outputDirectory": ".next",
+  "crons": [
+    {
+      "path": "/api/cron/bsos-failure-check",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/bsos-full-sync",
+      "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/cron/bsos-eod",
+      "schedule": "0 23 * * *"
+    },
+    {
+      "path": "/api/cron/bsos-decay",
+      "schedule": "0 3 1 * *"
+    }
+  ]
 }

@@ -171,57 +171,37 @@ function sleep(ms: number): Promise<void> {
  */
 export function aggregateSwarmResults(
   results: SubagentResult[],
-  aggregatorPrompt: string
+  aggregator: (results: SubagentResult[]) => string
 ): string {
-  const successfulResults = results.filter((r) => r.success);
-  const failedResults = results.filter((r) => !r.success);
-  
-  let aggregated = `${aggregatorPrompt}\n\n`;
-  
-  aggregated += `## Successful Results (${successfulResults.length}/${results.length})\n\n`;
-  
-  for (const result of successfulResults) {
-    aggregated += `### ${result.name}\n${result.result}\n\n`;
-  }
-  
-  if (failedResults.length > 0) {
-    aggregated += `## Failed Tasks (${failedResults.length}/${results.length})\n\n`;
-    
-    for (const result of failedResults) {
-      aggregated += `- ${result.name}: ${result.error}\n`;
-    }
-  }
-  
-  return aggregated;
+  return aggregator(results);
 }
 
 /**
- * Use case: Analyze multiple documents in parallel
+ * Simple text aggregator - joins all results
  */
-export async function analyzeDocumentsInParallel(
-  documents: { id: string; title: string; content: string }[],
-  analysisType: "summarize" | "extract_insights" | "categorize"
-): Promise<SubagentResult[]> {
-  const tasks: SubagentTask[] = documents.map((doc) => ({
-    id: doc.id,
-    name: `Analyze: ${doc.title}`,
-    prompt: buildAnalysisPrompt(doc, analysisType),
-  }));
-  
-  return executeSwarm(tasks, { maxConcurrency: 5 });
+export function joinResults(results: SubagentResult[], separator = "\n\n---\n\n"): string {
+  return results
+    .filter((r) => r.success && r.result)
+    .map((r) => `## ${r.name}\n\n${r.result}`)
+    .join(separator);
 }
 
-function buildAnalysisPrompt(
-  doc: { title: string; content: string },
-  analysisType: string
-): string {
-  const prompts: Record<string, string> = {
-    summarize: `Summarize the following document in 3-5 bullet points:\n\nTitle: ${doc.title}\n\nContent:\n${doc.content.slice(0, 8000)}`,
-    
-    extract_insights: `Extract key insights from this document:\n\nTitle: ${doc.title}\n\nContent:\n${doc.content.slice(0, 8000)}\n\nProvide:\n1. Main takeaways\n2. Action items\n3. Questions raised`,
-    
-    categorize: `Categorize this document:\n\nTitle: ${doc.title}\n\nContent:\n${doc.content.slice(0, 8000)}\n\nProvide:\n1. Primary category\n2. Secondary tags\n3. Related topics`,
+/**
+ * Get stats for a swarm execution
+ */
+export function swarmStats(results: SubagentResult[]) {
+  const succeeded = results.filter((r) => r.success);
+  const failed = results.filter((r) => !r.success);
+  const totalMs = results.reduce((sum, r) => sum + r.durationMs, 0);
+  const avgMs = results.length > 0 ? totalMs / results.length : 0;
+
+  return {
+    total: results.length,
+    succeeded: succeeded.length,
+    failed: failed.length,
+    successRate: results.length > 0 ? (succeeded.length / results.length) * 100 : 0,
+    totalMs,
+    avgMs,
+    errors: failed.map((r) => ({ id: r.id, name: r.name, error: r.error })),
   };
-  
-  return prompts[analysisType] || prompts.summarize;
 }

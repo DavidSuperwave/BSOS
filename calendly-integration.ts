@@ -7,7 +7,7 @@
 
 const CALENDLY_API_KEY = process.env.CALENDLY_API_KEY;
 const CALENDLY_EVENT_TYPE_UUID = process.env.CALENDLY_EVENT_TYPE_UUID;
-const CALENDLY_BASE_URL = 'https://api.calendly.com/v2';
+const CALENDLY_BASE_URL = 'https://api.calendly.com';
 
 /**
  * Parse reply content for booking intent
@@ -142,7 +142,7 @@ export async function getAvailableSlots(
 
     const response = await fetch(
       `${CALENDLY_BASE_URL}/event_type_available_times?` +
-      `event_type=${CALENDLY_EVENT_TYPE_UUID}&` +
+      `event_type=${encodeURIComponent(`https://api.calendly.com/event_types/${CALENDLY_EVENT_TYPE_UUID}`)}&` +
       `start_time=${encodeURIComponent(startTime)}&` +
       `end_time=${encodeURIComponent(endTime)}`,
       {
