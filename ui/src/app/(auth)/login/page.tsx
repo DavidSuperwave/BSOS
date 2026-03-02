@@ -33,6 +33,25 @@ export default function LoginPage() {
       return;
     }
 
+    // Ensure account exists (self-healing for users whose signup account-setup
+    // call failed, or who were created before account-setup was introduced)
+    try {
+      const { data: { user: loggedInUser } } = await supabase.auth.getUser();
+      if (loggedInUser) {
+        await fetch("/api/auth/account-setup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: loggedInUser.id,
+            email: loggedInUser.email,
+            name: loggedInUser.user_metadata?.name,
+          }),
+        });
+      }
+    } catch {
+      // Non-blocking — companies route has safety net
+    }
+
     router.push("/");
     router.refresh();
   };

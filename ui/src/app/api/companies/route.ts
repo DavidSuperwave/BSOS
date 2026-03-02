@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     const admin = getAdmin();
 
     // Get user's account
-    const { data: membership } = await admin
+    let { data: membership } = await admin
       .from("account_members")
       .select("account_id")
       .eq("user_id", user.id)
@@ -98,10 +98,43 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (!membership) {
-      return NextResponse.json(
-        { error: "No account found. Please sign up again." },
-        { status: 400 }
-      );
+      // Auto-provision: create account + membership for this user
+      const { data: newAccount, error: acctErr } = await admin
+        .from("accounts")
+        .insert({
+          name: `${user.email?.split("@")[0] || "User"}'s Account`,
+          owner_user_id: user.id,
+        })
+        .select()
+        .single();
+
+      if (acctErr || !newAccount) {
+        return NextResponse.json(
+          { error: "Failed to create account. Please try again." },
+          { status: 500 }
+        );
+      }
+
+      const { error: memberErr } = await admin
+        .from("account_members")
+        .insert({
+          account_id: newAccount.id,
+          user_id: user.id,
+          role: "owner",
+          accepted_at: new Date().toISOString(),
+        });
+
+      if (memberErr) {
+        // Cleanup the orphaned account
+        await admin.from("accounts").delete().eq("id", newAccount.id);
+        return NextResponse.json(
+          { error: "Failed to create account membership. Please try again." },
+          { status: 500 }
+        );
+      }
+
+      // Use the new account for company creation
+      membership = { account_id: newAccount.id };
     }
 
     const { data: company, error } = await admin

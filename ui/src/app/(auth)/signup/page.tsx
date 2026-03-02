@@ -41,7 +41,7 @@ export default function SignupPage() {
     // so middleware can detect the account_members row and route to /onboarding
     if (signupData.user) {
       try {
-        await fetch("/api/auth/account-setup", {
+        let setupRes = await fetch("/api/auth/account-setup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -50,8 +50,26 @@ export default function SignupPage() {
             name,
           }),
         });
-      } catch {
-        // Non-blocking — account will be created on next load if needed
+
+        if (!setupRes.ok) {
+          setupRes = await fetch("/api/auth/account-setup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: signupData.user.id,
+              email,
+              name,
+            }),
+          });
+
+          if (!setupRes.ok) {
+            console.error("[Signup] account-setup failed after retry", {
+              status: setupRes.status,
+            });
+          }
+        }
+      } catch (err) {
+        console.error("[Signup] account-setup request failed", err);
       }
     }
 
