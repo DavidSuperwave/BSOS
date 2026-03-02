@@ -3,10 +3,17 @@ import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { projectContainerTag as buildProjectContainerTag } from "@/lib/supermemory-client";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: ReturnType<typeof createClient> | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("Supabase credentials not configured");
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 
@@ -59,7 +66,7 @@ export async function GET(req: NextRequest) {
     const access = await requireCompanyAccess(companyId);
     if (access.error) return access.error;
 
-    const { data: projects, error } = await supabase
+    const { data: projects, error } = await getSupabase()
       .from("knowledge_projects")
       .select("*")
       .eq("company_id", companyId)
@@ -124,7 +131,7 @@ export async function POST(req: NextRequest) {
     const template = PROJECT_TEMPLATES[type as keyof typeof PROJECT_TEMPLATES] || PROJECT_TEMPLATES.vault;
 
     // Create project in Supabase
-    const { data: project, error } = await supabase
+    const { data: project, error } = await getSupabase()
       .from("knowledge_projects")
       .insert({
         company_id: companyId,
@@ -189,7 +196,7 @@ function generateSlug(name: string): string {
  * Get full container tag for a project
  */
 async function getProjectContainerTag(projectId: string): Promise<string> {
-  const { data } = await supabase
+  const { data } = await getSupabase()
     .from("knowledge_projects")
     .select(`
       container_tag_suffix,
@@ -213,7 +220,7 @@ async function getDocumentCountFromSupermemory(
 ): Promise<number> {
   try {
     // Get company Supermemory key
-    const { data: company } = await supabase
+    const { data: company } = await getSupabase()
       .from("companies")
       .select("integration_credentials")
       .eq("id", companyId)

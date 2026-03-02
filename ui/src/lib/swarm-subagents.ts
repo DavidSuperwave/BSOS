@@ -128,12 +128,38 @@ async function waitForSessionResult(sessionKey: string, timeoutSeconds: number):
 }
 
 /**
- * Check session status via API
+ * Check session status via OpenClaw gateway API
  */
 async function checkSessionStatus(sessionKey: string): Promise<{ state: string; result?: string; error?: string }> {
-  // This would call your session status endpoint
-  // For now, return a placeholder
-  return { state: "completed", result: "" };
+  const baseUrl = process.env.NEXT_PUBLIC_OPENCLAW_URL || process.env.OPENCLAW_URL || "http://localhost:18789";
+  const token = process.env.OPENCLAW_GATEWAY_TOKEN || "";
+
+  try {
+    const res = await fetch(`${baseUrl}/hooks/session-status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ sessionKey }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (!res.ok) {
+      // If OpenClaw is down or session not found, treat as error
+      return { state: "error", error: `Session status check failed: ${res.status}` };
+    }
+
+    const data = await res.json();
+    return {
+      state: data.state || data.status || "unknown",
+      result: data.result || data.output || "",
+      error: data.error || undefined,
+    };
+  } catch (err: any) {
+    // Network error — OpenClaw may be unreachable
+    return { state: "error", error: `OpenClaw unreachable: ${err.message}` };
+  }
 }
 
 function sleep(ms: number): Promise<void> {

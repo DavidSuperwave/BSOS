@@ -1,5 +1,6 @@
-// ICP Insights page removed - feature being reimagined
-// This file is a placeholder - delete this directory when possible
+import { redirect } from "next/navigation";
+
+// ICP Insights under development — redirects to dashboard
 export default function Page() {
-  return null;
+  redirect("/dashboard");
 }

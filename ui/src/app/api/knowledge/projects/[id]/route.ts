@@ -3,10 +3,17 @@ import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { projectContainerTag as buildProjectContainerTag } from "@/lib/supermemory-client";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: ReturnType<typeof createClient> | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("Supabase credentials not configured");
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 /**
  * GET /api/knowledge/projects/[id]
@@ -32,7 +39,7 @@ export async function GET(
     const access = await requireCompanyAccess(companyId);
     if (access.error) return access.error;
 
-    const { data: project, error } = await supabase
+    const { data: project, error } = await getSupabase()
       .from("knowledge_projects")
       .select("*")
       .eq("id", id)
@@ -50,7 +57,7 @@ export async function GET(
     const containerTag = await getProjectContainerTag(project.id);
 
     // Update last accessed
-    await supabase
+    await getSupabase()
       .from("knowledge_projects")
       .update({ last_accessed_at: new Date().toISOString() })
       .eq("id", id);
@@ -102,7 +109,7 @@ export async function PATCH(
     if (updates.collaborators) updateData.collaborators = updates.collaborators;
     if (updates.folderStructure) updateData.folder_structure = updates.folderStructure;
 
-    const { data: project, error } = await supabase
+    const { data: project, error } = await getSupabase()
       .from("knowledge_projects")
       .update(updateData)
       .eq("id", id)
@@ -160,7 +167,7 @@ export async function DELETE(
     if (access.error) return access.error;
 
     // Get project details first
-    const { data: project } = await supabase
+    const { data: project } = await getSupabase()
       .from("knowledge_projects")
       .select("container_tag_suffix")
       .eq("id", id)
@@ -178,7 +185,7 @@ export async function DELETE(
     // This requires listing all docs and deleting them
     // For now, just delete the Supabase record
 
-    const { error } = await supabase
+    const { error } = await getSupabase()
       .from("knowledge_projects")
       .delete()
       .eq("id", id)
@@ -206,7 +213,7 @@ export async function DELETE(
  * Get full container tag for a project
  */
 async function getProjectContainerTag(projectId: string): Promise<string> {
-  const { data } = await supabase
+  const { data } = await getSupabase()
     .from("knowledge_projects")
     .select(`
       container_tag_suffix,

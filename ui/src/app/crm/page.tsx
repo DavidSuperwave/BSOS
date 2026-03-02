@@ -1,5 +1,6 @@
-// CRM feature removed - will be rebuilt in later version
-// This file is a placeholder - delete this directory when possible
+import { redirect } from "next/navigation";
+
+// CRM feature under development — redirects to dashboard
 export default function Page() {
-  return null;
+  redirect("/dashboard");
 }

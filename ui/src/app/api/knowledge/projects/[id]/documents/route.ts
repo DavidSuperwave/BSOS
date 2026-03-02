@@ -5,10 +5,17 @@ import { requireCompanyAccess } from "@/lib/api-auth";
 import { autoTag } from "@/lib/knowledge/auto-tagger";
 import { projectContainerTag } from "@/lib/supermemory-client";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: ReturnType<typeof createClient> | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("Supabase credentials not configured");
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 
@@ -33,7 +40,7 @@ async function fetchDocumentRefsFallback({
   folder: string | null;
   containerTag: string;
 }) {
-  let query = supabase
+  let query = getSupabase()
     .from("knowledge_document_refs")
     .select(
       "supermemory_doc_id, title, tags_primary, tags_secondary, supermemory_container_tag, created_at, updated_at"
@@ -113,7 +120,7 @@ export async function GET(
     if (access.error) return access.error;
 
     // Get project and verify access
-    const { data: project, error: projectError } = await supabase
+    const { data: project, error: projectError } = await getSupabase()
       .from("knowledge_projects")
       .select("container_tag_suffix, companies!inner(slug)")
       .eq("id", projectId)
@@ -132,7 +139,7 @@ export async function GET(
     const primaryContainerTag = containerTags[0] || "";
 
     // Get Supermemory key
-    const { data: company } = await supabase
+    const { data: company } = await getSupabase()
       .from("companies")
       .select("integration_credentials")
       .eq("id", companyId)
@@ -330,7 +337,7 @@ export async function POST(
     if (access.error) return access.error;
 
     // Get project
-    const { data: project, error: projectError } = await supabase
+    const { data: project, error: projectError } = await getSupabase()
       .from("knowledge_projects")
       .select("container_tag_suffix, companies!inner(slug)")
       .eq("id", projectId)
@@ -348,7 +355,7 @@ export async function POST(
     const containerTags = buildContainerTagVariants(companySlug, project.container_tag_suffix);
 
     // Get Supermemory key
-    const { data: company } = await supabase
+    const { data: company } = await getSupabase()
       .from("companies")
       .select("integration_credentials")
       .eq("id", companyId)
@@ -512,7 +519,7 @@ export async function POST(
     // Sync document ref cache (non-blocking)
     void (async () => {
       try {
-        await supabase
+        await getSupabase()
           .from("knowledge_document_refs")
           .upsert(
             {
@@ -568,7 +575,7 @@ async function updateProjectDocumentCount(projectId: string) {
   try {
     // This is a placeholder - in production, you'd count from Supermemory
     // or use a trigger-based approach
-    await supabase
+    await getSupabase()
       .from("knowledge_projects")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", projectId);

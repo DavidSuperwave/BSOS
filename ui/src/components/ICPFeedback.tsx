@@ -1,2 +1,6 @@
-// ICP Insights component removed - feature being reimagined
-// This file is a placeholder - delete this directory when possible
+// ICP Feedback component — placeholder for future implementation
+export function ICPFeedback() {
+  return null;
+}
+
+export default ICPFeedback;

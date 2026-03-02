@@ -3,11 +3,18 @@ import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "@/lib/env";
 import { requireCompanyAccess } from "@/lib/api-auth";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: ReturnType<typeof createClient> | null = null;
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("Supabase credentials not configured");
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 type ProjectContext = {
   companySlug: string;
@@ -19,7 +26,7 @@ async function getProjectContext(
   companyId: string,
   projectId: string
 ): Promise<ProjectContext | null> {
-  const { data: project, error: projectError } = await supabase
+  const { data: project, error: projectError } = await getSupabase()
     .from("knowledge_projects")
     .select("container_tag_suffix, companies!inner(slug)")
     .eq("id", projectId)
@@ -31,7 +38,7 @@ async function getProjectContext(
   const companySlug = (project.companies as any)?.slug || "default";
   const containerTag = `gtm_${companySlug}_project_${project.container_tag_suffix}`;
 
-  const { data: company } = await supabase
+  const { data: company } = await getSupabase()
     .from("companies")
     .select("integration_credentials")
     .eq("id", companyId)

@@ -5,10 +5,17 @@ import { requireCompanyAccess } from "@/lib/api-auth";
 import { autoTag } from "@/lib/knowledge/auto-tagger";
 import { projectContainerTag } from "@/lib/supermemory-client";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let _supabase: ReturnType<typeof createClient> | null = null;
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey);
+function getSupabase() {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) throw new Error("Supabase credentials not configured");
+    _supabase = createClient(url, key);
+  }
+  return _supabase;
+}
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 
@@ -41,7 +48,7 @@ export async function POST(
     if (access.error) return access.error;
 
     // Get project details
-    const { data: project, error: projectError } = await supabase
+    const { data: project, error: projectError } = await getSupabase()
       .from("knowledge_projects")
       .select("container_tag_suffix, companies!inner(slug)")
       .eq("id", projectId)
@@ -59,7 +66,7 @@ export async function POST(
     const containerTag = projectContainerTag(companySlug, project.container_tag_suffix);
 
     // Get Supermemory key
-    const { data: company } = await supabase
+    const { data: company } = await getSupabase()
       .from("companies")
       .select("integration_credentials")
       .eq("id", companyId)
@@ -132,7 +139,7 @@ export async function POST(
           // Upsert document ref cache (non-blocking)
           void (async () => {
             try {
-              await supabase
+              await getSupabase()
                 .from("knowledge_document_refs")
                 .upsert(
                   {
