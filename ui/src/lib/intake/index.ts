@@ -40,5 +40,9 @@ export {
 export { importCloseDeals, type CloseDeal } from "./importers/close";
 export { analyzeDocument, type AnalyzedDocument } from "./document-analyzer";
 
+// Onboarding mapper
+export { mapFormToContract, mergeFormWithExisting } from "./onboarding-mapper";
+export type { LeanFormPayload, CompetitorEntry, CustomerFitEntry } from "./onboarding-mapper";
+
 // Re-export for convenience
 export { default } from "./intake-pipeline";
