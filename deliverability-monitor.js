@@ -53,10 +53,9 @@ async function fetchPlusVibeCampaignStats() {
     return null;
   }
   try {
-    const resp = await fetch('https://api.plusvibe.ai/api/v1/campaign/list', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': PLUSVIBE_API_KEY },
-      body: JSON.stringify({ workspace_id: PLUSVIBE_WORKSPACE_ID, limit: 50 })
+    const resp = await fetch(`https://api.plusvibe.ai/api/v1/campaign/list?workspace_id=${PLUSVIBE_WORKSPACE_ID}&limit=50`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': PLUSVIBE_API_KEY }
     });
     if (!resp.ok) throw new Error(`PlusVibe ${resp.status}`);
     const data = await resp.json();
@@ -104,9 +103,11 @@ async function checkDeliverability() {
 
   // Calculate real deliverability metrics from campaign data
   let inboxRate = 0;
+  let bounceRate = 0;
   let spamRate = 0;
   let totalSent = 0;
   let totalBounced = 0;
+  let totalSpam = 0;
   
   if (campaigns && campaigns.length > 0) {
     const activeCampaigns = campaigns.filter(c => 
@@ -115,12 +116,33 @@ async function checkDeliverability() {
     for (const c of activeCampaigns) {
       const sent = c.sent_count || c.total_sent || 0;
       const bounced = c.bounce_count || c.bounced || 0;
+      const spam = c.spam_count || c.spam || 0;
       totalSent += sent;
       totalBounced += bounced;
+      totalSpam += spam;
     }
     if (totalSent > 0) {
-      spamRate = ((totalBounced / totalSent) * 100);
-      inboxRate = 100 - spamRate;
+      bounceRate = ((totalBounced / totalSent) * 100);
+      // Use campaign-level spam_count if available, otherwise derive from Inboxing
+      spamRate = totalSpam > 0 ? ((totalSpam / totalSent) * 100) : 0;
+      inboxRate = 100 - bounceRate - spamRate;
+    }
+  }
+
+  // Enrich spam rate from Inboxing domain health if PlusVibe didn't provide spam_count
+  if (totalSpam === 0 && domains && domains.length > 0) {
+    let domainSpamScore = 0;
+    let domainCount = 0;
+    for (const d of domains) {
+      const sr = d.spam_rate || d.spamRate;
+      if (sr !== undefined) {
+        domainSpamScore += sr;
+        domainCount++;
+      }
+    }
+    if (domainCount > 0) {
+      spamRate = domainSpamScore / domainCount;
+      inboxRate = Math.max(0, 100 - bounceRate - spamRate);
     }
   }
 
@@ -141,9 +163,11 @@ async function checkDeliverability() {
   const testResult = {
     date: today,
     inboxRate: Math.round(inboxRate * 100) / 100,
+    bounceRate: Math.round(bounceRate * 100) / 100,
     spamRate: Math.round(spamRate * 100) / 100,
     totalSent,
     totalBounced,
+    totalSpam,
     activeDomains: domains ? domains.length : 0,
     issues: [],
     recommendations: [],
@@ -155,9 +179,14 @@ async function checkDeliverability() {
     testResult.recommendations.push('Review email list quality and warmup status');
   }
   
-  if (testResult.spamRate > 3 && totalSent > 0) {
-    testResult.issues.push(`Bounce/spam rate ${testResult.spamRate}% (above 3% threshold)`);
-    testResult.recommendations.push('Check subject lines and sender reputation');
+  if (testResult.bounceRate > 3 && totalSent > 0) {
+    testResult.issues.push(`Bounce rate ${testResult.bounceRate}% (above 3% threshold)`);
+    testResult.recommendations.push('Clean email lists — remove invalid addresses');
+  }
+
+  if (testResult.spamRate > 1 && totalSent > 0) {
+    testResult.issues.push(`Spam rate ${testResult.spamRate}% (above 1% threshold)`);
+    testResult.recommendations.push('Check subject lines, sender reputation, and domain health');
   }
 
   if (domainIssues.length > 0) {
@@ -173,66 +202,112 @@ async function checkDeliverability() {
   // Update history
   if (!state.history) state.history = [];
   state.history.push(testResult);
-  state.history = state.history.slice(-30);
   state.lastTestDate = today;
   state.inboxRate = testResult.inboxRate;
+  state.bounceRate = testResult.bounceRate;
   state.spamRate = testResult.spamRate;
-  
   saveState(state);
+  
+  // Store to Supabase if configured
+  if (SUPABASE_URL && SUPABASE_KEY) {
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/deliverability_results`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY,
+          'Authorization': `Bearer ${SUPABASE_KEY}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(testResult)
+      });
+      console.log('   ✅ Stored to Supabase');
+    } catch (err) {
+      console.error('   Supabase store error:', err.message);
+    }
+  }
   
   return testResult;
 }
 
-// Send Telegram alert if issues detected
-async function sendAlert(result) {
-  const telegramToken = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_CHAT_ID || '1244663682';
+async function generateReport(result) {
+  if (!result) {
+    console.log('[Deliverability Monitor] No result to report');
+    return;
+  }
   
-  if (!telegramToken || result.issues.length === 0) return;
+  const status = (result.inboxRate || 0) >= 80 ? '✅ GOOD' : 
+                 (result.inboxRate || 0) >= 70 ? '⚠️ WARNING' : '❌ CRITICAL';
   
-  const message = `⚠️ <b>Deliverability Alert</b>
-
-📅 Date: ${result.date}
-📬 Inbox Rate: ${result.inboxRate}%
-📛 Spam Rate: ${result.spamRate}%
-
-<b>Issues Detected:</b>
-${result.issues.map(i => `• ${i}`).join('\n')}
-
-<b>Recommendations:</b>
-${result.recommendations.map(r => `• ${r}`).join('\n')}
-
-🔧 <a href="https://plusvibe.ai">Check PlusVibe</a>`;
+  console.log('\n=== DELIVERABILITY REPORT ===');
+  console.log(`Status: ${status}`);
+  console.log(`Date: ${result.date}`);
+  console.log(`Source: ${result.source || 'unknown'}`);
+  if (result.totalSent > 0) {
+    console.log(`\nEmail Stats (from ${result.totalSent.toLocaleString()} sent):`);
+    console.log(`  Inbox Rate:  ${result.inboxRate}%`);
+    console.log(`  Bounce Rate: ${result.bounceRate}%`);
+    console.log(`  Spam Rate:   ${result.spamRate}%`);
+  } else {
+    console.log('\nNo campaign data available yet');
+  }
   
+  if (result.activeDomains > 0) {
+    console.log(`\nDomains Monitored: ${result.activeDomains}`);
+  }
+  
+  if (result.issues && result.issues.length > 0) {
+    console.log('\nIssues:');
+    result.issues.forEach(issue => console.log(`  - ${issue}`));
+  }
+  
+  if (result.recommendations && result.recommendations.length > 0) {
+    console.log('\nRecommendations:');
+    result.recommendations.forEach(rec => console.log(`  - ${rec}`));
+  }
+  
+  // Send to Telegram if configured
+  if (process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID) {
+    const lines = [
+      `📧 *Deliverability Report* - ${result.date}`,
+      `Status: ${status}`,
+      result.totalSent > 0 ? `\nFrom ${result.totalSent.toLocaleString()} emails sent:` : '\nNo campaign data yet',
+      result.totalSent > 0 ? `📥 Inbox: ${result.inboxRate}%` : '',
+      result.totalSent > 0 ? `⛔ Bounce: ${result.bounceRate}%` : '',
+      result.totalSent > 0 ? `🚫 Spam: ${result.spamRate}%` : '',
+    ];
+    if (result.issues && result.issues.length > 0) {
+      lines.push('\n⚠️ Issues:');
+      result.issues.slice(0, 3).forEach(issue => lines.push(`  - ${issue}`));
+    }
+    const message = lines.filter(Boolean).join('\n');
+    
+    try {
+      await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: process.env.TELEGRAM_CHAT_ID,
+          text: message,
+          parse_mode: 'Markdown'
+        })
+      });
+      console.log('✅ Telegram notification sent');
+    } catch (err) {
+      console.error('Telegram send error:', err.message);
+    }
+  }
+}
+
+// Main execution
+(async () => {
   try {
-    await fetch(`https://api.telegram.org/bot${telegramToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: 'HTML' })
-    });
-    console.log('   ✅ Alert sent');
+    const result = await checkDeliverability();
+    await generateReport(result);
   } catch (error) {
-    console.error('   ❌ Alert failed:', error.message);
+    console.error('❌ Deliverability monitor failed:', error.message);
+    process.exit(1);
   }
-}
+})();
 
-// Main
-async function main() {
-  console.log('[Deliverability Monitor] Starting...');
-  
-  const result = await checkDeliverability();
-  
-  console.log(`   Inbox Rate: ${result.inboxRate || 0}%`);
-  console.log(`   Spam Rate: ${result.spamRate || 0}%`);
-  
-  const issues = result.issues || [];
-  console.log(`   Issues: ${issues.length}`);
-  
-  if (issues.length > 0) {
-    await sendAlert(result);
-  }
-  
-  console.log('[Deliverability Monitor] Complete');
-}
-
-main().catch(console.error);
+module.exports = { checkDeliverability, generateReport };
