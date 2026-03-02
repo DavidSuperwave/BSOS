@@ -3,11 +3,8 @@
 import { Suspense, useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/components/onboarding/wizard-shell";
-import { StepBasics } from "@/components/onboarding/step-basics";
-import { StepProduct } from "@/components/onboarding/step-product";
-import { StepICP } from "@/components/onboarding/step-icp";
-import { StepPainPoints } from "@/components/onboarding/step-pain-points";
-import { StepMessaging } from "@/components/onboarding/step-messaging";
+import { StepCompanyProduct } from "@/components/onboarding/step-company-product";
+import { StepICPMarket } from "@/components/onboarding/step-icp-market";
 import { StepIntegrations } from "@/components/onboarding/step-integrations";
 import { StepUploads } from "@/components/onboarding/step-uploads";
 import { StepReview } from "@/components/onboarding/step-review";
@@ -148,7 +145,7 @@ function OnboardingContent() {
     } else {
       await saveProgress(currentStep + 1, data);
     }
-    setCurrentStep((s) => Math.min(s + 1, 7));
+    setCurrentStep((s) => Math.min(s + 1, 4));
   };
 
   const handleBack = () => {
@@ -169,7 +166,7 @@ function OnboardingContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           onboarding_data: data,
-          onboarding_step: 8,
+          onboarding_step: 5,
         }),
       });
 
@@ -234,7 +231,7 @@ function OnboardingContent() {
             companyData: {
               name: data.company_name,
               industry: data.industry,
-              description: data.description,
+              description: data.core_product,
             },
           }),
         });
@@ -264,29 +261,34 @@ function OnboardingContent() {
     runDeploy();
   };
 
+  // ── Validation: can proceed to next step? ──
   const canProceed = (() => {
     switch (currentStep) {
-      case 0:
-        return !!data.company_name && !!data.slug && !!data.industry;
-      case 1:
-        return !!data.product_description && !!data.value_proposition;
-      case 2:
-        return (data.icp_titles?.length > 0) && !!data.icp_company_size && (data.icp_verticals?.length > 0);
-      case 3:
-        return (data.pain_points?.length > 0);
-      case 4:
-        return !!data.tone && !!data.campaign_goals;
+      case 0: // Company & Product
+        return (
+          !!data.company_name &&
+          !!data.slug &&
+          !!data.industry &&
+          !!data.core_product &&
+          !!data.problem_solved
+        );
+      case 1: // ICP & Market
+        return (
+          (data.icp_titles?.length > 0) &&
+          !!data.icp_company_size &&
+          (data.icp_verticals?.length > 0) &&
+          (data.pain_points?.length > 0) &&
+          !!data.usp
+        );
+      // Steps 2 (Integrations), 3 (Uploads), 4 (Review) are always valid
       default:
         return true;
     }
   })();
 
   const steps = [
-    <StepBasics key="basics" data={data} onChange={onChange} />,
-    <StepProduct key="product" data={data} onChange={onChange} />,
-    <StepICP key="icp" data={data} onChange={onChange} />,
-    <StepPainPoints key="pain-points" data={data} onChange={onChange} />,
-    <StepMessaging key="messaging" data={data} onChange={onChange} />,
+    <StepCompanyProduct key="company-product" data={data} onChange={onChange} />,
+    <StepICPMarket key="icp-market" data={data} onChange={onChange} />,
     <StepIntegrations key="integrations" data={data} onChange={onChange} />,
     <StepUploads key="uploads" data={data} onChange={onChange} />,
     <StepReview key="review" data={data} />,

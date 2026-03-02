@@ -5,11 +5,8 @@ import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 
 const STEPS = [
-  { label: "Basics", key: "basics" },
-  { label: "Product", key: "product" },
-  { label: "ICP", key: "icp" },
-  { label: "Pain Points", key: "pain-points" },
-  { label: "Messaging", key: "messaging" },
+  { label: "Company & Product", key: "company-product" },
+  { label: "ICP & Market", key: "icp-market" },
   { label: "Integrations", key: "integrations" },
   { label: "Uploads", key: "uploads" },
   { label: "Review", key: "review" },

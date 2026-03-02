@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react";
 import { FileUploadZone, UploadedFileCard } from "@/components/knowledge/file-upload";
-import { FileText, Sparkles, Pencil, Check, X } from "lucide-react";
+import { FileText, Sparkles, Pencil, Check, X, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -273,6 +273,24 @@ export function StepUploads({ data, onChange }: StepUploadsProps) {
           ))}
         </div>
       )}
+
+      {/* Brand Guidelines Notes */}
+      <div className="rounded-xl border border-border p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+          <Palette className="h-4 w-4 text-primary" />
+          Brand Voice & Guidelines
+        </div>
+        <p className="text-xs text-muted-foreground">
+          No brand guide to upload? Describe your brand voice here instead. Julian will use this to match your tone in outreach.
+        </p>
+        <textarea
+          value={data.brand_guidelines_notes || ""}
+          onChange={(e) => onChange({ brand_guidelines_notes: e.target.value })}
+          placeholder="e.g. Professional but approachable. We avoid jargon and speak directly. Our tone is confident, not aggressive. We use first names and keep emails under 150 words..."
+          rows={3}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring resize-none"
+        />
+      </div>
 
       <div className="rounded-xl border border-border/50 bg-muted/20 p-4">
         <p className="text-xs text-muted-foreground">
