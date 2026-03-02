@@ -49,7 +49,7 @@ cron.schedule('0 7 * * *', () => {
 // 8:00 AM - Campaign Detection + Volume Report
 // Detects new campaigns, tracks account capacity
 cron.schedule('0 8 * * *', () => {
-  runScript('campaign-detector.js', '🎯 Campaign Detection');
+  runScript('campaign-detector-v3.js', '🎯 Campaign Detection (v3)');
   setTimeout(() => runScript('volume-tracker.js', '📈 Volume Tracker'), 30000);
 }, { timezone: 'America/Mexico_City' });
 

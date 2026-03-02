@@ -153,21 +153,77 @@ async function addLeadToSubsequence(leadId, parentCampaignId, subsequenceCampaig
   return result;
 }
 
-// Store OOO subsequence IDs per campaign (can be configured)
-const OOO_SUBSEQUENCES = {
-  // parent_campaign_id: subsequence_campaign_id
-  // Will be populated as needed or configured via env
-};
+// Store OOO subsequence IDs per campaign (runtime cache)
+const OOO_SUBSEQUENCES = {};
+
+// Load OOO mappings from env var if configured
+// Format: "parentId1:subId1,parentId2:subId2"
+if (process.env.OOO_SUBSEQUENCE_MAP) {
+  process.env.OOO_SUBSEQUENCE_MAP.split(',').forEach(pair => {
+    const [parent, sub] = pair.trim().split(':');
+    if (parent && sub) OOO_SUBSEQUENCES[parent] = sub;
+  });
+  console.log(`[OOO] Loaded ${Object.keys(OOO_SUBSEQUENCES).length} subsequence mappings from env`);
+}
 
 async function getOrCreateOOOSubsequence(parentCampaignId, campaignName) {
-  // Check if we already have a subsequence for this campaign
+  // 1. Check runtime cache
   if (OOO_SUBSEQUENCES[parentCampaignId]) {
     return OOO_SUBSEQUENCES[parentCampaignId];
   }
-  
-  // For now, log that we need to create one
-  // In production, this could auto-create the subsequence
-  console.log(`[OOO] Need OOO subsequence for campaign: ${campaignName} (${parentCampaignId})`);
+
+  // 2. Try Supabase config table
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (supabaseUrl && supabaseKey) {
+    try {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/campaign_config?parent_campaign_id=eq.${encodeURIComponent(parentCampaignId)}&select=ooo_subsequence_id`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+            'Content-Type': 'application/json'
+          },
+          signal: AbortSignal.timeout(5000)
+        }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows.length > 0 && rows[0].ooo_subsequence_id) {
+          OOO_SUBSEQUENCES[parentCampaignId] = rows[0].ooo_subsequence_id;
+          console.log(`[OOO] Found subsequence ${rows[0].ooo_subsequence_id} for campaign ${campaignName} from Supabase`);
+          return rows[0].ooo_subsequence_id;
+        }
+      }
+    } catch (err) {
+      console.warn(`[OOO] Supabase config lookup failed: ${err.message}`);
+    }
+  }
+
+  // 3. Try finding an existing OOO subsequence via PlusVibe campaigns list
+  if (PLUSVIBE_API_KEY) {
+    try {
+      const campaigns = await plusvibeApiRequest(`/campaign/list?workspace_id=${PLUSVIBE_WORKSPACE_ID}`);
+      if (campaigns && Array.isArray(campaigns.data)) {
+        const oooSub = campaigns.data.find(c =>
+          c.parent_campaign_id === parentCampaignId &&
+          (c.name || '').toLowerCase().includes('ooo')
+        );
+        if (oooSub) {
+          OOO_SUBSEQUENCES[parentCampaignId] = oooSub.id;
+          console.log(`[OOO] Found existing OOO subsequence ${oooSub.id} ("${oooSub.name}") via PlusVibe`);
+          return oooSub.id;
+        }
+      }
+    } catch (err) {
+      console.warn(`[OOO] PlusVibe campaign lookup failed: ${err.message}`);
+    }
+  }
+
+  // 4. No subsequence found — log for manual configuration
+  console.warn(`[OOO] No OOO subsequence configured for campaign: ${campaignName} (${parentCampaignId}). ` +
+    `Set OOO_SUBSEQUENCE_MAP env var or create a campaign_config row in Supabase.`);
   return null;
 }
 
