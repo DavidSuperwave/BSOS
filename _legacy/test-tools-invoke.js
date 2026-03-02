@@ -4,7 +4,7 @@
  */
 
 const OPENCLAW_URL = 'http://localhost:18789';
-const OPENCLAW_TOKEN = '13d297efc87551a6ba4a47c9fca243dfe68f50d85818fae0';
+const OPENCLAW_TOKEN = process.env.OPENCLAW_TOKEN || '';
 
 async function testToolsInvoke() {
   console.log('Testing /tools/invoke endpoint...\n');

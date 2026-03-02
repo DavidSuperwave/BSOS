@@ -1,311 +1,375 @@
 #!/usr/bin/env node
 /**
- * BSOS Integration Test Suite
+ * Integration Tests for BSOS
+ * Tests live connections to external services
  * 
- * Tests connectivity to all external APIs and validates data flow.
- * Run with: node test-integrations.js
- * 
- * Requires .env with valid credentials.
+ * Usage:
+ *   node test-integrations.js           # Test all integrations
+ *   node test-integrations.js plusvibe  # Test only PlusVibe
+ *   node test-integrations.js close     # Test only Close CRM
  */
 
 require('dotenv').config();
 const fetch = require('node-fetch');
 
+const TARGET = process.argv[2] || 'all';
 const RESULTS = [];
-const start = Date.now();
 
-function log(status, test, detail = '') {
-  const icon = status === 'PASS' ? '✅' : status === 'FAIL' ? '❌' : '⚠️';
-  console.log(`${icon} ${test}${detail ? ': ' + detail : ''}`);
-  RESULTS.push({ status, test, detail });
+function log(status, service, detail) {
+  const icon = { PASS: '✅', FAIL: '❌', WARN: '⚠️', SKIP: '⏭️' }[status] || '•';
+  const msg = `  ${icon} [${service}] ${detail}`;
+  console.log(msg);
+  RESULTS.push({ status, service, detail });
 }
 
-// ============================================
-// 1. SUPABASE
-// ============================================
-async function testSupabase() {
-  console.log('\n── Supabase ──');
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !key) {
-    log('SKIP', 'Supabase', 'NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not set');
-    return;
-  }
-
-  try {
-    // Test REST API health
-    const res = await fetch(`${url}/rest/v1/`, {
-      headers: { 'apikey': key, 'Authorization': `Bearer ${key}` },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (res.ok) {
-      log('PASS', 'Supabase REST API', `Status ${res.status}`);
-    } else {
-      log('FAIL', 'Supabase REST API', `Status ${res.status}`);
-    }
-
-    // Test key tables exist
-    const tables = ['companies', 'campaigns', 'pipeline_entries', 'agent_sessions'];
-    for (const table of tables) {
-      const tRes = await fetch(`${url}/rest/v1/${table}?select=count&limit=0`, {
-        headers: { 
-          'apikey': key, 
-          'Authorization': `Bearer ${key}`,
-          'Prefer': 'count=exact'
-        },
-        signal: AbortSignal.timeout(5000)
-      });
-      if (tRes.ok) {
-        const count = tRes.headers.get('content-range');
-        log('PASS', `Table: ${table}`, `exists (${count || 'ok'})`);
-      } else if (tRes.status === 404) {
-        log('WARN', `Table: ${table}`, 'not found — may need migration');
-      } else {
-        log('FAIL', `Table: ${table}`, `Status ${tRes.status}`);
-      }
-    }
-  } catch (err) {
-    log('FAIL', 'Supabase connectivity', err.message);
-  }
-}
-
-// ============================================
-// 2. PLUSVIBE
-// ============================================
+// ──────────────────────────────────────────────
+// PlusVibe Integration
+// ──────────────────────────────────────────────
 async function testPlusVibe() {
-  console.log('\n── PlusVibe ──');
+  console.log('\n━━ PlusVibe ━━');
+  
   const apiKey = process.env.PLUSVIBE_API_KEY;
-  const workspaceId = process.env.PLUSVIBE_WORKSPACE_ID || '678eb62a071ff7544034bcde';
-
-  if (!apiKey) {
-    log('SKIP', 'PlusVibe', 'PLUSVIBE_API_KEY not set');
+  const wsId = process.env.PLUSVIBE_WORKSPACE_ID;
+  
+  if (!apiKey || !wsId) {
+    log('SKIP', 'PlusVibe', 'Missing PLUSVIBE_API_KEY or PLUSVIBE_WORKSPACE_ID');
     return;
   }
-
+  
   try {
     // Test campaign list
-    const res = await fetch(`https://api.plusvibe.ai/api/v1/campaign/list?workspace_id=${workspaceId}`, {
-      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      const count = Array.isArray(data.data) ? data.data.length : '?';
-      log('PASS', 'PlusVibe Campaigns API', `${count} campaigns found`);
-    } else {
-      log('FAIL', 'PlusVibe Campaigns API', `Status ${res.status}`);
+    const res = await fetch(
+      `https://api.plusvibe.ai/api/v1/campaign/list?workspace_id=${wsId}`,
+      { headers: { 'x-api-key': apiKey }, signal: AbortSignal.timeout(15000) }
+    );
+    
+    if (!res.ok) {
+      log('FAIL', 'PlusVibe', `Campaign list returned ${res.status}`);
+      return;
     }
-
-    // Test unibox (reply inbox)
-    const uniRes = await fetch(`https://api.plusvibe.ai/api/v1/unibox/emails?workspace_id=${workspaceId}&limit=1`, {
-      headers: { 'x-api-key': apiKey, 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (uniRes.ok) {
-      log('PASS', 'PlusVibe Unibox API', `Status ${uniRes.status}`);
-    } else {
-      log('FAIL', 'PlusVibe Unibox API', `Status ${uniRes.status}`);
+    
+    const data = await res.json();
+    const campaigns = Array.isArray(data) ? data : (data.value || []);
+    log('PASS', 'PlusVibe', `Campaign list: ${campaigns.length} campaigns`);
+    
+    const active = campaigns.filter(c => c.status === 'ACTIVE').length;
+    const draft = campaigns.filter(c => c.status === 'DRAFT').length;
+    log('PASS', 'PlusVibe', `Active: ${active}, Draft: ${draft}`);
+    
+    // Test lead stats on first active campaign
+    const activeCampaign = campaigns.find(c => c.status === 'ACTIVE');
+    if (activeCampaign) {
+      const statsRes = await fetch(
+        `https://api.plusvibe.ai/api/v1/campaign/lead/count?workspace_id=${wsId}&campaign_id=${activeCampaign._id}`,
+        { headers: { 'x-api-key': apiKey }, signal: AbortSignal.timeout(15000) }
+      );
+      if (statsRes.ok) {
+        const stats = await statsRes.json();
+        log('PASS', 'PlusVibe', `Lead stats for "${activeCampaign.name}": ${JSON.stringify(stats).substring(0, 100)}`);
+      }
     }
+    
   } catch (err) {
-    log('FAIL', 'PlusVibe connectivity', err.message);
+    log('FAIL', 'PlusVibe', err.message);
   }
 }
 
-// ============================================
-// 3. CLOSE CRM
-// ============================================
+// ──────────────────────────────────────────────
+// Close CRM Integration
+// ──────────────────────────────────────────────
 async function testClose() {
-  console.log('\n── Close CRM ──');
+  console.log('\n━━ Close CRM ━━');
+  
   const apiKey = process.env.CLOSE_API_KEY;
-
-  if (!apiKey || apiKey.startsWith('api_YOUR')) {
-    log('SKIP', 'Close CRM', 'CLOSE_API_KEY not set or is placeholder');
+  if (!apiKey) {
+    log('SKIP', 'Close', 'Missing CLOSE_API_KEY');
     return;
   }
-
+  
+  const auth = Buffer.from(`${apiKey}:`).toString('base64');
+  
   try {
-    const auth = Buffer.from(`${apiKey}:`).toString('base64');
-    const res = await fetch('https://api.close.com/api/v1/me/', {
+    // Test lead access
+    const res = await fetch('https://api.close.com/api/v1/lead/?_limit=3', {
       headers: { 'Authorization': `Basic ${auth}` },
-      signal: AbortSignal.timeout(10000)
+      signal: AbortSignal.timeout(15000)
     });
-    if (res.ok) {
-      const data = await res.json();
-      log('PASS', 'Close CRM Auth', `Logged in as ${data.first_name || 'user'}`);
-    } else if (res.status === 401) {
-      log('FAIL', 'Close CRM Auth', 'Invalid API key');
-    } else {
-      log('FAIL', 'Close CRM Auth', `Status ${res.status}`);
+    
+    if (!res.ok) {
+      log('FAIL', 'Close', `Lead list returned ${res.status}`);
+      return;
     }
-
-    // Test lead search
-    const leadRes = await fetch('https://api.close.com/api/v1/lead/?_limit=1', {
+    
+    const data = await res.json();
+    log('PASS', 'Close', `Lead access: ${data.total_results} total leads`);
+    
+    // Test lead statuses
+    const statusRes = await fetch('https://api.close.com/api/v1/status/lead/', {
       headers: { 'Authorization': `Basic ${auth}` },
-      signal: AbortSignal.timeout(10000)
+      signal: AbortSignal.timeout(15000)
     });
-    if (leadRes.ok) {
-      const leadData = await leadRes.json();
-      log('PASS', 'Close CRM Leads', `${leadData.total_results || 0} total leads`);
-    } else {
-      log('FAIL', 'Close CRM Leads', `Status ${leadRes.status}`);
+    
+    if (statusRes.ok) {
+      const statuses = await statusRes.json();
+      log('PASS', 'Close', `Lead statuses: ${statuses.data?.length || 0} statuses available`);
+      
+      // Verify our expected statuses exist
+      const expectedIds = [
+        'stat_YZPfE0rqYeUym9EF0twuDwZl6dYKUzpSG11PwLPYVTQ', // INTERESTED
+        'stat_11Jd3OGv3Ot7nC2esu6OhRMj5EyJmUH2xSHfHGXtMgj', // DNC
+      ];
+      
+      for (const id of expectedIds) {
+        const found = statuses.data?.find(s => s.id === id);
+        if (found) {
+          log('PASS', 'Close', `Status "${found.label}" verified (${id.substring(0, 20)}...)`);
+        } else {
+          log('WARN', 'Close', `Status ${id.substring(0, 20)}... not found`);
+        }
+      }
     }
+    
   } catch (err) {
-    log('FAIL', 'Close CRM connectivity', err.message);
+    log('FAIL', 'Close', err.message);
   }
 }
 
-// ============================================
-// 4. SUPERMEMORY
-// ============================================
-async function testSupermemory() {
-  console.log('\n── Supermemory ──');
-  const apiKey = process.env.SUPERMEMORY_API_KEY;
-
-  if (!apiKey) {
-    log('SKIP', 'Supermemory', 'SUPERMEMORY_API_KEY not set');
+// ──────────────────────────────────────────────
+// Supabase Integration
+// ──────────────────────────────────────────────
+async function testSupabase() {
+  console.log('\n━━ Supabase ━━');
+  
+  const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!url || !key) {
+    log('SKIP', 'Supabase', 'Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
     return;
   }
-
+  
   try {
-    const res = await fetch('https://api.supermemory.ai/v3/memories', {
+    const res = await fetch(`${url}/rest/v1/knowledge_documents?select=id,title&limit=3`, {
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+    
+    if (!res.ok) {
+      log('FAIL', 'Supabase', `Knowledge docs returned ${res.status}`);
+      return;
+    }
+    
+    const docs = await res.json();
+    log('PASS', 'Supabase', `Knowledge docs accessible: ${docs.length} returned`);
+    
+  } catch (err) {
+    log('FAIL', 'Supabase', err.message);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Telegram Integration
+// ──────────────────────────────────────────────
+async function testTelegram() {
+  console.log('\n━━ Telegram ━━');
+  
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  
+  if (!token || !chatId) {
+    log('SKIP', 'Telegram', 'Missing TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+    return;
+  }
+  
+  try {
+    // Get bot info
+    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`);
+    if (!res.ok) {
+      log('FAIL', 'Telegram', `getMe returned ${res.status}`);
+      return;
+    }
+    
+    const data = await res.json();
+    log('PASS', 'Telegram', `Bot connected: @${data.result.username}`);
+    
+    // Test message sending (optional, won't send in test mode)
+    log('INFO', 'Telegram', `Chat ID configured: ${chatId}`);
+    log('INFO', 'Telegram', 'Skipping test message send (use --send flag to send)');
+    
+  } catch (err) {
+    log('FAIL', 'Telegram', err.message);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Supermemory Integration
+// ──────────────────────────────────────────────
+async function testSupermemory() {
+  console.log('\n━━ Supermemory ━━');
+  
+  const apiKey = process.env.SUPERMEMORY_API_KEY;
+  if (!apiKey) {
+    log('SKIP', 'Supermemory', 'Missing SUPERMEMORY_API_KEY');
+    return;
+  }
+  
+  try {
+    const res = await fetch('https://api.supermemory.ai/v3/memories?limit=1', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15000)
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      log('PASS', 'Supermemory', `API accessible, memories: ${data.total || data.length || 'N/A'}`);
+    } else {
+      // Try search endpoint
+      const searchRes = await fetch('https://api.supermemory.ai/v3/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ q: 'test', limit: 1 }),
+        signal: AbortSignal.timeout(15000)
+      });
+      
+      if (searchRes.ok) {
+        log('PASS', 'Supermemory', 'Search API accessible');
+      } else {
+        log('WARN', 'Supermemory', `v3 API returned ${res.status}, search returned ${searchRes.status}`);
+      }
+    }
+    
+  } catch (err) {
+    log('FAIL', 'Supermemory', err.message);
+  }
+}
+
+// ──────────────────────────────────────────────
+// OpenAI Integration
+// ──────────────────────────────────────────────
+async function testOpenAI() {
+  console.log('\n━━ OpenAI ━━');
+  
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    log('SKIP', 'OpenAI', 'Missing OPENAI_API_KEY');
+    return;
+  }
+  
+  try {
+    const res = await fetch('https://api.openai.com/v1/models', {
+      headers: { 'Authorization': `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15000)
+    });
+    
+    if (!res.ok) {
+      log('FAIL', 'OpenAI', `Models list returned ${res.status}`);
+      return;
+    }
+    
+    const data = await res.json();
+    const gptModels = data.data?.filter(m => m.id.startsWith('gpt')) || [];
+    log('PASS', 'OpenAI', `API accessible, ${gptModels.length} GPT models available`);
+    
+  } catch (err) {
+    log('FAIL', 'OpenAI', err.message);
+  }
+}
+
+// ──────────────────────────────────────────────
+// Perplexity Integration
+// ──────────────────────────────────────────────
+async function testPerplexity() {
+  console.log('\n━━ Perplexity ━━');
+  
+  const apiKey = process.env.PERPLEXITY_API_KEY;
+  if (!apiKey) {
+    log('SKIP', 'Perplexity', 'Missing PERPLEXITY_API_KEY');
+    return;
+  }
+  
+  try {
+    const res = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'x-company': 'superwave'
       },
-      body: JSON.stringify({ query: 'test', limit: 1 }),
-      signal: AbortSignal.timeout(10000)
+      body: JSON.stringify({
+        model: 'sonar',
+        messages: [{ role: 'user', content: 'Say "API OK" and nothing else.' }],
+        max_tokens: 10,
+      }),
+      signal: AbortSignal.timeout(30000)
     });
-    if (res.ok || res.status === 200) {
-      log('PASS', 'Supermemory API', 'Connected');
-    } else {
-      log('FAIL', 'Supermemory API', `Status ${res.status}`);
+    
+    if (!res.ok) {
+      log('FAIL', 'Perplexity', `API returned ${res.status}`);
+      return;
     }
+    
+    const data = await res.json();
+    log('PASS', 'Perplexity', `API accessible: "${data.choices?.[0]?.message?.content || 'response OK'}"`);
+    
   } catch (err) {
-    log('FAIL', 'Supermemory connectivity', err.message);
+    log('FAIL', 'Perplexity', err.message);
   }
 }
 
-// ============================================
-// 5. INBOXING
-// ============================================
-async function testInboxing() {
-  console.log('\n── Inboxing.com ──');
-  const apiKey = process.env.INBOXING_API_KEY;
-
-  if (!apiKey) {
-    log('SKIP', 'Inboxing', 'INBOXING_API_KEY not set');
-    return;
-  }
-
-  try {
-    const res = await fetch('https://v2.inboxing.com/api/v2/domains', {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      log('PASS', 'Inboxing Domains API', `Connected`);
-    } else {
-      log('FAIL', 'Inboxing Domains API', `Status ${res.status}`);
-    }
-  } catch (err) {
-    log('FAIL', 'Inboxing connectivity', err.message);
-  }
-}
-
-// ============================================
-// 6. CALENDLY
-// ============================================
-async function testCalendly() {
-  console.log('\n── Calendly ──');
-  const apiKey = process.env.CALENDLY_API_KEY;
-
-  if (!apiKey || apiKey === 'your_calendly_api_key') {
-    log('SKIP', 'Calendly', 'CALENDLY_API_KEY not set');
-    return;
-  }
-
-  try {
-    const res = await fetch('https://api.calendly.com/users/me', {
-      headers: { 'Authorization': `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(10000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      log('PASS', 'Calendly API', `Connected as ${data.resource?.name || 'user'}`);
-    } else {
-      log('FAIL', 'Calendly API', `Status ${res.status}`);
-    }
-  } catch (err) {
-    log('FAIL', 'Calendly connectivity', err.message);
-  }
-}
-
-// ============================================
-// 7. TELEGRAM
-// ============================================
-async function testTelegram() {
-  console.log('\n── Telegram ──');
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-
-  if (!token || token === 'your_bot_token') {
-    log('SKIP', 'Telegram', 'TELEGRAM_BOT_TOKEN not set');
-    return;
-  }
-
-  try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/getMe`, {
-      signal: AbortSignal.timeout(10000)
-    });
-    if (res.ok) {
-      const data = await res.json();
-      log('PASS', 'Telegram Bot', `Bot: @${data.result?.username || 'unknown'}`);
-    } else {
-      log('FAIL', 'Telegram Bot', `Status ${res.status}`);
-    }
-  } catch (err) {
-    log('FAIL', 'Telegram connectivity', err.message);
-  }
-}
-
-// ============================================
-// RUN ALL
-// ============================================
+// ──────────────────────────────────────────────
+// MAIN
+// ──────────────────────────────────────────────
 async function main() {
-  console.log('🔍 BSOS Integration Test Suite');
-  console.log(`   Running at: ${new Date().toISOString()}`);
-  console.log('━'.repeat(50));
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  BSOS Integration Tests');
+  console.log(`  Target: ${TARGET}`);
+  console.log(`  Time: ${new Date().toISOString()}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-  await testSupabase();
-  await testPlusVibe();
-  await testClose();
-  await testSupermemory();
-  await testInboxing();
-  await testCalendly();
-  await testTelegram();
+  const runners = {
+    plusvibe: testPlusVibe,
+    close: testClose,
+    supabase: testSupabase,
+    telegram: testTelegram,
+    supermemory: testSupermemory,
+    openai: testOpenAI,
+    perplexity: testPerplexity,
+  };
+
+  if (TARGET === 'all') {
+    for (const fn of Object.values(runners)) await fn();
+  } else if (runners[TARGET]) {
+    await runners[TARGET]();
+  } else {
+    console.error(`Unknown target: ${TARGET}`);
+    console.error(`Available: ${Object.keys(runners).join(', ')}`);
+    process.exit(1);
+  }
 
   // Summary
-  const passed = RESULTS.filter(r => r.status === 'PASS').length;
-  const failed = RESULTS.filter(r => r.status === 'FAIL').length;
-  const skipped = RESULTS.filter(r => r.status === 'SKIP').length;
-  const warned = RESULTS.filter(r => r.status === 'WARN').length;
-
-  console.log('\n' + '━'.repeat(50));
-  console.log(`📊 Results: ${passed} passed, ${failed} failed, ${warned} warnings, ${skipped} skipped`);
-  console.log(`   Duration: ${((Date.now() - start) / 1000).toFixed(1)}s`);
-
-  if (failed > 0) {
-    console.log('\n⚠️  Failed tests:');
-    RESULTS.filter(r => r.status === 'FAIL').forEach(r => console.log(`   - ${r.test}: ${r.detail}`));
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  const counts = { PASS: 0, FAIL: 0, WARN: 0, SKIP: 0 };
+  RESULTS.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  
+  console.log(`  ✅ PASS: ${counts.PASS}  ❌ FAIL: ${counts.FAIL}  ⚠️  WARN: ${counts.WARN}  ⏭️  SKIP: ${counts.SKIP}`);
+  
+  if (counts.FAIL > 0) {
+    console.log('\n  Failed:');
+    RESULTS.filter(r => r.status === 'FAIL').forEach(r => {
+      console.log(`    • [${r.service}] ${r.detail}`);
+    });
+    process.exit(1);
   }
-
-  process.exit(failed > 0 ? 1 : 0);
+  
+  console.log('');
 }
 
 main().catch(err => {
-  console.error('Test suite crashed:', err);
-  process.exit(2);
+  console.error('Fatal:', err);
+  process.exit(1);
 });

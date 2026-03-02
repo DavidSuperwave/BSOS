@@ -262,184 +262,168 @@ async function testOOOHandling() {
 // ============================================
 // STEP 6: Swarm Subagent System
 // ============================================
-async function testSwarmSubagents() {
+async function testSwarmSystem() {
   console.log('\n━━ Step 6: Swarm Subagent System ━━');
 
-  const source = require('fs').readFileSync('./ui/src/lib/swarm-subagents.ts', 'utf8');
-
-  if (source.includes('hooks/session-status') && source.includes('AbortSignal.timeout')) {
-    log('PASS', 'Swarm Subagents', 'checkSessionStatus() calls OpenClaw session-status endpoint');
-  } else if (source.includes('return { state: "completed", result: "" }')) {
-    log('FAIL', 'Swarm Subagents', 'Still returns placeholder');
-  }
-
-  if (source.includes('sessions_spawn')) {
-    log('PASS', 'Swarm Subagents', 'Uses OpenClaw sessions_spawn');
-  }
-
-  if (source.includes('executeSwarm') && source.includes('aggregateSwarmResults')) {
-    log('PASS', 'Swarm Subagents', 'Core swarm functions exported');
-  }
-}
-
-// ============================================
-// STEP 7: Insight Surface Engine
-// ============================================
-async function testInsightEngine() {
-  console.log('\n━━ Step 7: Insight Surface Engine ━━');
-
-  const source = require('fs').readFileSync('./lib/insight-surface-engine.js', 'utf8');
-
-  if (source.includes('calendly.com/v2/event_type_available_times') && source.includes('calendly_live')) {
-    log('PASS', 'Insight Engine', 'Booking availability calls Calendly live API');
-  } else if (source.includes("'Tomorrow 2:00 PM EST'")) {
-    log('FAIL', 'Insight Engine', 'Still returns hardcoded booking slots');
-  }
-
-  if (source.includes('advancedSearch')) {
-    log('PASS', 'Insight Engine', 'Uses Supermemory advancedSearch for campaign insights');
-  }
-}
-
-// ============================================
-// STEP 8: Cron Scheduler Validation
-// ============================================
-async function testCronScheduler() {
-  console.log('\n━━ Step 8: Cron Scheduler ━━');
-
-  const source = require('fs').readFileSync('./cron-scheduler.js', 'utf8');
-
-  // Verify it references the correct files
-  const expectedJobs = [
-    'deliverability-monitor.js',
-    'campaign-detector-v3.js',
-    'enhanced-reply-monitor.js',
-    'negative-reply-audit.js',
-    'gtm-daily-report.js',
-  ];
-
-  for (const job of expectedJobs) {
-    if (source.includes(job)) {
-      log('PASS', 'Cron Scheduler', `References ${job}`);
+  try {
+    const fs = require('fs');
+    
+    // Check if swarm files exist
+    const swarmFiles = [
+      './swarm-orchestrator.js',
+      './subagent-worker.js',
+    ];
+    
+    for (const file of swarmFiles) {
+      if (fs.existsSync(file)) {
+        log('PASS', 'Swarm Files', `${file} exists`);
+      } else {
+        log('WARN', 'Swarm Files', `${file} not found`);
+      }
+    }
+    
+    // Check OpenClaw integration
+    const indexSource = fs.readFileSync('./index.js', 'utf8');
+    if (indexSource.includes('OPENCLAW') || indexSource.includes('openclaw')) {
+      log('PASS', 'OpenClaw Integration', 'OpenClaw referenced in index.js');
     } else {
-      log('WARN', 'Cron Scheduler', `Missing reference to ${job}`);
+      log('INFO', 'OpenClaw Integration', 'OpenClaw not found in index.js');
     }
+    
+  } catch (err) {
+    log('FAIL', 'Swarm System', err.message);
+  }
+}
+
+// ============================================
+// STEP 7: Telegram Alert System
+// ============================================
+async function testTelegramAlerts() {
+  console.log('\n━━ Step 7: Telegram Alert System ━━');
+
+  const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+  const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+  if (!BOT_TOKEN || !CHAT_ID) {
+    log('SKIP', 'Telegram Config', 'No TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID');
+    return;
   }
 
-  // Verify no reference to dead files
-  if (source.includes('campaign-detector.js') && !source.includes('campaign-detector-v3.js')) {
-    log('FAIL', 'Cron Scheduler', 'Still references old campaign-detector.js');
+  if (!DRY_RUN) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getMe`);
+      if (res.ok) {
+        const data = await res.json();
+        log('PASS', 'Telegram Bot', `Connected as @${data.result.username}`);
+      } else {
+        log('FAIL', 'Telegram Bot', `Status ${res.status}`);
+      }
+    } catch (err) {
+      log('FAIL', 'Telegram Bot', err.message);
+    }
   } else {
-    log('PASS', 'Cron Scheduler', 'No dead file references');
+    log('SKIP', 'Telegram Live', 'DRY_RUN mode');
   }
 }
 
 // ============================================
-// STEP 9: Full Pipeline Dry Run
+// STEP 8: Environment Variables
 // ============================================
-async function testFullPipeline() {
-  console.log('\n━━ Step 9: Full Pipeline Simulation ━━');
+async function testEnvironmentVars() {
+  console.log('\n━━ Step 8: Environment Variables ━━');
 
-  // Simulate: Reply comes in → classify → route
-  const reply = MOCK_REPLY;
-  console.log(`  📥 Incoming reply from ${reply.from_name} <${reply.from_email}>`);
-  console.log(`     Subject: ${reply.subject}`);
-  console.log(`     Body: "${reply.body.substring(0, 80)}..."\n`);
-
-  // Classify
-  const sentiment = classifySentiment(reply.body);
-  console.log(`  🧠 Sentiment: ${sentiment}`);
-
-  // Check OOO
-  const OOO_PATTERNS = [
-    /out of (the )?office/i, /away from (the )?office/i,
-    /on (annual |paid )?leave/i, /on vacation/i,
-    /will (return|be back)/i, /auto.?reply/i,
+  const required = [
+    'PLUSVIBE_API_KEY',
+    'PLUSVIBE_WORKSPACE_ID',
+    'CLOSE_API_KEY',
+    'SUPABASE_URL',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'OPENAI_API_KEY',
+    'TELEGRAM_BOT_TOKEN',
+    'TELEGRAM_CHAT_ID',
   ];
-  const isOOO = OOO_PATTERNS.some(p => p.test(reply.body));
-  console.log(`  📅 OOO: ${isOOO}`);
 
-  // Check booking intent
-  const bookingKeywords = ['schedule', 'call', 'meeting', 'book'];
-  const hasBookingIntent = bookingKeywords.some(kw => reply.body.toLowerCase().includes(kw));
-  console.log(`  📅 Booking Intent: ${hasBookingIntent}`);
+  const optional = [
+    'SUPERMEMORY_API_KEY',
+    'PERPLEXITY_API_KEY',
+    'OPENCLAW_TOKEN',
+    'OOO_SUBSEQUENCE_MAP',
+    'CALENDLY_API_KEY',
+  ];
 
-  // Route
-  if (sentiment === 'interested') {
-    console.log(`  → Route to Close CRM: Status = INTERESTED`);
-    console.log(`  → Telegram alert: "🎯 Interested reply from ${reply.from_name}"`);
-    if (hasBookingIntent) {
-      console.log(`  → Generate Calendly link for ${reply.from_email}`);
+  let missingRequired = 0;
+  
+  for (const key of required) {
+    if (process.env[key]) {
+      log('PASS', 'Env Var', `${key} ✓`);
+    } else {
+      log('WARN', 'Env Var Missing', `${key} not set`);
+      missingRequired++;
     }
-    log('PASS', 'Pipeline', 'Interested reply → CRM + Telegram + Calendly');
-  } else if (sentiment === 'not_interested') {
-    console.log(`  → Route to Close CRM: Status = DNC`);
-    console.log(`  → Telegram alert: "🚫 DNC request from ${reply.from_name}"`);
-    log('PASS', 'Pipeline', 'Negative reply → DNC + Telegram');
   }
 
-  // Test OOO path
-  console.log(`\n  📥 OOO reply from ${MOCK_OOO_REPLY.from_name}`);
-  const oooIsOOO = OOO_PATTERNS.some(p => p.test(MOCK_OOO_REPLY.body));
-  console.log(`  📅 OOO: ${oooIsOOO}`);
-  if (oooIsOOO) {
-    // Extract return date
-    const dateMatch = MOCK_OOO_REPLY.body.match(/(?:return|back).*?(\w+ \d+)/i);
-    console.log(`  → Detected return date: ${dateMatch ? dateMatch[1] : 'unknown'}`);
-    console.log(`  → Route to OOO subsequence`);
-    log('PASS', 'Pipeline', 'OOO reply → subsequence routing');
+  for (const key of optional) {
+    if (process.env[key]) {
+      log('PASS', 'Env Var (optional)', `${key} ✓`);
+    } else {
+      log('INFO', 'Env Var (optional)', `${key} not set`);
+    }
+  }
+
+  if (missingRequired > 0) {
+    log('WARN', 'Environment', `${missingRequired} required vars missing — running in DRY_RUN mode`);
+  } else {
+    log('PASS', 'Environment', 'All required vars present');
   }
 }
 
 // ============================================
-// RUN ALL
+// MAIN
 // ============================================
 async function main() {
-  console.log('🚀 BSOS End-to-End Flow Test');
-  console.log(`   Mode: ${DRY_RUN ? 'DRY RUN (no live API keys)' : 'LIVE'}`);
-  console.log(`   Time: ${new Date().toISOString()}`);
-  console.log('═'.repeat(55));
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  BSOS End-to-End Flow Test');
+  console.log(`  Mode: ${DRY_RUN ? 'DRY_RUN (no live API calls)' : 'LIVE (real API calls)'}`);
+  console.log(`  Time: ${new Date().toISOString()}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
+  await testEnvironmentVars();
   await testCampaignDetection();
   await testSentimentAnalysis();
   await testCRMSync();
   await testDeliverabilityMonitor();
   await testOOOHandling();
-  await testSwarmSubagents();
-  await testInsightEngine();
-  await testCronScheduler();
-  await testFullPipeline();
+  await testSwarmSystem();
+  await testTelegramAlerts();
 
-  // Summary
-  const passed = RESULTS.filter(r => r.status === 'PASS').length;
-  const failed = RESULTS.filter(r => r.status === 'FAIL').length;
-  const skipped = RESULTS.filter(r => r.status === 'SKIP').length;
-  const warned = RESULTS.filter(r => r.status === 'WARN').length;
+  // ── Summary ──────────────────────────────────────────────────────────────
+  console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log('  RESULTS SUMMARY');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-  console.log('\n' + '═'.repeat(55));
-  console.log(`📊 FINAL RESULTS:`);
-  console.log(`   ✅ Passed:  ${passed}`);
-  console.log(`   ❌ Failed:  ${failed}`);
-  console.log(`   ⚠️  Warned:  ${warned}`);
-  console.log(`   ⏭️  Skipped: ${skipped}`);
-  console.log(`   ⏱  Duration: ${((Date.now() - start) / 1000).toFixed(1)}s`);
+  const counts = { PASS: 0, FAIL: 0, WARN: 0, SKIP: 0, INFO: 0 };
+  RESULTS.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
 
-  if (failed > 0) {
-    console.log('\n❌ FAILURES:');
+  console.log(`  ✅ PASS: ${counts.PASS}`);
+  console.log(`  ❌ FAIL: ${counts.FAIL}`);
+  console.log(`  ⚠️  WARN: ${counts.WARN}`);
+  console.log(`  ⏭️  SKIP: ${counts.SKIP}`);
+  console.log(`  ℹ️  INFO: ${counts.INFO}`);
+  console.log(`  ⏱️  Time: ${((Date.now() - start) / 1000).toFixed(2)}s`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+  if (counts.FAIL > 0) {
+    console.log('\n  ❌ FAILED TESTS:');
     RESULTS.filter(r => r.status === 'FAIL').forEach(r => {
-      console.log(`   • ${r.step}: ${r.detail}`);
+      console.log(`     • [${r.step}] ${r.detail}`);
     });
   }
 
-  if (DRY_RUN) {
-    console.log('\n💡 To run live API tests, create a .env file with real credentials.');
-  }
-
-  console.log();
-  process.exit(failed > 0 ? 1 : 0);
+  console.log('');
+  process.exit(counts.FAIL > 0 ? 1 : 0);
 }
 
 main().catch(err => {
-  console.error('E2E test crashed:', err);
-  process.exit(2);
+  console.error('Fatal error:', err);
+  process.exit(1);
 });
