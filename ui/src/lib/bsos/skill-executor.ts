@@ -194,3 +194,36 @@ export async function getExecutionHistory(
 export function listRegisteredSkills(): SkillDefinition[] {
   return Array.from(skillRegistry.values());
 }
+
+export async function executeApprovedAction(approvalId: string) {
+  const db = getAdminClient();
+  const { data: approval } = await db
+    .from("approval_requests")
+    .select("*")
+    .eq("id", approvalId)
+    .maybeSingle();
+
+  if (!approval) {
+    throw new Error(`Approval ${approvalId} not found`);
+  }
+  if (approval.status !== "approved") {
+    throw new Error(`Approval ${approvalId} is not approved`);
+  }
+
+  const skillId = approval.skill_id || approval.skill_name;
+  if (!skillId) {
+    return { executed: false, reason: "No skill_id/skill_name on approval request" };
+  }
+
+  const result = await executeSkill(
+    skillId,
+    {
+      companyId: approval.company_id,
+      userId: approval.approved_by || "system",
+      targetContainerId: undefined,
+    } as any,
+    (approval.proposed_action || approval.action_payload || {}) as Record<string, unknown>
+  );
+
+  return { executed: true, result };
+}

@@ -14,15 +14,17 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
 
   if (body.reply_text) {
-    const result = classifyReply(body.reply_text);
+    const result = await classifyReply(body.reply_text);
     return NextResponse.json(result);
   }
 
   if (body.replies && Array.isArray(body.replies)) {
-    const classified = body.replies.map((text: string) => {
-      const result = classifyReply(text);
-      return { text: text.substring(0, 100), ...result };
-    });
+    const classified = await Promise.all(
+      body.replies.map(async (text: string) => {
+        const result = await classifyReply(text);
+        return { text: text.substring(0, 100), ...result };
+      })
+    );
     const quality = computeReplyQuality(
       classified.map((c: any) => ({ classification: c.classification }))
     );

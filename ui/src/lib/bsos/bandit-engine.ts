@@ -65,7 +65,7 @@ function normalSample(): number {
 /**
  * Apply Ebbinghaus decay to reduce confidence over time.
  */
-function applyDecay(
+function applyDecayToParams(
   alpha: number,
   beta: number,
   daysSinceLastUpdate: number
@@ -123,7 +123,7 @@ export function allocateVolume(
       ? (now.getTime() - new Date(arm.lastUpdated).getTime()) / (1000 * 60 * 60 * 24)
       : 0;
 
-    const { alpha, beta } = applyDecay(arm.alpha, arm.beta, daysSince);
+    const { alpha, beta } = applyDecayToParams(arm.alpha, arm.beta, daysSince);
     samples[campaignId] = betaSample(alpha, beta);
   }
 
@@ -193,4 +193,174 @@ export async function initializeBanditArm(
     total_rewards: 0,
     last_updated: now,
   });
+}
+
+// Backward-compatible API used by /api/bsos/bandit and cron decay routes.
+export async function applyDecay(companyId: string): Promise<number> {
+  const db = getAdminClient();
+  const now = new Date();
+  let decayed = 0;
+
+  const { data: arms } = await db
+    .from("bandit_arms")
+    .select("id, alpha, beta, last_updated")
+    .eq("company_id", companyId);
+
+  for (const arm of arms || []) {
+    const daysSince = arm.last_updated
+      ? (now.getTime() - new Date(arm.last_updated).getTime()) / (1000 * 60 * 60 * 24)
+      : 0;
+    if (daysSince < 1) continue;
+
+    const next = applyDecayToParams(arm.alpha ?? COLD_START_ALPHA, arm.beta ?? COLD_START_BETA, daysSince);
+    await db
+      .from("bandit_arms")
+      .update({
+        alpha: next.alpha,
+        beta: next.beta,
+        last_updated: now.toISOString(),
+      })
+      .eq("id", arm.id);
+    decayed++;
+  }
+
+  return decayed;
+}
+
+export async function selectArm(companyId: string, campaignType: string) {
+  const db = getAdminClient();
+  const nowIso = new Date().toISOString();
+
+  let { data: arms } = await db
+    .from("bandit_arms")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("campaign_type", campaignType);
+
+  if (!arms || arms.length === 0) {
+    await db.from("bandit_arms").insert({
+      company_id: companyId,
+      campaign_type: campaignType,
+      arm_name: "default",
+      alpha: COLD_START_ALPHA,
+      beta: COLD_START_BETA,
+      total_pulls: 0,
+      total_rewards: 0,
+      last_updated: nowIso,
+    });
+    arms = [
+      {
+        company_id: companyId,
+        campaign_type: campaignType,
+        arm_name: "default",
+        alpha: COLD_START_ALPHA,
+        beta: COLD_START_BETA,
+        total_pulls: 0,
+        total_rewards: 0,
+        last_updated: nowIso,
+      },
+    ] as any[];
+  }
+
+  let best = -1;
+  let selected = arms[0];
+  for (const arm of arms) {
+    const sample = betaSample(arm.alpha ?? COLD_START_ALPHA, arm.beta ?? COLD_START_BETA);
+    if (sample > best) {
+      best = sample;
+      selected = arm;
+    }
+  }
+
+  return {
+    company_id: companyId,
+    campaign_type: campaignType,
+    arm_name: selected.arm_name || selected.arm_value || "default",
+    sample: best,
+    alpha: selected.alpha ?? COLD_START_ALPHA,
+    beta: selected.beta ?? COLD_START_BETA,
+  };
+}
+
+export async function updateArm(
+  companyId: string,
+  campaignType: string,
+  armName: string,
+  success: boolean
+): Promise<void> {
+  const db = getAdminClient();
+  const now = new Date().toISOString();
+
+  const { data: existing } = await db
+    .from("bandit_arms")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("campaign_type", campaignType)
+    .eq("arm_name", armName)
+    .maybeSingle();
+
+  const currentAlpha = existing?.alpha ?? COLD_START_ALPHA;
+  const currentBeta = existing?.beta ?? COLD_START_BETA;
+  const totalPulls = (existing?.total_pulls ?? 0) + 1;
+  const totalRewards = (existing?.total_rewards ?? 0) + (success ? 1 : 0);
+
+  if (existing?.id) {
+    await db
+      .from("bandit_arms")
+      .update({
+        alpha: currentAlpha + (success ? 1 : 0),
+        beta: currentBeta + (success ? 0 : 1),
+        total_pulls: totalPulls,
+        total_rewards: totalRewards,
+        successes: (existing?.successes ?? 0) + (success ? 1 : 0),
+        failures: (existing?.failures ?? 0) + (success ? 0 : 1),
+        last_updated: now,
+      })
+      .eq("id", existing.id);
+    return;
+  }
+
+  await db.from("bandit_arms").insert({
+    company_id: companyId,
+    campaign_type: campaignType,
+    arm_name: armName,
+    alpha: COLD_START_ALPHA + (success ? 1 : 0),
+    beta: COLD_START_BETA + (success ? 0 : 1),
+    total_pulls: 1,
+    total_rewards: success ? 1 : 0,
+    successes: success ? 1 : 0,
+    failures: success ? 0 : 1,
+    last_updated: now,
+  });
+}
+
+export async function getBanditSummary(companyId: string) {
+  const db = getAdminClient();
+  const { data: arms } = await db
+    .from("bandit_arms")
+    .select("*")
+    .eq("company_id", companyId);
+
+  const grouped: Record<string, any[]> = {};
+  for (const arm of arms || []) {
+    const key = arm.campaign_type || "default";
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push({
+      arm_name: arm.arm_name || arm.arm_value || "default",
+      alpha: arm.alpha,
+      beta: arm.beta,
+      total_pulls: arm.total_pulls ?? 0,
+      total_rewards: arm.total_rewards ?? 0,
+      updated_at: arm.last_updated || arm.updated_at || null,
+    });
+  }
+
+  return {
+    company_id: companyId,
+    campaign_types: Object.entries(grouped).map(([campaign_type, items]) => ({
+      campaign_type,
+      arms: items,
+    })),
+    total_arms: (arms || []).length,
+  };
 }

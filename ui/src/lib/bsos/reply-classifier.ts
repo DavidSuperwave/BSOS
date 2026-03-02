@@ -10,7 +10,7 @@
  * All classifications labeled as INFERENCE — never taken as ground truth.
  */
 
-import type { ReplyClassification } from "./types";
+import type { ReplyClassification, ReplyQualityBreakdown } from "./types";
 
 export interface ClassificationResult {
   classification: ReplyClassification;
@@ -194,6 +194,54 @@ export async function classifyReply(
 
   // 3. Fallback
   return keywordResult ?? makeResult("unknown", 0.1, "fallback", 50, 50, 50, "No classifier available");
+}
+
+export function computeReplyQuality(
+  items: Array<ReplyClassification | ClassificationResult | { classification?: ReplyClassification }>
+): ReplyQualityBreakdown {
+  const by: Record<ReplyClassification, number> = {
+    positive_interested: 0,
+    positive_referral: 0,
+    neutral_info_request: 0,
+    neutral_ooo: 0,
+    negative_not_interested: 0,
+    negative_unsubscribe: 0,
+    negative_hostile: 0,
+    auto_reply: 0,
+    unknown: 0,
+  };
+
+  for (const item of items || []) {
+    const cls = (typeof item === "string"
+      ? item
+      : (item as any)?.classification || "unknown") as ReplyClassification;
+    by[cls] = (by[cls] || 0) + 1;
+  }
+
+  const total = Object.values(by).reduce((sum, n) => sum + n, 0);
+  if (total === 0) {
+    return {
+      total_replies: 0,
+      by_classification: by,
+      quality_score: 0,
+      factor_1_icp_fit: 0,
+      factor_2_timing: 0,
+      factor_3_offer_strength: 0,
+    };
+  }
+
+  const positive = by.positive_interested + by.positive_referral;
+  const negative = by.negative_not_interested + by.negative_unsubscribe + by.negative_hostile;
+  const quality = Math.round(((positive * 1 + (total - positive - negative) * 0.3) / total) * 100);
+
+  return {
+    total_replies: total,
+    by_classification: by,
+    quality_score: Math.max(0, Math.min(100, quality)),
+    factor_1_icp_fit: Math.max(0, Math.min(100, Math.round((positive / total) * 100))),
+    factor_2_timing: 50,
+    factor_3_offer_strength: 50,
+  };
 }
 
 // ─── Internal helpers ───

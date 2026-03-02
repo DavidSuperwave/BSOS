@@ -89,7 +89,7 @@ export async function generateEODReport(companyId: string): Promise<EODReport> {
 
     let replyQuality: ReplyQualityBreakdown | null = null;
     if (replyTexts.length > 0) {
-      const classifications = replyTexts.map(classifyReply);
+      const classifications = await Promise.all(replyTexts.map((text) => classifyReply(text)));
       replyQuality = computeReplyQuality(classifications);
     }
 
@@ -249,4 +249,29 @@ export async function getEODReports(
     .order("snapshot_date", { ascending: false });
 
   return (data || []).map((d) => d.report_json);
+}
+
+export async function runEODReports(): Promise<{
+  companies_processed: number;
+  errors: string[];
+}> {
+  const db = getAdminClient();
+  const errors: string[] = [];
+  let companiesProcessed = 0;
+
+  const { data: companies } = await db
+    .from("companies")
+    .select("id")
+    .eq("status", "active");
+
+  for (const company of companies || []) {
+    try {
+      await generateEODReport(company.id);
+      companiesProcessed++;
+    } catch (err: any) {
+      errors.push(`${company.id}: ${err?.message || String(err)}`);
+    }
+  }
+
+  return { companies_processed: companiesProcessed, errors };
 }

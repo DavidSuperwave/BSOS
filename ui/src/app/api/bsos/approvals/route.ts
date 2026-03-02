@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireCompanyAccess, authenticateUser } from "@/lib/api-auth";
-import { getPendingApprovals, resolveApproval, submitForApproval } from "@/lib/bsos/approval-manager";
+import { requireCompanyAccess } from "@/lib/api-auth";
+import { getPendingApprovals, submitForApproval } from "@/lib/bsos/approval-manager";
 
 /**
  * GET /api/bsos/approvals?company_id=X

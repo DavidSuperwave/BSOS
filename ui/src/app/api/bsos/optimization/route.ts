@@ -3,7 +3,7 @@ import { requireCompanyAccess } from "@/lib/api-auth";
 import {
   getOptimizationState,
   setOptimizationMode,
-  checkPhaseTransition,
+  checkPhaseTransitionForCampaign,
   advancePhase,
 } from "@/lib/bsos/phase-manager";
 
@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   if (result.error) return result.error;
 
   const state = await getOptimizationState(companyId, campaignId);
-  const transition = await checkPhaseTransition(companyId, campaignId);
+  const transition = await checkPhaseTransitionForCampaign(companyId, campaignId);
 
   return NextResponse.json({ state, transition });
 }

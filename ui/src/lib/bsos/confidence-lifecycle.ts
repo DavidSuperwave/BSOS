@@ -160,3 +160,107 @@ export async function decayAllEntries(companyId: string): Promise<void> {
       .eq("id", entry.id);
   }
 }
+
+export async function getActiveLearnings(
+  companyId: string,
+  entryType?: string
+): Promise<LearningEntry[]> {
+  const db = getAdminClient();
+  let query = db
+    .from("learning_entries")
+    .select("*")
+    .eq("company_id", companyId)
+    .or(`valid_until.is.null,valid_until.gt.${new Date().toISOString()}`)
+    .order("last_updated_at", { ascending: false });
+
+  if (entryType) query = query.eq("entry_type", entryType);
+  const { data, error } = await query;
+  if (error) throw new Error(`[ConfidenceLifecycle] Failed to fetch learnings: ${error.message}`);
+  return (data || []) as LearningEntry[];
+}
+
+export async function recordLearning(
+  companyId: string,
+  entryType: string,
+  content: string,
+  sourceCampaignId?: string,
+  initialConfidence = 0.1
+): Promise<LearningEntry> {
+  const db = getAdminClient();
+  const now = new Date().toISOString();
+  const confidence = Math.max(0, Math.min(1, initialConfidence));
+  const tier = classifyConfidenceTier(confidence);
+
+  const { data, error } = await db
+    .from("learning_entries")
+    .insert({
+      company_id: companyId,
+      entry_type: entryType,
+      content,
+      confidence,
+      confidence_tier: tier,
+      positive_weight: 0,
+      negative_weight: 0,
+      evidence_count: 0,
+      source_campaign_id: sourceCampaignId || null,
+      source_campaign_ids: sourceCampaignId ? [sourceCampaignId] : [],
+      valid_from: now,
+      valid_until: null,
+      last_updated_at: now,
+    })
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    throw new Error(`[ConfidenceLifecycle] Failed to record learning: ${error?.message}`);
+  }
+
+  return data as LearningEntry;
+}
+
+export async function applyConfidenceDecay(
+  companyId: string
+): Promise<{ decayed: number; expired: number }> {
+  const db = getAdminClient();
+  const now = new Date();
+  let decayed = 0;
+  let expired = 0;
+
+  const { data: entries } = await db
+    .from("learning_entries")
+    .select("id, confidence, positive_weight, negative_weight, evidence_count, last_updated_at")
+    .eq("company_id", companyId);
+
+  for (const entry of entries || []) {
+    const daysSince = entry.last_updated_at
+      ? (now.getTime() - new Date(entry.last_updated_at).getTime()) / (1000 * 60 * 60 * 24)
+      : 0;
+    if (daysSince < 1) continue;
+
+    const confidence = computeConfidence(
+      entry.evidence_count,
+      entry.positive_weight,
+      entry.negative_weight,
+      daysSince
+    );
+    const tier = classifyConfidenceTier(confidence);
+    const update: Record<string, any> = {
+      confidence,
+      confidence_tier: tier,
+      last_updated_at: now.toISOString(),
+    };
+
+    if (confidence < 0.05) {
+      update.valid_until = now.toISOString();
+      expired++;
+    }
+
+    await db
+      .from("learning_entries")
+      .update(update)
+      .eq("id", entry.id);
+    decayed++;
+  }
+
+  return { decayed, expired };
+}

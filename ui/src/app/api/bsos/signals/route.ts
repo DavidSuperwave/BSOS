@@ -14,10 +14,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "company_id required" }, { status: 400 });
   }
 
-  const authResult = await requireCompanyAccess(request, companyId);
-  if (!authResult.ok) {
-    return NextResponse.json({ error: authResult.error }, { status: 401 });
-  }
+  const authResult = await requireCompanyAccess(companyId);
+  if (authResult.error) return authResult.error;
 
   const db = getAdminClient();
   const since = searchParams.get("since") || new Date(Date.now() - 86400000).toISOString();

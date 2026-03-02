@@ -130,7 +130,7 @@ export async function syncPlusVibe(companyId: string): Promise<SyncResult> {
     result.errors.push(`Fatal: ${err.message}`);
   }
 
-  result.duration_ms = Date.now() - result.duration_ms;
+  result.duration_ms = Date.now() - start;
   return result;
 }
 

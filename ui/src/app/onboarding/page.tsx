@@ -173,14 +173,38 @@ function OnboardingContent() {
         }),
       });
 
-      const deployRes = await fetch(`/api/companies/${companyId}/deploy-agent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          onboarding_data: data,
-          uploaded_file_count: data._uploaded_file_count || 0,
-        }),
-      });
+      const uploadedEntries = Array.isArray(data._uploaded_files) ? data._uploaded_files : [];
+      const uploadedFiles = uploadedEntries
+        .map((entry: any) => entry?.file)
+        .filter((file: any): file is File => file instanceof File);
+      const onboardingDataForDeploy = {
+        ...data,
+        // Strip raw File objects from JSON payload; files are sent as multipart parts.
+        _uploaded_files: uploadedEntries.map(({ file, ...rest }: any) => rest),
+      };
+
+      let deployRes: Response;
+      if (uploadedFiles.length > 0) {
+        const formData = new FormData();
+        formData.append("onboarding_data", JSON.stringify(onboardingDataForDeploy));
+        formData.append("uploaded_file_count", String(uploadedFiles.length));
+        for (const file of uploadedFiles) {
+          formData.append("uploaded_files", file, file.name);
+        }
+        deployRes = await fetch(`/api/companies/${companyId}/deploy-agent`, {
+          method: "POST",
+          body: formData,
+        });
+      } else {
+        deployRes = await fetch(`/api/companies/${companyId}/deploy-agent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            onboarding_data: onboardingDataForDeploy,
+            uploaded_file_count: data._uploaded_file_count || 0,
+          }),
+        });
+      }
 
       if (!deployRes.ok) {
         const body = await deployRes.json().catch(() => ({}));

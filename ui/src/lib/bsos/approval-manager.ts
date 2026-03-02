@@ -138,3 +138,50 @@ export async function getPendingApprovals(
 
   return (data || []) as ApprovalRequest[];
 }
+
+export async function submitForApproval(input: {
+  company_id: string;
+  skill_name?: string;
+  skill_id?: string;
+  action_type?: string;
+  action_payload?: Record<string, any>;
+  rationale?: string;
+  confidence_score?: number;
+  predicted_impact?: Record<string, any>;
+}): Promise<ApprovalRequest> {
+  const risk = "L2" as RiskLevel;
+  return createApprovalRequest(
+    input.company_id,
+    input.skill_id || input.skill_name || "unknown_skill",
+    input.action_payload || {},
+    risk,
+    input.rationale || ""
+  );
+}
+
+export async function resolveApproval(
+  requestId: string,
+  resolution: {
+    status: "approved" | "rejected";
+    resolved_by?: string;
+    feedback?: string;
+  }
+): Promise<void> {
+  const actor = resolution.resolved_by || "system";
+  if (resolution.status === "approved") {
+    await approveAction(requestId, actor);
+  } else {
+    await rejectAction(requestId, actor, resolution.feedback || "Rejected");
+  }
+
+  const db = getAdminClient();
+  await db
+    .from("approval_requests")
+    .update({
+      resolved_at: new Date().toISOString(),
+      resolved_by: actor,
+      feedback: resolution.feedback || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", requestId);
+}

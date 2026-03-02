@@ -1,4 +1,3 @@
-import * as pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 
 export interface AnalyzedDocument {
@@ -91,8 +90,16 @@ async function extractTextFromFile(file: File): Promise<string> {
   const buffer = Buffer.from(await file.arrayBuffer());
 
   if (fileName.endsWith(".pdf")) {
-    const result = await pdfParse(buffer);
-    return result.text || "";
+    // Lazy-load PDF parser so deploy-agent route does not crash at module import time.
+    try {
+      const mod = await import("pdf-parse");
+      const parser = (mod as any).default ?? mod;
+      const result = await parser(buffer);
+      return result?.text || "";
+    } catch (error: any) {
+      console.warn("[Intake] PDF parsing unavailable, falling back to empty text:", error?.message || error);
+      return "";
+    }
   }
 
   if (fileName.endsWith(".docx")) {

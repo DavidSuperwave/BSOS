@@ -161,3 +161,39 @@ export async function completeColdStart(
     })
     .eq("company_id", companyId);
 }
+
+export async function checkColdStartGraduation(
+  companyId: string,
+  campaignId: string
+): Promise<{
+  company_id: string;
+  campaign_id: string;
+  should_exit: boolean;
+  reason: string;
+  metrics: { total_sent: number; total_replies: number; bounce_rate: number };
+}> {
+  const db = getAdminClient();
+  const { data: signals } = await db
+    .from("campaign_signals")
+    .select("signal_type")
+    .eq("company_id", companyId)
+    .eq("campaign_id", campaignId);
+
+  const sent = (signals || []).filter((s) => s.signal_type === "open").length;
+  const replies = (signals || []).filter((s) => s.signal_type === "reply").length;
+  const bounces = (signals || []).filter((s) => s.signal_type === "bounce").length;
+  const bounceRate = sent > 0 ? bounces / sent : 0;
+  const evalResult = checkColdStartExit(sent, replies, bounceRate);
+
+  return {
+    company_id: companyId,
+    campaign_id: campaignId,
+    should_exit: evalResult.shouldExit,
+    reason: evalResult.reason,
+    metrics: {
+      total_sent: sent,
+      total_replies: replies,
+      bounce_rate: bounceRate,
+    },
+  };
+}

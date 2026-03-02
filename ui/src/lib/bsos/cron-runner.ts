@@ -24,6 +24,29 @@ export interface CronRunResult {
   triggered_at: string;
 }
 
+function getExpectedCronAuthHeader(): string | null {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return null;
+  return `Bearer ${secret}`;
+}
+
+export function verifyCronSecret(authHeader: string | null): boolean {
+  const expected = getExpectedCronAuthHeader();
+  if (!expected) return false;
+  return authHeader === expected;
+}
+
+async function getActiveCompanies() {
+  const db = getAdminClient();
+  const { data, error } = await db
+    .from("companies")
+    .select("id, name")
+    .eq("status", "active");
+
+  if (error) throw new Error(`Failed to fetch companies: ${error.message}`);
+  return data || [];
+}
+
 /**
  * Run health checks for all active companies.
  */
@@ -38,17 +61,11 @@ export async function runHealthCheckJob(): Promise<CronRunResult> {
   };
 
   try {
-    const db = getAdminClient();
-    const { data: companies, error } = await db
-      .from("companies")
-      .select("id, name")
-      .eq("is_active", true);
-
-    if (error) throw new Error(`Failed to fetch companies: ${error.message}`);
+    const companies = await getActiveCompanies();
 
     for (const company of companies || []) {
       try {
-        const { overall, failures } = await runHealthChecks(company.id);
+        const { overall } = await runHealthChecks(company.id);
         result.companies_processed++;
 
         if (overall === "critical") {
@@ -84,13 +101,7 @@ export async function runFullSyncJob(): Promise<CronRunResult> {
   };
 
   try {
-    const db = getAdminClient();
-    const { data: companies, error } = await db
-      .from("companies")
-      .select("id, name")
-      .eq("is_active", true);
-
-    if (error) throw new Error(`Failed to fetch companies: ${error.message}`);
+    const companies = await getActiveCompanies();
 
     for (const company of companies || []) {
       try {
@@ -129,12 +140,7 @@ export async function runEODReportJob(): Promise<CronRunResult> {
 
   try {
     const db = getAdminClient();
-    const { data: companies, error } = await db
-      .from("companies")
-      .select("id, name")
-      .eq("is_active", true);
-
-    if (error) throw new Error(`Failed to fetch companies: ${error.message}`);
+    const companies = await getActiveCompanies();
 
     for (const company of companies || []) {
       try {
@@ -177,6 +183,20 @@ export async function runEODReportJob(): Promise<CronRunResult> {
 
   result.duration_ms = Date.now() - start;
   return result;
+}
+
+// Backward-compatible exports used by API routes.
+export async function runFullSync(): Promise<CronRunResult> {
+  return runFullSyncJob();
+}
+
+export async function runFailureCheck(): Promise<CronRunResult> {
+  // Current quick-check implementation reuses full sync logic.
+  return runFullSyncJob();
+}
+
+export async function runHealthCheckCron(): Promise<CronRunResult> {
+  return runHealthCheckJob();
 }
 
 // ─── EOD Report Builder ───

@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { company_id, campaign_id, campaign_type, variants } = body;
+  const { company_id, campaign_id, campaign_type } = body;
 
   if (!company_id || !campaign_id || !campaign_type) {
     return NextResponse.json({
@@ -41,10 +41,11 @@ export async function POST(req: NextRequest) {
 
   const coldStart = await initializeColdStart(
     company_id,
-    campaign_id,
-    campaign_type,
-    variants || ["default"]
+    campaign_type
   );
 
-  return NextResponse.json(coldStart, { status: 201 });
+  return NextResponse.json(
+    { ...coldStart, campaign_id, campaign_type },
+    { status: 201 }
+  );
 }

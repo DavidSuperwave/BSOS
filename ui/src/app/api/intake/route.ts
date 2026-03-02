@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { runIntakePipeline, IntakePipelineConfig } from "@/lib/intake/intake-pipeline";
+import { mapFormToContract } from "@/lib/intake";
 import { OnboardingFormData } from "@/lib/intake/profile-builder";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
@@ -60,6 +61,7 @@ export async function POST(req: NextRequest) {
     // Parse request body
     const body = await req.json();
     const { companyId, formData, integrations, options } = body;
+    const normalizedFormData = mapFormToContract((formData || {}) as Record<string, any>);
 
     // Validate required fields
     if (!companyId || !formData) {
@@ -98,7 +100,7 @@ export async function POST(req: NextRequest) {
       companySlug: company.slug,
       projectId,
       userId: authResult.auth.userId,
-      formData: formData as OnboardingFormData,
+      formData: normalizedFormData as OnboardingFormData,
       options: options || {},
     };
 
@@ -135,7 +137,7 @@ export async function POST(req: NextRequest) {
         .from("companies")
         .update({
           onboarding_data: {
-            ...formData,
+            ...normalizedFormData,
             intake_completed_at: new Date().toISOString(),
             intake_result: {
               success: result.success,
@@ -146,8 +148,8 @@ export async function POST(req: NextRequest) {
           },
           onboarding_step: "completed",
           status: "active",
-          industry: formData.industry,
-          domain: formData.website,
+          industry: normalizedFormData.industry,
+          domain: normalizedFormData.website,
         })
         .eq("id", companyId);
 

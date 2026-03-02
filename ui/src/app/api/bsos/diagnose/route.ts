@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
   if (result.error) return result.error;
 
   try {
-    const diagnosis = await diagnoseCampaign(companyId, campaignId);
+    const diagnosis = await diagnoseCampaign(campaignId, companyId);
     return NextResponse.json(diagnosis);
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

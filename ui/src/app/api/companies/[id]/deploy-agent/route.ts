@@ -14,7 +14,7 @@ import {
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
-import { runIntakePipeline } from "@/lib/intake";
+import { runIntakePipeline, mapFormToContract } from "@/lib/intake";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -59,7 +59,29 @@ export async function POST(
 
   try {
     const admin = getAdmin();
-    const body = await req.json();
+    const contentType = req.headers.get("content-type") || "";
+    let body: Record<string, any> = {};
+
+    if (contentType.includes("multipart/form-data")) {
+      const form = await req.formData();
+      const rawOnboarding = form.get("onboarding_data");
+      if (typeof rawOnboarding === "string" && rawOnboarding.trim()) {
+        try {
+          body.onboarding_data = JSON.parse(rawOnboarding);
+        } catch {
+          body.onboarding_data = {};
+        }
+      } else {
+        body.onboarding_data = {};
+      }
+
+      body.uploaded_files = form
+        .getAll("uploaded_files")
+        .filter((value): value is File => value instanceof File);
+      body.uploaded_file_count = Number(form.get("uploaded_file_count") || 0);
+    } else {
+      body = await req.json();
+    }
 
     // Get company data
     const { data: company, error: fetchError } = await admin
@@ -76,8 +98,9 @@ export async function POST(
     }
 
     // Use provided onboarding_data or existing
-    const onboardingData =
-      body.onboarding_data || company.onboarding_data || {};
+    const onboardingData = mapFormToContract(
+      body.onboarding_data || company.onboarding_data || {}
+    );
 
     // Provision agent (generates workspace files + config)
     const agent = provisionAgent({

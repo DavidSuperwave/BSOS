@@ -173,3 +173,89 @@ export async function savePhaseTrans(
     transition_reason: transition.reason,
   });
 }
+
+export async function getOptimizationState(
+  companyId: string,
+  campaignId: string
+): Promise<Record<string, any>> {
+  const db = getAdminClient();
+  const { data } = await db
+    .from("campaign_phases")
+    .select("*")
+    .eq("company_id", companyId)
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
+
+  if (data) return data;
+  return {
+    company_id: companyId,
+    campaign_id: campaignId,
+    current_phase: "cold_start",
+    optimization_mode: "suggest",
+    signal_quality_score: null,
+    trust_level: null,
+  };
+}
+
+export async function setOptimizationMode(
+  companyId: string,
+  campaignId: string,
+  mode: "manual" | "suggest" | "optimize"
+): Promise<Record<string, any>> {
+  const db = getAdminClient();
+  const now = new Date().toISOString();
+  await db.from("campaign_phases").upsert({
+    company_id: companyId,
+    campaign_id: campaignId,
+    optimization_mode: mode,
+    updated_at: now,
+  });
+  return getOptimizationState(companyId, campaignId);
+}
+
+export async function advancePhase(
+  companyId: string,
+  campaignId: string
+): Promise<Record<string, any>> {
+  const current = await loadCampaignPhase(companyId, campaignId);
+  const nextMap: Record<CampaignPhase, CampaignPhase> = {
+    cold_start: "discovery",
+    discovery: "signal_accumulation",
+    signal_accumulation: "optimization",
+    optimization: "scaling",
+    scaling: "scaling",
+  };
+  const next = nextMap[current];
+  if (next === current) return getOptimizationState(companyId, campaignId);
+
+  await savePhaseTrans(companyId, campaignId, {
+    fromPhase: current,
+    toPhase: next,
+    reason: "Manual phase advance",
+    readyAt: new Date().toISOString(),
+    requiresApproval: true,
+  });
+
+  return getOptimizationState(companyId, campaignId);
+}
+
+export async function checkPhaseTransitionForCampaign(
+  companyId: string,
+  campaignId: string
+): Promise<PhaseTransition | null> {
+  const db = getAdminClient();
+  const current = await loadCampaignPhase(companyId, campaignId);
+
+  const { data: signals } = await db
+    .from("campaign_signals")
+    .select("signal_type")
+    .eq("company_id", companyId)
+    .eq("campaign_id", campaignId);
+
+  const sent = (signals || []).filter((s) => s.signal_type === "open").length;
+  const replies = (signals || []).filter((s) => s.signal_type === "reply").length;
+  const replyRate = sent > 0 ? replies / sent : 0;
+  const hceApprox = Math.min(1, replyRate / 0.05);
+
+  return checkPhaseTransition(current, sent, replies, hceApprox);
+}

@@ -18,12 +18,15 @@ export async function POST(req: NextRequest) {
   const result = await requireCompanyAccess(company_id);
   if (result.error) return result.error;
 
-  const execution = await executeSkill({
-    company_id,
+  const execution = await executeSkill(
     skill_name,
-    trigger_type: trigger_type || "manual",
-    input_params: input_params || {},
-  });
+    {
+      companyId: company_id,
+      userId: result.auth.userId,
+      triggerType: trigger_type || "manual",
+    } as any,
+    input_params || {}
+  );
 
   return NextResponse.json(execution);
 }
