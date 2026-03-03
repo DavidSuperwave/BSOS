@@ -34,6 +34,9 @@ interface CompanyContextValue {
 }
 
 const STORAGE_KEY = "blitzscale:selected_company_id";
+const isReadyCompanyStatus = (status?: string | null) =>
+  status === "active" || status === "onboarded";
+
 const devLog = (...args: unknown[]) => {
   if (process.env.NODE_ENV === "development") {
     console.debug("[CompanyContext]", ...args);
@@ -92,8 +95,25 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       const fromCurrentSelection = previousSelection
         ? list.find((c) => c.id === previousSelection.id)
         : null;
+      const firstReadyCompany =
+        list.find((c) => isReadyCompanyStatus(c.status)) || null;
+      const savedPreferred =
+        saved &&
+        (isReadyCompanyStatus(saved.status) || !firstReadyCompany)
+          ? saved
+          : null;
+      const fromCurrentPreferred =
+        fromCurrentSelection &&
+        (isReadyCompanyStatus(fromCurrentSelection.status) || !firstReadyCompany)
+          ? fromCurrentSelection
+          : null;
       const resolvedSelection =
-        saved || fromCurrentSelection || list[0] || previousSelection || null;
+        savedPreferred ||
+        fromCurrentPreferred ||
+        firstReadyCompany ||
+        list[0] ||
+        previousSelection ||
+        null;
 
       // Only clear selection if a successful fetch confirms zero companies.
       if (list.length === 0) {
@@ -153,9 +173,27 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     }
 
     // Has companies but none are fully onboarded \u2192 resume onboarding
-    const hasReadyCompany = companies.some(
-      (c) => c.status === "active" || c.status === "onboarded"
-    );
+    const hasReadyCompany = companies.some((c) => isReadyCompanyStatus(c.status));
+    if (hasReadyCompany) {
+      const firstReadyCompany = companies.find((c) => isReadyCompanyStatus(c.status));
+      if (
+        firstReadyCompany &&
+        selectedCompany &&
+        !isReadyCompanyStatus(selectedCompany.status)
+      ) {
+        setSelectedCompanyState(firstReadyCompany);
+        selectedCompanyRef.current = firstReadyCompany;
+        if (typeof window !== "undefined") {
+          localStorage.setItem(STORAGE_KEY, firstReadyCompany.id);
+        }
+        devLog("Auto-switched selection to active company", {
+          previousSelectedId: selectedCompany.id,
+          nextSelectedId: firstReadyCompany.id,
+        });
+      }
+      return;
+    }
+
     if (!hasReadyCompany) {
       const partial = companies[0];
       router.replace(`/onboarding?companyId=${partial.id}`);
@@ -172,6 +210,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     isLoading,
     pathname,
     router,
+    selectedCompany,
     userId,
   ]);
 

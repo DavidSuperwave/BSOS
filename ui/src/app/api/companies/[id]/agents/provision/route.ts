@@ -28,14 +28,14 @@ function getAdmin() {
  */
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: companyId } = await params;
   const auth = await authenticateUser();
   if (!auth) {
     return Response.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  const companyId = params.id;
   const body = await req.json();
   const { 
     agentTypes = ['main'],  // Default to main agent only
@@ -132,14 +132,14 @@ export async function POST(
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id: companyId } = await params;
   const auth = await authenticateUser();
   if (!auth) {
     return Response.json({ error: "Authentication required" }, { status: 401 });
   }
 
-  const companyId = params.id;
   const admin = getAdmin();
 
   const { data: agents, error } = await admin
