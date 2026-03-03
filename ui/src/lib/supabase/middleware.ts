@@ -45,7 +45,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
     pathname.startsWith("/forgot-password") ||
-    pathname.startsWith("/reset-password");
+    pathname.startsWith("/reset-password") ||
+    pathname.startsWith("/admin-login");
 
   // If not logged in and not on auth page, redirect to login
   // (reset-password needs a session from the callback, so it's excluded from this redirect)
@@ -56,7 +57,7 @@ export async function updateSession(request: NextRequest) {
   }
 
   // If logged in and on login/signup page, redirect to home
-  // (but allow forgot-password and reset-password even when logged in —
+  // (but allow forgot-password and reset-password even when logged in \u2014
   //  reset-password needs the recovery session to update the password)
   if (user && (pathname.startsWith("/login") || pathname.startsWith("/signup"))) {
     const url = request.nextUrl.clone();

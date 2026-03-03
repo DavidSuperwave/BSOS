@@ -134,20 +134,40 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     const isAuthRoute =
       pathname.startsWith("/login") ||
       pathname.startsWith("/signup") ||
-      pathname.startsWith("/admin-login");
+      pathname.startsWith("/admin-login") ||
+      pathname.startsWith("/forgot-password") ||
+      pathname.startsWith("/reset-password");
     const isOnboardingRoute = pathname.startsWith("/onboarding");
     const isAdminRoute = pathname.startsWith("/admin");
 
     if (authLoading || isLoading) return;
     if (!userId || !hasResolvedCompanyFetch) return;
     // Admin routes should never be blocked by company onboarding redirects.
-    if (!isAuthRoute && !isOnboardingRoute && !isAdminRoute && companies.length === 0) {
-      router.push("/onboarding");
+    if (isAuthRoute || isOnboardingRoute || isAdminRoute) return;
+
+    // No companies at all \u2192 send to fresh onboarding
+    if (companies.length === 0) {
+      router.replace("/onboarding");
       devLog("Redirecting user without companies to onboarding", { userId });
+      return;
+    }
+
+    // Has companies but none are fully onboarded \u2192 resume onboarding
+    const hasReadyCompany = companies.some(
+      (c) => c.status === "active" || c.status === "onboarded"
+    );
+    if (!hasReadyCompany) {
+      const partial = companies[0];
+      router.replace(`/onboarding?companyId=${partial.id}`);
+      devLog("Redirecting user with incomplete onboarding", {
+        userId,
+        companyId: partial.id,
+        status: partial.status,
+      });
     }
   }, [
     authLoading,
-    companies.length,
+    companies,
     hasResolvedCompanyFetch,
     isLoading,
     pathname,
