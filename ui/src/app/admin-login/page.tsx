@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Shield, Loader2, AlertTriangle } from "lucide-react";
 
@@ -92,9 +93,17 @@ export default function AdminLoginPage() {
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="password" className="text-sm font-medium text-zinc-300">
-                Password
-              </label>
+              <div className="flex items-center justify-between">
+                <label htmlFor="password" className="text-sm font-medium text-zinc-300">
+                  Password
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
               <input
                 id="password"
                 type="password"

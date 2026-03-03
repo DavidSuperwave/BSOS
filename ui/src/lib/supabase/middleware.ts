@@ -39,19 +39,26 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getSession();
   const user = session?.user ?? null;
 
+  const pathname = request.nextUrl.pathname;
+
   const isAuthRoute =
-    request.nextUrl.pathname.startsWith("/login") ||
-    request.nextUrl.pathname.startsWith("/signup");
+    pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
+    pathname.startsWith("/forgot-password") ||
+    pathname.startsWith("/reset-password");
 
   // If not logged in and not on auth page, redirect to login
+  // (reset-password needs a session from the callback, so it's excluded from this redirect)
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
 
-  // If logged in and on auth page, redirect to home
-  if (user && isAuthRoute) {
+  // If logged in and on login/signup page, redirect to home
+  // (but allow forgot-password and reset-password even when logged in —
+  //  reset-password needs the recovery session to update the password)
+  if (user && (pathname.startsWith("/login") || pathname.startsWith("/signup"))) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);
