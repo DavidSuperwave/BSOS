@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   Shield, LayoutDashboard, Users, Activity, BarChart3,
-  Settings, Bell, LogOut, ChevronRight, Loader2, Building2, KeyRound
+  Settings, Bell, LogOut, ChevronRight, Loader2, Globe, Key
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -16,12 +16,12 @@ interface AdminLayoutProps {
 
 const NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/admin/companies", label: "Companies", icon: Building2 },
-  { href: "/admin/supermemory-keys", label: "Supermemory Keys", icon: KeyRound },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/campaigns", label: "Campaigns", icon: Activity },
+  { href: "/admin/domain-inventory", label: "Domain Inventory", icon: Globe },
   { href: "/admin/health", label: "System Health", icon: BarChart3 },
   { href: "/admin/approvals", label: "Approvals", icon: Bell },
+  { href: "/admin/supermemory-keys", label: "Supermemory Keys", icon: Key },
   { href: "/admin/cron-logs", label: "Cron Logs", icon: Settings },
 ];
 
