@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState, useEffect, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { WizardShell } from "@/components/onboarding/wizard-shell";
 import { StepCompanyProduct } from "@/components/onboarding/step-company-product";
 import { StepICPMarket } from "@/components/onboarding/step-icp-market";
@@ -31,6 +31,7 @@ export default function OnboardingPage() {
 
 function OnboardingContent() {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useAuth();
   const { companies, refresh } = useCompany();
@@ -91,6 +92,16 @@ function OnboardingContent() {
     }
   }, [containerData, deploying, deployPhase]);
 
+  // Keep the active company in the URL so onboarding can resume after refresh.
+  useEffect(() => {
+    if (!companyId) return;
+    if (searchParams.get("companyId") === companyId) return;
+
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.set("companyId", companyId);
+    router.replace(`${pathname}?${nextParams.toString()}`, { scroll: false });
+  }, [companyId, pathname, router, searchParams]);
+
   // On success, redirect after 2.5s
   useEffect(() => {
     if (deployPhase !== "success") return;
@@ -130,10 +141,15 @@ function OnboardingContent() {
     []
   );
 
-  const saveProgress = async (step: number, newData: Record<string, any>) => {
-    if (!companyId) return;
+  const saveProgress = async (
+    step: number,
+    newData: Record<string, any>,
+    companyIdOverride?: string | null
+  ) => {
+    const targetCompanyId = companyIdOverride || companyId;
+    if (!targetCompanyId) return;
     try {
-      await fetch(`/api/companies/${companyId}/onboarding`, {
+      await fetch(`/api/companies/${targetCompanyId}/onboarding`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -163,7 +179,7 @@ function OnboardingContent() {
         if (res.ok) {
           const { company } = await res.json();
           setCompanyId(company.id);
-          await saveProgress(1, data);
+          await saveProgress(1, data, company.id);
         } else if (res.status === 409) {
           // BUG 1 FIX: Slug conflict means a company with this slug
           // already exists. Attempt to find it for this user and resume.
@@ -175,7 +191,7 @@ function OnboardingContent() {
             );
             if (existing) {
               setCompanyId(existing.id);
-              await saveProgress(1, data);
+              await saveProgress(1, data, existing.id);
             } else {
               // Slug taken by another user — surface the error
               setDeployError("A company with this slug already exists. Please choose a different name.");
