@@ -133,6 +133,15 @@ export async function POST(
     if (onboardingData.close_api_key) {
       integrationCredentials.close_api_key = onboardingData.close_api_key;
     }
+    // BUG 5 FIX: Extract Telegram credentials into integration_credentials.
+    // The form stores these as `telegram_token` and `telegram_chat_id` in
+    // onboarding_data. The provision route needs them in integration_credentials.
+    if (onboardingData.telegram_token) {
+      integrationCredentials.telegram_token = onboardingData.telegram_token;
+    }
+    if (onboardingData.telegram_chat_id) {
+      integrationCredentials.telegram_chat_id = onboardingData.telegram_chat_id;
+    }
     if (onboardingData.supermemory_api_key) {
       integrationCredentials.supermemory_api_key = onboardingData.supermemory_api_key;
     }

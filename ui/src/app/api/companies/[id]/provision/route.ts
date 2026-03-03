@@ -41,10 +41,26 @@ async function allocatePort(): Promise<number | null> {
 }
 
 /**
+ * Helper: safely read a value from integration_credentials JSONB.
+ * Falls back to top-level company columns for backward compatibility.
+ */
+function getCredential(company: any, credKey: string, fallbackColumn?: string): string | null {
+  const creds = (company.integration_credentials as Record<string, any> | null) || {};
+  if (creds[credKey]) return creds[credKey];
+  if (fallbackColumn && company[fallbackColumn]) return company[fallbackColumn];
+  return null;
+}
+
+/**
  * Generate docker-compose.yml content for a company container.
  * Uses bridge networking (default). External access is handled by
  * a socat+nsenter relay that bridges from host port to the container's
  * loopback 127.0.0.1:18789 (where OpenClaw gateway binds).
+ *
+ * BUG 4+5 FIX: All per-company credentials (Close, Telegram, PlusVibe)
+ * are now read from integration_credentials JSONB, NOT from env vars.
+ * Only platform-level keys (OpenRouter, Anthropic, Supermemory, Perplexity)
+ * come from env vars.
  */
 function generateDockerCompose(
   company: any,
@@ -58,6 +74,13 @@ function generateDockerCompose(
     ? envConfig.anthropic.baseUrl() || ""
     : "https://openrouter.ai/api/v1";
 
+  // Per-company credentials from integration_credentials JSONB
+  const closeApiKey = getCredential(company, "close_api_key");
+  const telegramToken = getCredential(company, "telegram_token", "telegram_bot_token");
+  const telegramChatId = getCredential(company, "telegram_chat_id");
+  const plusvibeApiKey = getCredential(company, "plusvibe_api_key", "plusvibe_api_key");
+  const plusvibeWorkspaceId = getCredential(company, "plusvibe_workspace_id", "plusvibe_workspace_id");
+
   const envVars = [
     `OPENCLAW_GATEWAY_TOKEN=${company.id}`,
     openrouterKey ? `OPENROUTER_API_KEY=${openrouterKey}` : null,
@@ -67,20 +90,20 @@ function generateDockerCompose(
     `SUPERMEMORY_NAMESPACE=blitzscale:company:${company.slug}`,
     `COMPANY_NAME=${company.name}`,
     `COMPANY_SLUG=${company.slug}`,
-    company.plusvibe_api_key
-      ? `PLUSVIBE_API_KEY=${company.plusvibe_api_key}`
+    plusvibeApiKey
+      ? `PLUSVIBE_API_KEY=${plusvibeApiKey}`
       : null,
-    company.plusvibe_workspace_id
-      ? `PLUSVIBE_WORKSPACE_ID=${company.plusvibe_workspace_id}`
+    plusvibeWorkspaceId
+      ? `PLUSVIBE_WORKSPACE_ID=${plusvibeWorkspaceId}`
       : null,
-    company.telegram_bot_token
-      ? `TELEGRAM_BOT_TOKEN=${company.telegram_bot_token}`
+    telegramToken
+      ? `TELEGRAM_BOT_TOKEN=${telegramToken}`
       : null,
-    company.telegram_chat_id
-      ? `TELEGRAM_CHAT_ID=${company.telegram_chat_id}`
+    telegramChatId
+      ? `TELEGRAM_CHAT_ID=${telegramChatId}`
       : null,
-    envConfig.close.apiKey()
-      ? `CLOSE_API_KEY=${envConfig.close.apiKey()}`
+    closeApiKey
+      ? `CLOSE_API_KEY=${closeApiKey}`
       : null,
     envConfig.perplexity.apiKey()
       ? `PERPLEXITY_API_KEY=${envConfig.perplexity.apiKey()}`
@@ -344,7 +367,7 @@ export async function POST(
     ]);
 
     // Set up socat relay as a systemd service
-    // This bridges host 0.0.0.0:PORT → container's 127.0.0.1:18789
+    // This bridges host 0.0.0.0:PORT \u2192 container's 127.0.0.1:18789
     // using nsenter to enter the container's network namespace
     await sshExec([
       `echo '${socatB64}' | base64 -d > /etc/systemd/system/${socatSvcName}.service`,

@@ -33,7 +33,7 @@ function OnboardingContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const { refresh } = useCompany();
+  const { companies, refresh } = useCompany();
 
   const [companyId, setCompanyId] = useState<string | null>(
     searchParams.get("companyId")
@@ -41,6 +41,7 @@ function OnboardingContent() {
   const [currentStep, setCurrentStep] = useState(0);
   const [data, setData] = useState<Record<string, any>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [resumeChecked, setResumeChecked] = useState(false);
 
   // Deployment state
   const [deploying, setDeploying] = useState(false);
@@ -52,6 +53,30 @@ function OnboardingContent() {
     companyId,
     deploying && (deployPhase === "provisioning")
   );
+
+  // ── BUG 1+2 FIX: Auto-resume for partially created companies ──
+  // If user lands on /onboarding without ?companyId= but already has
+  // a company in "onboarding" status, auto-resume instead of trying
+  // to POST a duplicate (which would 409).
+  useEffect(() => {
+    if (companyId || resumeChecked) return;
+
+    // Check if the user already has a company in "onboarding" status
+    const onboardingCompany = (companies || []).find(
+      (c: any) => c.status === "onboarding"
+    );
+
+    if (onboardingCompany) {
+      // Auto-resume: set the companyId and let the existing data-load
+      // useEffect below pick up the saved onboarding_data/step.
+      setCompanyId(onboardingCompany.id);
+      console.info(
+        `[Onboarding] Auto-resuming company ${onboardingCompany.id} (status: onboarding)`
+      );
+    }
+
+    setResumeChecked(true);
+  }, [companyId, companies, resumeChecked]);
 
   // React to container status changes
   useEffect(() => {
@@ -134,10 +159,31 @@ function OnboardingContent() {
             domain: data.domain,
           }),
         });
+
         if (res.ok) {
           const { company } = await res.json();
           setCompanyId(company.id);
           await saveProgress(1, data);
+        } else if (res.status === 409) {
+          // BUG 1 FIX: Slug conflict means a company with this slug
+          // already exists. Attempt to find it for this user and resume.
+          const companiesRes = await fetch("/api/companies");
+          if (companiesRes.ok) {
+            const { companies: userCompanies } = await companiesRes.json();
+            const existing = (userCompanies || []).find(
+              (c: any) => c.slug === data.slug
+            );
+            if (existing) {
+              setCompanyId(existing.id);
+              await saveProgress(1, data);
+            } else {
+              // Slug taken by another user — surface the error
+              setDeployError("A company with this slug already exists. Please choose a different name.");
+              return;
+            }
+          }
+        } else {
+          return;
         }
       } catch {
         return;
