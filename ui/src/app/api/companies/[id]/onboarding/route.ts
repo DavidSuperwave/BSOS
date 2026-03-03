@@ -59,10 +59,52 @@ export async function PATCH(
   try {
     const body = await req.json();
     const admin = getAdmin();
+    const { data: existingCompany } = await admin
+      .from("companies")
+      .select("integration_credentials, agent_config")
+      .eq("id", id)
+      .single();
 
     const updateData: Record<string, any> = {};
     if (body.onboarding_data !== undefined) updateData.onboarding_data = body.onboarding_data;
     if (body.onboarding_step !== undefined) updateData.onboarding_step = body.onboarding_step;
+    if (body.agent_config !== undefined) {
+      const existingAgentConfig =
+        (existingCompany?.agent_config as Record<string, any> | null) || {};
+      const nextAgentConfig =
+        body.agent_config && typeof body.agent_config === "object"
+          ? body.agent_config
+          : {};
+      updateData.agent_config = {
+        ...existingAgentConfig,
+        ...nextAgentConfig,
+      };
+    }
+    if (body.integration_credentials !== undefined) {
+      const existingIntegrationCredentials =
+        (existingCompany?.integration_credentials as Record<string, any> | null) || {};
+      const incomingIntegrationCredentials =
+        body.integration_credentials && typeof body.integration_credentials === "object"
+          ? body.integration_credentials
+          : {};
+      const mergedIntegrationCredentials = {
+        ...existingIntegrationCredentials,
+        ...incomingIntegrationCredentials,
+      };
+
+      updateData.integration_credentials = mergedIntegrationCredentials;
+
+      // Keep legacy PlusVibe columns in sync while the app transitions fully to JSONB.
+      if ("plusvibe_api_key" in mergedIntegrationCredentials) {
+        updateData.plusvibe_api_key =
+          mergedIntegrationCredentials.plusvibe_api_key || null;
+        updateData.plusvibe_enabled = !!mergedIntegrationCredentials.plusvibe_api_key;
+      }
+      if ("plusvibe_workspace_id" in mergedIntegrationCredentials) {
+        updateData.plusvibe_workspace_id =
+          mergedIntegrationCredentials.plusvibe_workspace_id || null;
+      }
+    }
 
     // Also update company fields from onboarding data
     if (body.onboarding_data) {

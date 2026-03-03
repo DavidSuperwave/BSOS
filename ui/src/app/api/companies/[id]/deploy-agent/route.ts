@@ -9,8 +9,8 @@ import {
 import {
   seedCompanyProfile,
   storeInsight,
-  companyContainerTag,
 } from "@/lib/supermemory-client";
+import { ensureCompanySupermemoryKey } from "@/lib/supermemory-key-pool";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
@@ -110,8 +110,10 @@ export async function POST(
       onboarding_data: onboardingData,
     });
 
-    // Build integration credentials from onboarding data
-    const integrationCredentials: Record<string, any> = {};
+    // Build integration credentials from onboarding data + existing company values.
+    const integrationCredentials: Record<string, any> = {
+      ...((company.integration_credentials as Record<string, any> | null) || {}),
+    };
     if (onboardingData.plusvibe_api_key) {
       integrationCredentials.plusvibe_api_key =
         onboardingData.plusvibe_api_key;
@@ -130,6 +132,17 @@ export async function POST(
     }
     if (onboardingData.close_api_key) {
       integrationCredentials.close_api_key = onboardingData.close_api_key;
+    }
+    if (onboardingData.supermemory_api_key) {
+      integrationCredentials.supermemory_api_key = onboardingData.supermemory_api_key;
+    }
+
+    // Auto-assign a Supermemory key from admin key pool when company has none.
+    if (!integrationCredentials.supermemory_api_key) {
+      const assignedKey = await ensureCompanySupermemoryKey(admin, id);
+      if (assignedKey) {
+        integrationCredentials.supermemory_api_key = assignedKey;
+      }
     }
 
     // Update company record in Supabase
@@ -187,8 +200,9 @@ export async function POST(
       );
     }
 
-    // Seed Supermemory with company profile + ICP
-    const smKey = envConfig.supermemory.apiKey();
+    // Seed Supermemory with company profile + ICP using company key first.
+    const smKey =
+      integrationCredentials.supermemory_api_key || envConfig.supermemory.apiKey();
     if (smKey) {
       const containerTag = agent.containerTag;
 

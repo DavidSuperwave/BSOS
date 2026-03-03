@@ -132,12 +132,16 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const isAuthRoute =
-      pathname.startsWith("/login") || pathname.startsWith("/signup");
+      pathname.startsWith("/login") ||
+      pathname.startsWith("/signup") ||
+      pathname.startsWith("/admin-login");
     const isOnboardingRoute = pathname.startsWith("/onboarding");
+    const isAdminRoute = pathname.startsWith("/admin");
 
     if (authLoading || isLoading) return;
     if (!userId || !hasResolvedCompanyFetch) return;
-    if (!isAuthRoute && !isOnboardingRoute && companies.length === 0) {
+    // Admin routes should never be blocked by company onboarding redirects.
+    if (!isAuthRoute && !isOnboardingRoute && !isAdminRoute && companies.length === 0) {
       router.push("/onboarding");
       devLog("Redirecting user without companies to onboarding", { userId });
     }
