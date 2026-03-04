@@ -1,5 +1,5 @@
 // Cron runner for BSOS scheduled jobs
-import { getAdminClient } from "./db";
+import { getAdminClient } from "@/lib/bsos/db";
 
 export interface CronJobResult {
   job: string;
@@ -43,7 +43,7 @@ export async function getActiveCompanies(): Promise<{ id: string; slug: string; 
   const { data, error } = await supabase
     .from("companies")
     .select("id, slug, name")
-    .eq("is_active", true);
+    .in("status", ["active", "onboarding"]);
 
   if (error) {
     throw new Error(`Failed to load active companies: ${error.message}`);
@@ -76,12 +76,12 @@ export async function shouldRunJob(jobName: string, companyId: string): Promise<
 
   const supabase = getAdminClient();
   const { data, error } = await supabase
-    .from("cron_runs")
-    .select("finished_at")
+    .from("bsos_cron_log")
+    .select("ran_at")
     .eq("company_id", companyId)
     .eq("job_name", jobName)
-    .eq("success", true)
-    .order("finished_at", { ascending: false })
+    .eq("status", "success")
+    .order("ran_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -90,11 +90,11 @@ export async function shouldRunJob(jobName: string, companyId: string): Promise<
     return true;
   }
 
-  if (!data?.finished_at) {
+  if (!data?.ran_at) {
     return true;
   }
 
-  const lastRunAt = new Date(data.finished_at).getTime();
+  const lastRunAt = new Date(data.ran_at).getTime();
   const interval = JOB_INTERVAL_MS[jobName] ?? 60 * 60 * 1000;
   return Date.now() - lastRunAt >= interval;
 }
@@ -106,13 +106,16 @@ async function executeJobSkills(jobName: string, companyId: string): Promise<Rec
   const skillResults: Array<{ skill: string; status: string; message?: string }> = [];
 
   for (const skill of skills) {
-    const { error } = await supabase.from("agent_runs").insert({
+    const { error } = await supabase.from("skill_executions").insert({
       company_id: companyId,
-      skill_slug: skill,
-      trigger: "cron",
-      trigger_job: jobName,
+      skill_id: skill,
+      agent_type: "main",
       status: "queued",
-      created_at: new Date().toISOString(),
+      params: {
+        trigger: "cron",
+        trigger_job: jobName,
+      },
+      executed_at: new Date().toISOString(),
     });
 
     if (error) {
@@ -181,16 +184,14 @@ export async function runCronJob(jobName: string, companyId: string): Promise<Cr
   };
 
   const supabase = getAdminClient();
-  await supabase.from("cron_runs").insert({
+  await supabase.from("bsos_cron_log").insert({
     company_id: companyId,
     job_name: jobName,
-    started_at: result.started_at,
-    finished_at: result.finished_at,
+    status: result.success ? "success" : "failed",
+    result_json: result.details ?? {},
+    error_message: result.reason ?? null,
     duration_ms: result.duration_ms,
-    success: result.success,
-    skipped: result.skipped ?? false,
-    reason: result.reason ?? null,
-    details: result.details ?? {},
+    ran_at: result.finished_at,
   });
 
   return result;

@@ -330,6 +330,52 @@ CREATE TABLE IF NOT EXISTS public.agent_trace_logs (
 );
 
 -- =====================================================
+-- Compatibility alters for environments with pre-existing
+-- similarly named tables from earlier BSOS versions.
+-- =====================================================
+ALTER TABLE IF EXISTS public.campaign_copy_analysis
+  ADD COLUMN IF NOT EXISTS overall_score numeric,
+  ADD COLUMN IF NOT EXISTS sequence_step integer,
+  ADD COLUMN IF NOT EXISTS variation_id text,
+  ADD COLUMN IF NOT EXISTS readability_grade numeric,
+  ADD COLUMN IF NOT EXISTS label_type text,
+  ADD COLUMN IF NOT EXISTS source_ref text,
+  ADD COLUMN IF NOT EXISTS window_start timestamptz,
+  ADD COLUMN IF NOT EXISTS window_end timestamptz,
+  ADD COLUMN IF NOT EXISTS coverage_pct numeric DEFAULT 100,
+  ADD COLUMN IF NOT EXISTS version_tag text;
+
+ALTER TABLE IF EXISTS public.deliverability_snapshots
+  ADD COLUMN IF NOT EXISTS health_score numeric,
+  ADD COLUMN IF NOT EXISTS inbox_rate numeric;
+
+ALTER TABLE IF EXISTS public.campaign_events
+  ADD COLUMN IF NOT EXISTS severity text,
+  ADD COLUMN IF NOT EXISTS event_data jsonb,
+  ADD COLUMN IF NOT EXISTS attribution_map jsonb,
+  ADD COLUMN IF NOT EXISTS source_skill text,
+  ADD COLUMN IF NOT EXISTS skill_version text,
+  ADD COLUMN IF NOT EXISTS idempotency_key text;
+
+ALTER TABLE IF EXISTS public.feature_snapshots
+  ADD COLUMN IF NOT EXISTS snapshot_window text,
+  ADD COLUMN IF NOT EXISTS metrics jsonb,
+  ADD COLUMN IF NOT EXISTS anomaly_flags jsonb,
+  ADD COLUMN IF NOT EXISTS severity_tier text,
+  ADD COLUMN IF NOT EXISTS skill_version text,
+  ADD COLUMN IF NOT EXISTS idempotency_key text;
+
+ALTER TABLE IF EXISTS public.learning_entries
+  ADD COLUMN IF NOT EXISTS source_skill text;
+
+ALTER TABLE IF EXISTS public.action_outcome_pairs
+  ADD COLUMN IF NOT EXISTS action_detail jsonb,
+  ADD COLUMN IF NOT EXISTS predicted_outcome jsonb,
+  ADD COLUMN IF NOT EXISTS actual_outcome jsonb,
+  ADD COLUMN IF NOT EXISTS delta jsonb,
+  ADD COLUMN IF NOT EXISTS was_approved boolean;
+
+-- =====================================================
 -- Indexes
 -- =====================================================
 -- every table: (company_id, created_at DESC)

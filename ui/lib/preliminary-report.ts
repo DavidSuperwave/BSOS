@@ -1,6 +1,6 @@
 // Preliminary findings report generator
-import { getAdminClient } from "./db";
-import { sendTelegramMessage } from "./telegram";
+import { getAdminClient } from "@/lib/bsos/db";
+import { sendTelegramMessage } from "@/lib/bsos/telegram";
 import { evaluateCompanyHealth, scoreToGrade } from "./evaluator";
 
 export interface PreliminaryReport {
@@ -47,15 +47,16 @@ async function runSkill(companyId: string, skillSlug: string): Promise<any> {
   const supabase = getAdminClient();
 
   const { data, error } = await supabase
-    .from("agent_skill_runs")
+    .from("skill_executions")
     .insert({
       company_id: companyId,
-      skill_slug: skillSlug,
-      trigger: "preliminary_report",
+      skill_id: skillSlug,
+      agent_type: "main",
       status: "queued",
-      created_at: new Date().toISOString(),
+      params: { trigger: "preliminary_report" },
+      executed_at: new Date().toISOString(),
     })
-    .select("id, company_id, skill_slug, status, created_at")
+    .select("id, company_id, skill_id, status, executed_at, result, error")
     .single();
 
   if (error) {
@@ -138,15 +139,21 @@ export async function generatePreliminaryReport(companyId: string): Promise<Prel
 
   const health = await evaluateCompanyHealth(companyId);
   const composite = Number(health?.composite_score ?? 0);
+  const recommendedActions = (health.recommendations ?? []).map((action, idx) => ({
+    priority: idx + 1,
+    action,
+    owner: "revops",
+  }));
+
   const report: PreliminaryReport = {
     report_id: crypto.randomUUID(),
     company_id: companyId,
     generated_at: new Date().toISOString(),
     scores: {
-      infrastructure_score: Number(health?.infrastructure_score ?? 0),
-      campaign_score: Number(health?.campaign_score ?? 0),
-      lead_quality_score: Number(health?.lead_quality_score ?? 0),
-      deliverability_score: Number(health?.deliverability_score ?? 0),
+      infrastructure_score: Number(health?.component_scores?.infrastructure ?? 0),
+      campaign_score: Number(health?.component_scores?.campaign_score ?? 0),
+      lead_quality_score: Number(health?.component_scores?.lead_quality ?? 0),
+      deliverability_score: Number(health?.component_scores?.deliverability ?? 0),
       composite_score: composite,
       health_grade: scoreToGrade(composite),
     },
@@ -155,8 +162,7 @@ export async function generatePreliminaryReport(companyId: string): Promise<Prel
       { type: "overview", title: "Day 1 baseline established", impact: "Initial GTM health baseline available" },
     ],
     risks: stepErrors.map((e) => ({ type: "execution", severity: "medium", detail: `${e.skill}: ${e.error}` })),
-    recommended_actions:
-      (sections.recommended_actions?.actions as Array<{ priority: number; action: string; owner: string }>) ?? [],
+    recommended_actions: recommendedActions,
     lineage: {
       skill_versions: skillVersions,
       coverage_pct: Math.round((completedSections / EXECUTION_ORDER.length) * 100),
@@ -164,11 +170,20 @@ export async function generatePreliminaryReport(companyId: string): Promise<Prel
   };
 
   await supabase.from("intelligence_reports").insert({
-    id: report.report_id,
     company_id: report.company_id,
-    report_type: "preliminary_findings",
-    payload: report,
-    generated_at: report.generated_at,
+    report_date: report.generated_at.slice(0, 10),
+    report_window_start: report.generated_at,
+    report_window_end: report.generated_at,
+    health_grade: report.scores.health_grade,
+    composite_score: report.scores.composite_score,
+    highlights: report.highlights,
+    risks: report.risks,
+    recommended_actions: report.recommended_actions,
+    unresolved_questions: [],
+    lineage: report.lineage,
+    coverage_pct: report.lineage.coverage_pct,
+    skill_version: "v3",
+    created_at: report.generated_at,
   });
 
   const { data: company } = await supabase
@@ -178,7 +193,11 @@ export async function generatePreliminaryReport(companyId: string): Promise<Prel
     .maybeSingle();
 
   if (company?.telegram_chat_id) {
-    await sendTelegramMessage(company.telegram_chat_id, formatReportForTelegram(report));
+    await sendTelegramMessage({
+      chat_id: company.telegram_chat_id,
+      text: formatReportForTelegram(report),
+      parse_mode: "HTML",
+    });
   }
 
   return report;

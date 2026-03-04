@@ -1,4 +1,4 @@
-import { getAdminClient } from "./db";
+import { getAdminClient } from "@/lib/bsos/db";
 
 /**
  * Campaign HCE component scores.
@@ -51,14 +51,19 @@ const avg = (nums: number[]): number => (nums.length ? nums.reduce((a, b) => a +
 async function logTrace(
   supabase: SupabaseLike,
   companyId: string,
-  action: string,
-  payload: Record<string, unknown>,
+  skillName: string,
+  inputParams: Record<string, unknown>,
+  outputResult: unknown,
+  errorMessage?: string,
 ): Promise<void> {
   try {
     await supabase.from("agent_trace_logs").insert({
       company_id: companyId,
-      action,
-      payload,
+      skill_name: skillName,
+      trigger_type: "manual",
+      input_params: inputParams,
+      output_result: outputResult,
+      error: errorMessage ?? null,
       created_at: new Date().toISOString(),
     });
   } catch {
@@ -95,26 +100,38 @@ async function getLeadQuality(supabase: SupabaseLike, companyId: string): Promis
 async function getSequenceQuality(supabase: SupabaseLike, companyId: string, campaignId: string): Promise<number> {
   const { data, error } = await supabase
     .from("campaign_copy_analysis")
-    .select("overall_score")
+    .select("overall_score,confidence_score")
     .eq("company_id", companyId)
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: false })
     .limit(10);
 
   if (error || !data?.length) return 50;
-  return clamp(avg(data.map((r: { overall_score: number | null }) => Number(r.overall_score ?? 50))));
+  return clamp(
+    avg(
+      data.map((r: { overall_score?: number | null; confidence_score?: number | null }) =>
+        Number(r.overall_score ?? r.confidence_score ?? 50),
+      ),
+    ),
+  );
 }
 
 async function getInfrastructureHealth(supabase: SupabaseLike, companyId: string): Promise<number> {
   const { data, error } = await supabase
     .from("deliverability_snapshots")
-    .select("health_score")
+    .select("health_score,warmup_health")
     .eq("company_id", companyId)
     .order("created_at", { ascending: false })
     .limit(20);
 
   if (error || !data?.length) return 50;
-  return clamp(avg(data.map((r: { health_score: number | null }) => Number(r.health_score ?? 50))));
+  return clamp(
+    avg(
+      data.map((r: { health_score?: number | null; warmup_health?: number | null }) =>
+        Number(r.health_score ?? r.warmup_health ?? 50),
+      ),
+    ),
+  );
 }
 
 /**
@@ -132,36 +149,9 @@ export async function evaluateCampaign(companyId: string, campaignId: string): P
 
     const material = clamp(0.4 * leadQuality + 0.35 * sequenceQuality + 0.25 * infrastructureHealth);
 
-    const { data: campaign } = await supabase
-      .from("campaigns")
-      .select("icp_alignment,timing_score,reply_rate,open_rate,bounce_rate,available_sequences,available_segments,active_accounts")
-      .eq("id", campaignId)
-      .eq("company_id", companyId)
-      .maybeSingle();
-
-    const icpAlignment = clamp01(Number(campaign?.icp_alignment ?? 0.5));
-    const timingScore = clamp01(Number(campaign?.timing_score ?? 0.5));
-    const engagementDepth = clamp01(
-      avg([Number(campaign?.reply_rate ?? 0.05) * 4, Number(campaign?.open_rate ?? 0.2)]),
-    );
-    const listHealth = clamp01(1 - Number(campaign?.bounce_rate ?? 0.03));
-    const positionMultiplier = clamp01(avg([icpAlignment, timingScore, engagementDepth, listHealth]));
-
-    const maxSequences = 20;
-    const maxSegments = 25;
-    const maxActiveAccounts = 200;
-
-    const mobilityMultiplier = clamp01(
-      avg([
-        Number(campaign?.available_sequences ?? 0) / maxSequences,
-        Number(campaign?.available_segments ?? 0) / maxSegments,
-        Number(campaign?.active_accounts ?? 0) / maxActiveAccounts,
-      ]),
-    );
-
     const { data: trends } = await supabase
       .from("campaign_daily_metrics")
-      .select("reply_count,meeting_count,metric_date")
+      .select("send_count,open_count,reply_count,bounce_count,meeting_count,metric_date")
       .eq("company_id", companyId)
       .eq("campaign_id", campaignId)
       .order("metric_date", { ascending: false })
@@ -169,6 +159,31 @@ export async function evaluateCampaign(companyId: string, campaignId: string): P
 
     const recent = (trends ?? []).slice(0, 7);
     const prior = (trends ?? []).slice(7, 14);
+
+    const recentSends = recent.reduce((a: number, r: any) => a + Number(r.send_count ?? 0), 0);
+    const recentOpens = recent.reduce((a: number, r: any) => a + Number(r.open_count ?? 0), 0);
+    const recentReplies = recent.reduce((a: number, r: any) => a + Number(r.reply_count ?? 0), 0);
+    const recentBounces = recent.reduce((a: number, r: any) => a + Number(r.bounce_count ?? 0), 0);
+    const recentMeetings = recent.reduce((a: number, r: any) => a + Number(r.meeting_count ?? 0), 0);
+    const activeDays = recent.filter((r: any) => Number(r.send_count ?? 0) > 0).length;
+
+    const openRate = recentSends > 0 ? recentOpens / recentSends : 0.2;
+    const replyRate = recentSends > 0 ? recentReplies / recentSends : 0.05;
+    const bounceRate = recentSends > 0 ? recentBounces / recentSends : 0.03;
+
+    const icpAlignment = clamp01(leadQuality / 100);
+    const timingScore = clamp01(activeDays / 7);
+    const engagementDepth = clamp01(avg([openRate, replyRate * 4]));
+    const listHealth = clamp01(1 - bounceRate);
+    const positionMultiplier = clamp01(avg([icpAlignment, timingScore, engagementDepth, listHealth]));
+
+    const mobilityMultiplier = clamp01(
+      avg([
+        Math.min(1, recentSends / 2000),
+        Math.min(1, activeDays / 7),
+        Math.min(1, recentMeetings / 10),
+      ]),
+    );
 
     const recentVelocity = recent.reduce((a: number, r: any) => a + Number(r.reply_count ?? 0) + Number(r.meeting_count ?? 0), 0);
     const priorVelocity = prior.reduce((a: number, r: any) => a + Number(r.reply_count ?? 0) + Number(r.meeting_count ?? 0), 0);
@@ -205,13 +220,24 @@ export async function evaluateCampaign(companyId: string, campaignId: string): P
       factors,
     };
 
-    await logTrace(supabase, companyId, "evaluate_campaign", { campaignId, result });
+    await logTrace(
+      supabase,
+      companyId,
+      "evaluator.evaluateCampaign",
+      { campaignId },
+      result,
+    );
     return result;
   } catch (error) {
-    await logTrace(supabase, companyId, "evaluate_campaign_error", {
-      campaignId,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    await logTrace(
+      supabase,
+      companyId,
+      "evaluator.evaluateCampaign",
+      { campaignId },
+      { fallback: true },
+      message,
+    );
 
     return {
       score: 50,
@@ -247,26 +273,30 @@ export async function evaluateCompanyHealth(companyId: string): Promise<CompanyH
     ]);
 
     const { data: latestCampaign } = await supabase
-      .from("campaigns")
-      .select("id")
+      .from("campaign_daily_metrics")
+      .select("campaign_id,metric_date")
       .eq("company_id", companyId)
-      .order("updated_at", { ascending: false })
+      .order("metric_date", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    const campaignEval = latestCampaign?.id
-      ? await evaluateCampaign(companyId, latestCampaign.id)
+    const campaignEval = latestCampaign?.campaign_id
+      ? await evaluateCampaign(companyId, latestCampaign.campaign_id)
       : ({ score: 50 } as CampaignEvaluationResult);
 
     const { data: deliverabilityRows } = await supabase
       .from("deliverability_snapshots")
-      .select("inbox_rate")
+      .select("inbox_rate,inbox_placement")
       .eq("company_id", companyId)
       .order("created_at", { ascending: false })
       .limit(20);
 
     const deliverability = clamp(
-      avg((deliverabilityRows ?? []).map((r: { inbox_rate: number | null }) => Number(r.inbox_rate ?? 0.8) * 100)),
+      avg(
+        (deliverabilityRows ?? []).map((r: { inbox_rate?: number | null; inbox_placement?: number | null }) =>
+          Number(r.inbox_rate ?? r.inbox_placement ?? 0.8) * 100,
+        ),
+      ),
     );
 
     const composite = clamp(
@@ -291,12 +321,24 @@ export async function evaluateCompanyHealth(companyId: string): Promise<CompanyH
       recommendations,
     };
 
-    await logTrace(supabase, companyId, "evaluate_company_health", result);
+    await logTrace(
+      supabase,
+      companyId,
+      "evaluator.evaluateCompanyHealth",
+      { companyId },
+      result,
+    );
     return result;
   } catch (error) {
-    await logTrace(supabase, companyId, "evaluate_company_health_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    const message = error instanceof Error ? error.message : "Unknown error";
+    await logTrace(
+      supabase,
+      companyId,
+      "evaluator.evaluateCompanyHealth",
+      { companyId },
+      { fallback: true },
+      message,
+    );
 
     return {
       composite_score: 50,

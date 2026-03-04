@@ -1,10 +1,10 @@
-import fs from "fs/promises";
-import path from "path";
-import { getAdminClient } from "./db";
-import { normalizeSkillSlug } from "./common";
-import { parseSkillFrontmatter } from "./frontmatter";
-import { syncSkillToAgents } from "./skill-sync";
-import type { CompanyAgentType } from "./types";
+import * as fs from "fs/promises";
+import * as path from "path";
+import { getAdminClient } from "@/lib/bsos/db";
+import { normalizeSkillSlug } from "@/lib/skills/common";
+import { parseSkillFrontmatter } from "@/lib/skills/frontmatter";
+import { syncSkillToAgents } from "@/lib/skills/skill-sync";
+import type { CompanyAgentType } from "@/lib/skills/types";
 
 type BuiltInCategory = "onboarding" | "daily" | "lifecycle";
 
@@ -44,7 +44,7 @@ export const BUILT_IN_SKILLS: BuiltInSkill[] = [
   { slug: "campaign-launcher", category: "lifecycle", risk_level: "high", level: "L3", isDefault: true, metadata: { source: "built-in", category: "lifecycle", risk_level: "high", core: true, removable: false, level: "L3" } },
 ];
 
-const ALL_AGENT_TYPES: CompanyAgentType[] = ["sdr", "ae", "revops", "marketing", "founder"] as CompanyAgentType[];
+const ALL_AGENT_TYPES: CompanyAgentType[] = ["main", "campaigns", "crm", "inbox"];
 
 export function buildSkillMd(skill: BuiltInSkill): string {
   const useWhen = {
@@ -119,18 +119,41 @@ async function readSkillMdFromFs(slug: string): Promise<string | null> {
 }
 
 export async function loadWorkspaceDefaultSkillBlueprints(): Promise<
-  Array<{ slug: string; content: string; frontmatter: Record<string, any>; metadata: Record<string, any> }>
+  Array<{
+    slug: string;
+    name: string;
+    description: string;
+    version: string;
+    content: string;
+    frontmatter: Record<string, any>;
+    metadata: Record<string, any>;
+  }>
 > {
-  const rows: Array<{ slug: string; content: string; frontmatter: Record<string, any>; metadata: Record<string, any> }> = [];
+  const rows: Array<{
+    slug: string;
+    name: string;
+    description: string;
+    version: string;
+    content: string;
+    frontmatter: Record<string, any>;
+    metadata: Record<string, any>;
+  }> = [];
 
   for (const skill of BUILT_IN_SKILLS) {
     const slug = normalizeSkillSlug(skill.slug);
     const fileContent = await readSkillMdFromFs(slug);
     const content = fileContent ?? buildSkillMd(skill);
     const frontmatter = parseSkillFrontmatter(content);
+    const title = slug
+      .split("-")
+      .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
+      .join(" ");
 
     rows.push({
       slug,
+      name: frontmatter.name || title,
+      description: frontmatter.description || `${title} built-in skill.`,
+      version: "1.0.0",
       content,
       frontmatter,
       metadata: {
@@ -152,30 +175,33 @@ export async function ensureDefaultBlueprints(): Promise<void> {
       .from("company_skill_blueprints")
       .select("id")
       .is("company_id", null)
-      .eq("skill_slug", bp.slug)
+      .eq("slug", bp.slug)
       .maybeSingle();
 
     if (existing?.id) {
       await supabase
         .from("company_skill_blueprints")
         .update({
+          slug: bp.slug,
+          name: bp.name,
+          description: bp.description,
+          version: bp.version,
           skill_md: bp.content,
-          frontmatter: bp.frontmatter,
           metadata: bp.metadata,
           is_default: true,
-          removable: false,
           updated_at: new Date().toISOString(),
         })
         .eq("id", existing.id);
     } else {
       await supabase.from("company_skill_blueprints").insert({
         company_id: null,
-        skill_slug: bp.slug,
+        slug: bp.slug,
+        name: bp.name,
+        description: bp.description,
+        version: bp.version,
         skill_md: bp.content,
-        frontmatter: bp.frontmatter,
         metadata: bp.metadata,
         is_default: true,
-        removable: false,
       });
     }
   }
@@ -190,26 +216,28 @@ export async function applyDefaultSkillPackToCompany(companyId: string): Promise
       .from("company_skill_blueprints")
       .select("id")
       .eq("company_id", companyId)
-      .eq("skill_slug", bp.slug)
+      .eq("slug", bp.slug)
       .maybeSingle();
 
     if (!existing?.id) {
       await supabase.from("company_skill_blueprints").insert({
         company_id: companyId,
-        skill_slug: bp.slug,
+        slug: bp.slug,
+        name: bp.name,
+        description: bp.description,
+        version: bp.version,
         skill_md: bp.content,
-        frontmatter: bp.frontmatter,
         metadata: bp.metadata,
         is_default: true,
-        removable: false,
       });
     }
 
     await syncSkillToAgents({
+      admin: supabase,
       companyId,
-      skillSlug: bp.slug,
+      slug: bp.slug,
+      content: bp.content,
       agentTypes: ALL_AGENT_TYPES,
-      removable: false,
     });
   }
 }
@@ -218,9 +246,9 @@ export async function listSkillCatalogForCompany(companyId: string): Promise<any
   const supabase = getAdminClient();
   const { data, error } = await supabase
     .from("company_skill_blueprints")
-    .select("id, company_id, skill_slug, is_default, removable, metadata, updated_at")
+    .select("id, company_id, slug, name, description, version, is_default, metadata, updated_at")
     .or(`company_id.eq.${companyId},company_id.is.null`)
-    .order("skill_slug", { ascending: true });
+    .order("slug", { ascending: true });
 
   if (error) {
     throw new Error(`Unable to list skill catalog: ${error.message}`);
@@ -234,23 +262,30 @@ export async function importBlueprintToCompany(params: {
   skillSlug: string;
   skillMd: string;
   metadata?: Record<string, any>;
-  removable?: boolean;
 }): Promise<void> {
   const supabase = getAdminClient();
   const slug = normalizeSkillSlug(params.skillSlug);
   const frontmatter = parseSkillFrontmatter(params.skillMd);
+  const title = slug
+    .split("-")
+    .map((x) => x.charAt(0).toUpperCase() + x.slice(1))
+    .join(" ");
 
   await supabase.from("company_skill_blueprints").upsert(
     {
       company_id: params.companyId,
-      skill_slug: slug,
+      slug,
+      name: frontmatter.name || title,
+      description: frontmatter.description || `${title} imported skill.`,
+      version: "1.0.0",
       skill_md: params.skillMd,
-      frontmatter,
-      metadata: params.metadata ?? { source: "import" },
+      metadata: {
+        source: "import",
+        ...(params.metadata ?? {}),
+      },
       is_default: false,
-      removable: params.removable ?? true,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "company_id,skill_slug" },
+    { onConflict: "company_id,slug" },
   );
 }

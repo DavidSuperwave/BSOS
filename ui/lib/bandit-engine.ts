@@ -1,4 +1,4 @@
-import { getAdminClient } from "./db";
+import { getAdminClient } from "@/lib/bsos/db";
 
 export type ArmType =
   | "subject_hook_type"
@@ -71,13 +71,22 @@ const betaSample = (alpha: number, beta: number): number => {
   return x / (x + y);
 };
 
-async function logTrace(companyId: string, action: string, payload: Record<string, unknown>): Promise<void> {
+async function logTrace(
+  companyId: string,
+  skillName: string,
+  inputParams: Record<string, unknown>,
+  outputResult: unknown,
+  errorMessage?: string,
+): Promise<void> {
   try {
     const supabase = await getAdminClient();
     await supabase.from("agent_trace_logs").insert({
       company_id: companyId,
-      action,
-      payload,
+      skill_name: skillName,
+      trigger_type: "manual",
+      input_params: inputParams,
+      output_result: outputResult,
+      error: errorMessage ?? null,
       created_at: new Date().toISOString(),
     });
   } catch {
@@ -124,11 +133,15 @@ export async function initializePriors(companyId: string): Promise<void> {
       }
     }
 
-    await logTrace(companyId, "bandit_initialize_priors", { status: "ok" });
+    await logTrace(companyId, "bandit-engine.initializePriors", { companyId }, { status: "ok" });
   } catch (error) {
-    await logTrace(companyId, "bandit_initialize_priors_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "bandit-engine.initializePriors",
+      { companyId },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
   }
 }
 
@@ -176,19 +189,22 @@ export async function selectArm(companyId: string, armType: ArmType, context?: R
         : undefined,
     };
 
-    await logTrace(companyId, "bandit_select_arm", {
-      armType,
+    await logTrace(
+      companyId,
+      "bandit-engine.selectArm",
+      { armType, context: context ?? null, sourceCompanyId },
       result,
-      context: context ?? null,
-      sourceCompanyId,
-    });
+    );
 
     return result;
   } catch (error) {
-    await logTrace(companyId, "bandit_select_arm_error", {
-      armType,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "bandit-engine.selectArm",
+      { armType },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
 
     return { arm_name: DEFAULT_ARM_VALUES[armType][0], exploration_reason: "Fallback due to transient error." };
   }
@@ -236,14 +252,15 @@ export async function updateArm(
         .eq("id", existing.id);
     }
 
-    await logTrace(companyId, "bandit_update_arm", { armType, armName, reward });
+    await logTrace(companyId, "bandit-engine.updateArm", { armType, armName, reward }, { updated: true });
   } catch (error) {
-    await logTrace(companyId, "bandit_update_arm_error", {
-      armType,
-      armName,
-      reward,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "bandit-engine.updateArm",
+      { armType, armName, reward },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
   }
 }
 
@@ -270,11 +287,20 @@ export async function applyDecay(companyId: string): Promise<void> {
         .eq("id", row.id);
     }
 
-    await logTrace(companyId, "bandit_apply_decay", { states: (states ?? []).length });
+    await logTrace(
+      companyId,
+      "bandit-engine.applyDecay",
+      { companyId },
+      { states: (states ?? []).length },
+    );
   } catch (error) {
-    await logTrace(companyId, "bandit_apply_decay_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "bandit-engine.applyDecay",
+      { companyId },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
   }
 }
 
@@ -310,10 +336,13 @@ export async function getArmStats(companyId: string, armType?: ArmType): Promise
 
     return { arms };
   } catch (error) {
-    await logTrace(companyId, "bandit_get_arm_stats_error", {
-      armType: armType ?? null,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "bandit-engine.getArmStats",
+      { armType: armType ?? null },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return { arms: [] };
   }
 }
@@ -333,9 +362,13 @@ export async function shouldExplore(companyId: string): Promise<boolean> {
     const total = (data ?? []).reduce((acc: number, row: any) => acc + Number(row.total_observations ?? 0), 0);
     return total < 50;
   } catch (error) {
-    await logTrace(companyId, "bandit_should_explore_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "bandit-engine.shouldExplore",
+      { companyId },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return true;
   }
 }

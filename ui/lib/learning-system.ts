@@ -1,12 +1,14 @@
-import { getAdminClient } from "./db";
+import { getAdminClient } from "@/lib/bsos/db";
 
 export type SignalCategory =
-  | "Infrastructure"
-  | "Campaign_Performance"
-  | "Lead_Quality"
-  | "Content"
-  | "Competitive_Market"
-  | "Pipeline";
+  | "icp_signal"
+  | "messaging_pattern"
+  | "timing_pattern"
+  | "industry_benchmark"
+  | "offer_signal"
+  | "deliverability_pattern"
+  | "objection_pattern"
+  | "competitor_intel";
 
 export interface LearningEntry {
   id: string;
@@ -43,12 +45,14 @@ export interface RecordOutcomePairParams {
 }
 
 const CATEGORIES: SignalCategory[] = [
-  "Infrastructure",
-  "Campaign_Performance",
-  "Lead_Quality",
-  "Content",
-  "Competitive_Market",
-  "Pipeline",
+  "icp_signal",
+  "messaging_pattern",
+  "timing_pattern",
+  "industry_benchmark",
+  "offer_signal",
+  "deliverability_pattern",
+  "objection_pattern",
+  "competitor_intel",
 ];
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));
@@ -59,21 +63,30 @@ function contentSimilarity(a: string, b: string): number {
   if (!tA.size || !tB.size) return 0;
 
   let overlap = 0;
-  for (const token of tA) {
+  tA.forEach((token) => {
     if (tB.has(token)) overlap += 1;
-  }
+  });
 
-  const union = new Set([...tA, ...tB]).size;
+  const union = new Set([...Array.from(tA), ...Array.from(tB)]).size;
   return union ? overlap / union : 0;
 }
 
-async function logTrace(companyId: string, action: string, payload: Record<string, unknown>): Promise<void> {
+async function logTrace(
+  companyId: string,
+  skillName: string,
+  inputParams: Record<string, unknown>,
+  outputResult: unknown,
+  errorMessage?: string,
+): Promise<void> {
   try {
     const supabase = await getAdminClient();
     await supabase.from("agent_trace_logs").insert({
       company_id: companyId,
-      action,
-      payload,
+      skill_name: skillName,
+      trigger_type: "manual",
+      input_params: inputParams,
+      output_result: outputResult,
+      error: errorMessage ?? null,
       created_at: new Date().toISOString(),
     });
   } catch {
@@ -127,7 +140,12 @@ export async function recordLearning(params: RecordLearningParams): Promise<Lear
 
       if (error) throw error;
 
-      await logTrace(params.companyId, "learning_reinforced", { id: updated.id, entryType: params.entryType });
+      await logTrace(
+        params.companyId,
+        "learning-system.recordLearning",
+        { entryType: params.entryType, mode: "reinforce" },
+        { id: updated.id },
+      );
       return updated as LearningEntry;
     }
 
@@ -152,13 +170,21 @@ export async function recordLearning(params: RecordLearningParams): Promise<Lear
 
     if (error) throw error;
 
-    await logTrace(params.companyId, "learning_recorded", { id: inserted.id, entryType: params.entryType });
+    await logTrace(
+      params.companyId,
+      "learning-system.recordLearning",
+      { entryType: params.entryType, mode: "insert" },
+      { id: inserted.id },
+    );
     return inserted as LearningEntry;
   } catch (error) {
-    await logTrace(params.companyId, "learning_record_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-      entryType: params.entryType,
-    });
+    await logTrace(
+      params.companyId,
+      "learning-system.recordLearning",
+      { entryType: params.entryType },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     throw error;
   }
 }
@@ -188,11 +214,16 @@ export async function getLearnings(
     if (error) throw error;
     return (data ?? []) as LearningEntry[];
   } catch (error) {
-    await logTrace(companyId, "learning_get_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-      entryType: entryType ?? null,
-      minConfidence: minConfidence ?? null,
-    });
+    await logTrace(
+      companyId,
+      "learning-system.getLearnings",
+      {
+        entryType: entryType ?? null,
+        minConfidence: minConfidence ?? null,
+      },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return [];
   }
 }
@@ -210,7 +241,7 @@ export async function decayLearnings(companyId: string): Promise<{ decayed: numb
   try {
     const { data: entries } = await supabase
       .from("learning_entries")
-      .select("id,confidence_score,last_reinforced_at")
+      .select("id,confidence_score,last_reinforced_at,updated_at,created_at")
       .eq("company_id", companyId)
       .is("valid_until", null);
 
@@ -245,12 +276,21 @@ export async function decayLearnings(companyId: string): Promise<{ decayed: numb
       }
     }
 
-    await logTrace(companyId, "learning_decay", { decayed, expired });
+    await logTrace(
+      companyId,
+      "learning-system.decayLearnings",
+      { companyId },
+      { decayed, expired },
+    );
     return { decayed, expired };
   } catch (error) {
-    await logTrace(companyId, "learning_decay_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "learning-system.decayLearnings",
+      { companyId },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return { decayed: 0, expired: 0 };
   }
 }
@@ -271,18 +311,22 @@ export async function recordOutcomePair(params: RecordOutcomePairParams): Promis
       actual_outcome: null,
       was_approved: params.wasApproved,
       created_at: now,
-      updated_at: now,
     });
 
-    await logTrace(params.companyId, "outcome_pair_recorded", {
-      actionType: params.actionType,
-      actionDetail: params.actionDetail,
-    });
+    await logTrace(
+      params.companyId,
+      "learning-system.recordOutcomePair",
+      { actionType: params.actionType, actionDetail: params.actionDetail },
+      { created: true },
+    );
   } catch (error) {
-    await logTrace(params.companyId, "outcome_pair_record_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-      actionType: params.actionType,
-    });
+    await logTrace(
+      params.companyId,
+      "learning-system.recordOutcomePair",
+      { actionType: params.actionType },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
   }
 }
 
@@ -309,7 +353,6 @@ export async function updateOutcome(pairId: string, actualOutcome: number): Prom
       .from("action_outcome_pairs")
       .update({
         actual_outcome: actual,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", pairId);
 
@@ -317,7 +360,7 @@ export async function updateOutcome(pairId: string, actualOutcome: number): Prom
 
     await recordLearning({
       companyId: pair.company_id,
-      entryType: "Campaign_Performance",
+      entryType: "messaging_pattern",
       content: `Action ${pair.action_type} (${pair.action_detail}) predicted ${predicted.toFixed(3)} vs actual ${actual.toFixed(3)} (delta ${delta.toFixed(3)}).`,
       confidence,
       evidenceCount: 1,
@@ -325,13 +368,21 @@ export async function updateOutcome(pairId: string, actualOutcome: number): Prom
       sourceSkill: "learning-system:updateOutcome",
     });
 
-    await logTrace(pair.company_id, "outcome_pair_updated", { pairId, delta, actualOutcome: actual });
+    await logTrace(
+      pair.company_id,
+      "learning-system.updateOutcome",
+      { pairId },
+      { delta, actualOutcome: actual },
+    );
     return { delta };
   } catch (error) {
-    await logTrace("unknown", "outcome_pair_update_error", {
-      pairId,
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      "00000000-0000-0000-0000-000000000000",
+      "learning-system.updateOutcome",
+      { pairId },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return { delta: 0 };
   }
 }
@@ -371,9 +422,13 @@ export async function getSignalQuality(
       categories: categoryCounts,
     };
   } catch (error) {
-    await logTrace(companyId, "signal_quality_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "learning-system.getSignalQuality",
+      { companyId },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return {
       quality_score: 0,
       signal_count: 0,
@@ -404,9 +459,13 @@ export async function determinePhase(
     if (n < 500) return "optimization";
     return "scaling";
   } catch (error) {
-    await logTrace(companyId, "determine_phase_error", {
-      error: error instanceof Error ? error.message : "Unknown error",
-    });
+    await logTrace(
+      companyId,
+      "learning-system.determinePhase",
+      { companyId },
+      { fallback: true },
+      error instanceof Error ? error.message : "Unknown error",
+    );
     return "cold_start";
   }
 }

@@ -1,5 +1,5 @@
 // Supermemory container helpers for BSOS
-import { searchInsights, addInsight, companyContainerTag } from "@/lib/supermemory-client";
+import { searchInsights, storeInsight, companyContainerTag } from "@/lib/supermemory-client";
 
 const CONTAINER_DOMAINS = {
   "campaigns-copy": true,
@@ -17,6 +17,18 @@ type DomainKey = keyof typeof CONTAINER_DOMAINS;
 
 const SHARED_BENCHMARKS_CONTAINER = "shared:gtm:benchmarks";
 const AGENT_NAME = "julian";
+
+function resolveSupermemoryApiKey(): string | null {
+  return process.env.SUPERMEMORY_API_KEY || null;
+}
+
+function toInsightCategory(category?: string): "general" | "campaign_insight" | "reply_analysis" | "icp_refinement" {
+  const normalized = (category || "").toLowerCase();
+  if (normalized.includes("reply")) return "reply_analysis";
+  if (normalized.includes("icp")) return "icp_refinement";
+  if (normalized.includes("campaign")) return "campaign_insight";
+  return "general";
+}
 
 function normalizeSlug(slug: string): string {
   return (slug || "").trim().toLowerCase();
@@ -67,14 +79,15 @@ export async function storeSkillOutput(params: {
 }): Promise<void> {
   const { companySlug, domain, content, category, metadata } = params;
   const containerTag = getContainerTag(companySlug, domain);
+  const apiKey = resolveSupermemoryApiKey();
 
-  if (!content?.trim()) {
+  if (!content?.trim() || !apiKey) {
     return;
   }
 
-  await addInsight({
+  await storeInsight(apiKey, containerTag, {
     content,
-    containerTags: [containerTag],
+    category: toInsightCategory(category ?? normalizeDomain(domain)),
     metadata: {
       company_slug: normalizeSlug(companySlug),
       domain: normalizeDomain(domain),
@@ -93,26 +106,15 @@ export async function retrieveContext(params: {
 }): Promise<any[]> {
   const { companySlug, domain, query, limit = 8 } = params;
   const containerTag = getContainerTag(companySlug, domain);
+  const apiKey = resolveSupermemoryApiKey();
+  if (!apiKey) return [];
 
-  const result = await searchInsights({
+  const result = await searchInsights(apiKey, containerTag, {
     query,
-    containerTags: [containerTag],
     limit,
   });
 
-  if (Array.isArray(result)) {
-    return result;
-  }
-
-  if (result && Array.isArray((result as any).data)) {
-    return (result as any).data;
-  }
-
-  if (result && Array.isArray((result as any).results)) {
-    return (result as any).results;
-  }
-
-  return [];
+  return Array.isArray(result) ? result : [];
 }
 
 export async function storeBenchmark(params: {
@@ -120,14 +122,15 @@ export async function storeBenchmark(params: {
   category: string;
 }): Promise<void> {
   const { content, category } = params;
+  const apiKey = resolveSupermemoryApiKey();
 
-  if (!content?.trim()) {
+  if (!content?.trim() || !apiKey) {
     return;
   }
 
-  await addInsight({
+  await storeInsight(apiKey, SHARED_BENCHMARKS_CONTAINER, {
     content,
-    containerTags: [SHARED_BENCHMARKS_CONTAINER],
+    category: toInsightCategory(category),
     metadata: {
       category,
       source: "benchmark",
@@ -137,25 +140,15 @@ export async function storeBenchmark(params: {
 }
 
 export async function retrieveBenchmarks(query: string, limit = 8): Promise<any[]> {
-  const result = await searchInsights({
+  const apiKey = resolveSupermemoryApiKey();
+  if (!apiKey) return [];
+
+  const result = await searchInsights(apiKey, SHARED_BENCHMARKS_CONTAINER, {
     query,
-    containerTags: [SHARED_BENCHMARKS_CONTAINER],
     limit,
   });
 
-  if (Array.isArray(result)) {
-    return result;
-  }
-
-  if (result && Array.isArray((result as any).data)) {
-    return (result as any).data;
-  }
-
-  if (result && Array.isArray((result as any).results)) {
-    return (result as any).results;
-  }
-
-  return [];
+  return Array.isArray(result) ? result : [];
 }
 
 export function isUserFolder(containerTag: string): boolean {
