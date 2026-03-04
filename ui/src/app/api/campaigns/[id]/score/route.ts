@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
-import { evaluateCampaign } from "@/lib/chess-engine/evaluator";
+import { evaluateCampaign } from "@/lib/chess-engine/evaluator-legacy";
 import type { CampaignEvalInput } from "@/lib/chess-engine/types";
 import { envConfig } from "@/lib/env";
 

@@ -1,7 +1,7 @@
 // Preliminary findings report generator
 import { getAdminClient } from "@/lib/bsos/db";
 import { sendTelegramMessage } from "@/lib/bsos/telegram";
-import { evaluateCompanyHealth, scoreToGrade } from "./evaluator";
+import { evaluateCompanyHealth, scoreToGrade } from "@/lib/chess-engine/evaluator";
 
 export interface PreliminaryReport {
   report_id: string;

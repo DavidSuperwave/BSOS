@@ -23,79 +23,187 @@ async function readFileIfExists(filePath: string) {
   }
 }
 
-const BUILT_IN_SKILLS: Omit<SkillBlueprintSeed, "skillMd">[] = [
+type BuiltInCategory = "onboarding" | "daily" | "lifecycle";
+type BuiltInRisk = "low" | "medium" | "high";
+
+function titleFromSlug(slug: string): string {
+  return slug
+    .split("-")
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+}
+
+export const BUILT_IN_SKILLS: Omit<SkillBlueprintSeed, "skillMd">[] = [
   {
-    slug: "research-perplexity",
-    name: "Research (Perplexity)",
-    description: "Web research via Perplexity API to gather competitive intel, market data, and prospect context for GTM campaigns.",
+    slug: "copy-analyzer",
+    name: titleFromSlug("copy-analyzer"),
+    description: "Analyze campaign copy quality, hooks, and CTA clarity.",
     version: "1.0.0",
-    metadata: { source: "built-in", category: "research" },
+    metadata: { source: "built-in", category: "onboarding" as BuiltInCategory, risk_level: "low" as BuiltInRisk, core: true, removable: false, level: "L1" },
     isDefault: true,
   },
   {
-    slug: "draft-email",
-    name: "Draft Email",
-    description: "Compose outbound emails using company templates, ICP data, and brand voice. Generates personalized first-touch and follow-up emails.",
+    slug: "reply-miner",
+    name: titleFromSlug("reply-miner"),
+    description: "Classify replies and extract sentiment/objection patterns.",
     version: "1.0.0",
-    metadata: { source: "built-in", category: "outbound" },
+    metadata: { source: "built-in", category: "onboarding" as BuiltInCategory, risk_level: "low" as BuiltInRisk, core: true, removable: false, level: "L1" },
     isDefault: true,
   },
   {
-    slug: "analyze-campaign",
-    name: "Analyze Campaign",
-    description: "Campaign performance analysis — identifies underperforming sequences, suggests A/B tests, and recommends timing adjustments.",
+    slug: "lead-profiler",
+    name: titleFromSlug("lead-profiler"),
+    description: "Profile lead quality and ICP fit readiness.",
     version: "1.0.0",
-    metadata: { source: "built-in", category: "analytics" },
+    metadata: { source: "built-in", category: "onboarding" as BuiltInCategory, risk_level: "medium" as BuiltInRisk, core: true, removable: false, level: "L1" },
     isDefault: true,
   },
   {
-    slug: "qualify-lead",
-    name: "Qualify Lead",
-    description: "Score and qualify leads against ICP criteria. Assesses company fit, persona match, timing signals, and engagement history.",
+    slug: "bounce-diagnostician",
+    name: titleFromSlug("bounce-diagnostician"),
+    description: "Diagnose bounce root causes across domains and lists.",
     version: "1.0.0",
-    metadata: { source: "built-in", category: "qualification" },
+    metadata: { source: "built-in", category: "onboarding" as BuiltInCategory, risk_level: "medium" as BuiltInRisk, core: true, removable: false, level: "L1" },
     isDefault: true,
   },
   {
-    slug: "summarize-thread",
-    name: "Summarize Thread",
-    description: "Summarize inbox email threads — extracts key intent, sentiment, action items, and recommended next steps.",
+    slug: "deal-miner",
+    name: titleFromSlug("deal-miner"),
+    description: "Mine won/lost deal outcomes for GTM signal feedback.",
     version: "1.0.0",
-    metadata: { source: "built-in", category: "inbox" },
+    metadata: { source: "built-in", category: "onboarding" as BuiltInCategory, risk_level: "medium" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "deliverability-assessor",
+    name: titleFromSlug("deliverability-assessor"),
+    description: "Assess deliverability posture and mailbox/domain setup.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "onboarding" as BuiltInCategory, risk_level: "high" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "campaign-monitor",
+    name: titleFromSlug("campaign-monitor"),
+    description: "Monitor campaign metrics and detect hourly anomalies.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "daily" as BuiltInCategory, risk_level: "low" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "deliverability-watchdog",
+    name: titleFromSlug("deliverability-watchdog"),
+    description: "Watch ongoing sender reputation and inbox placement health.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "daily" as BuiltInCategory, risk_level: "high" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "pipeline-tracker",
+    name: titleFromSlug("pipeline-tracker"),
+    description: "Track CRM stage movements and pipeline velocity drift.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "daily" as BuiltInCategory, risk_level: "medium" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "icp-validator",
+    name: titleFromSlug("icp-validator"),
+    description: "Validate ICP assumptions and segment performance weekly.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "daily" as BuiltInCategory, risk_level: "medium" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "intelligence-reporter",
+    name: titleFromSlug("intelligence-reporter"),
+    description: "Generate executive daily GTM intelligence summaries.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "daily" as BuiltInCategory, risk_level: "low" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "profile-enricher",
+    name: titleFromSlug("profile-enricher"),
+    description: "Enrich sparse profiles to improve targeting precision.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "daily" as BuiltInCategory, risk_level: "medium" as BuiltInRisk, core: true, removable: false, level: "L1" },
+    isDefault: true,
+  },
+  {
+    slug: "campaign-researcher",
+    name: titleFromSlug("campaign-researcher"),
+    description: "Run market/angle research for campaign planning.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "lifecycle" as BuiltInCategory, risk_level: "low" as BuiltInRisk, core: true, removable: false, level: "L2" },
+    isDefault: true,
+  },
+  {
+    slug: "campaign-builder",
+    name: titleFromSlug("campaign-builder"),
+    description: "Build full outbound campaigns from approved research.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "lifecycle" as BuiltInCategory, risk_level: "medium" as BuiltInRisk, core: true, removable: false, level: "L3" },
+    isDefault: true,
+  },
+  {
+    slug: "campaign-launcher",
+    name: titleFromSlug("campaign-launcher"),
+    description: "Run preflight checks and launch approved campaigns.",
+    version: "1.0.0",
+    metadata: { source: "built-in", category: "lifecycle" as BuiltInCategory, risk_level: "high" as BuiltInRisk, core: true, removable: false, level: "L3" },
     isDefault: true,
   },
 ];
 
+const LEGACY_SKILL_SLUGS = [
+  "research-perplexity",
+  "draft-email",
+  "analyze-campaign",
+  "qualify-lead",
+  "summarize-thread",
+];
+
 function buildSkillMd(seed: Omit<SkillBlueprintSeed, "skillMd">): string {
   const useWhen: Record<string, string[]> = {
-    "research-perplexity": [
-      "user asks to research a company or prospect",
-      "user needs competitive intelligence",
-      "user wants market data or industry trends",
-    ],
-    "draft-email": [
-      "user asks to write an email",
-      "user needs a follow-up message",
-      "user wants to compose outreach",
-    ],
-    "analyze-campaign": [
-      "user asks about campaign performance",
-      "user wants to optimize a sequence",
-      "user asks why reply rates are low",
-    ],
-    "qualify-lead": [
-      "user asks to score or qualify a lead",
-      "user wants to check ICP fit",
-      "user asks if a prospect is worth pursuing",
-    ],
-    "summarize-thread": [
-      "user asks to summarize an email thread",
-      "user wants key takeaways from a conversation",
-      "user asks what happened in an inbox thread",
-    ],
+    "copy-analyzer": ["You need copy quality diagnostics.", "You are onboarding and need baseline messaging analysis."],
+    "reply-miner": ["You need sentiment and objection extraction from replies.", "You want positive/negative reply pattern mining."],
+    "lead-profiler": ["You need ICP-fit profiling for leads.", "Lead quality scoring is missing or stale."],
+    "bounce-diagnostician": ["Bounce rates increased.", "You need domain/list-level bounce root-cause analysis."],
+    "deal-miner": ["You need win/loss signal extraction.", "You want reasons for deal conversion outcomes."],
+    "deliverability-assessor": ["You need mailbox/domain setup audit.", "Warmup/authentication posture must be assessed."],
+    "campaign-monitor": ["You need hourly campaign anomaly checks.", "You need CTR/response drifts flagged quickly."],
+    "deliverability-watchdog": ["You need ongoing inbox placement and sender health checks.", "Blocklist and authentication monitoring is required."],
+    "pipeline-tracker": ["You need CRM stage movement summaries.", "Pipeline velocity and conversion changes need tracking."],
+    "icp-validator": ["ICP assumptions need weekly validation.", "Segment performance divergence is suspected."],
+    "intelligence-reporter": ["You need end-of-day GTM summary.", "Exec-ready highlights and risks are needed."],
+    "profile-enricher": ["Contact/company records are sparse.", "You need enrichment for targeting precision."],
+    "campaign-researcher": ["You need campaign angle and market research.", "You need supporting evidence before writing campaigns."],
+    "campaign-builder": ["You need complete multi-step campaign drafts.", "Research is ready and campaign assets must be built."],
+    "campaign-launcher": ["Campaign assets are approved and launch-ready.", "You need orchestration and launch checks executed."],
   };
 
-  const triggers = useWhen[seed.slug] || [];
+  const dontUseWhen: Record<string, string[]> = {
+    "copy-analyzer": ["No campaign copy exists yet.", "You only need infrastructure diagnostics."],
+    "reply-miner": ["There are no reply datasets yet.", "You only need pre-launch static analysis."],
+    "lead-profiler": ["Lead records are unavailable.", "You need only campaign creative critique."],
+    "bounce-diagnostician": ["Sending has not started yet.", "No bounce logs are available."],
+    "deal-miner": ["No opportunity history exists.", "You only need top-of-funnel metrics."],
+    "deliverability-assessor": ["You need reply sentiment analysis only.", "Mailbox and domain access is unavailable."],
+    "campaign-monitor": ["Campaigns are inactive.", "You need deep onboarding audit, not monitoring."],
+    "deliverability-watchdog": ["No active sending domain/mailbox exists.", "You need one-time onboarding assessment only."],
+    "pipeline-tracker": ["CRM integration is not connected.", "No opportunity objects exist."],
+    "icp-validator": ["There is insufficient volume for segmentation inference.", "You need immediate copy fixes, not ICP validation."],
+    "intelligence-reporter": ["Upstream daily skills have not run.", "You need raw logs rather than executive summary."],
+    "profile-enricher": ["Data providers are disconnected.", "Records are already fully enriched recently."],
+    "campaign-researcher": ["You already have approved research and only need launch execution.", "No campaign initiative exists."],
+    "campaign-builder": ["Research is missing.", "Compliance or brand approvals are incomplete."],
+    "campaign-launcher": ["Campaign content is unapproved.", "Deliverability posture is unhealthy."],
+  };
+
+  const triggers = useWhen[seed.slug] ?? ["Use when this skill's domain applies."];
+  const antiTriggers = dontUseWhen[seed.slug] ?? ["Do not use when prerequisites are unavailable."];
+
   return `---
 name: ${seed.name}
 description: ${seed.description}
@@ -107,6 +215,9 @@ ${triggers.map((t) => `  - "${t}"`).join("\n")}
 # ${seed.name}
 
 ${seed.description}
+
+## Don't use when
+${antiTriggers.map((t) => `- ${t}`).join("\n")}
 `;
 }
 
@@ -124,7 +235,7 @@ export async function loadWorkspaceDefaultSkillBlueprints(): Promise<SkillBluepr
   const builtInSkill = await readFileIfExists(builtInSkillPath);
   if (builtInSkill) {
     const parsed = parseSkillFrontmatter(builtInSkill);
-    const slug = normalizeSkillSlug(parsed.name || "gtm-engine-core-skill");
+    const slug = "gtm-engine";
     seeds.push({
       slug,
       name: parsed.name || "GTM Engine Core Skill",
@@ -141,11 +252,22 @@ export async function loadWorkspaceDefaultSkillBlueprints(): Promise<SkillBluepr
     });
   }
 
-  // Add built-in programmatic skills
+  // Add built-ins from openclaw/skills/{slug}/SKILL.md (fallback to generated content)
   for (const builtIn of BUILT_IN_SKILLS) {
+    const filePath = path.join(process.cwd(), "openclaw", "skills", builtIn.slug, "SKILL.md");
+    const fileContent = await readFileIfExists(filePath);
+    const skillMd = fileContent ?? buildSkillMd(builtIn);
+    const parsed = parseSkillFrontmatter(skillMd);
     seeds.push({
       ...builtIn,
-      skillMd: buildSkillMd(builtIn),
+      name: parsed.name || builtIn.name || titleFromSlug(builtIn.slug),
+      description: parsed.description || builtIn.description,
+      skillMd,
+      metadata: {
+        ...(builtIn.metadata || {}),
+        openclaw: parsed.metadata || {},
+        from_filesystem: Boolean(fileContent),
+      },
     });
   }
 
@@ -154,6 +276,12 @@ export async function loadWorkspaceDefaultSkillBlueprints(): Promise<SkillBluepr
 
 export async function ensureDefaultBlueprints(admin: any) {
   const seeds = await loadWorkspaceDefaultSkillBlueprints();
+  await admin
+    .from("company_skill_blueprints")
+    .delete()
+    .is("company_id", null)
+    .in("slug", LEGACY_SKILL_SLUGS);
+
   for (const seed of seeds) {
     const { data: existing } = await admin
       .from("company_skill_blueprints")
