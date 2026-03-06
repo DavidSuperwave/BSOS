@@ -17,7 +17,7 @@ const AUTH_ROUTES = ["/login", "/signup", "/forgot-password", "/reset-password",
 export function AuthGate({ children }: AuthGateProps) {
   const pathname = usePathname();
   const { user, isLoading: authLoading } = useAuth();
-  const { companies, isLoading: companyLoading } = useCompany();
+  const { companies, isLoading: companyLoading, hasResolvedCompanyFetch } = useCompany();
 
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
   const isOnboardingRoute = pathname.startsWith("/onboarding");
@@ -49,7 +49,7 @@ export function AuthGate({ children }: AuthGateProps) {
   // mid-onboarding (onboarding_step < 5 and status is not "active"),
   // block rendering and redirect to /onboarding.
   // This prevents any dashboard flash for users who haven't finished setup.
-  if (user && !companyLoading) {
+  if (user && !companyLoading && hasResolvedCompanyFetch) {
     const hasReadyCompany = companies.some(
       (c) => c.status === "active" || c.status === "onboarded"
     );
