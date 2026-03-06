@@ -19,6 +19,7 @@ import { runIntakePipeline, mapFormToContract } from "@/lib/intake";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 const CALENDLY_BASE = "https://api.calendly.com";
+const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
 
 let adminClient: ReturnType<typeof createClient> | null = null;
 function getAdmin() {
@@ -43,6 +44,85 @@ async function resolveCalendlyUserUri(apiKey: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+function resolvePublicBaseUrl(req: NextRequest) {
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+  const host = req.headers.get("host");
+  if (host) {
+    const proto = host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https";
+    return `${proto}://${host}`;
+  }
+  return req.nextUrl.origin;
+}
+
+async function ensurePlusVibeReplyWebhook(input: {
+  apiKey: string;
+  workspaceId: string;
+  webhookUrl: string;
+}) {
+  const headers = {
+    "x-api-key": input.apiKey,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const listRes = await fetch(
+      `${PLUSVIBE_BASE}/webhooks?workspace_id=${encodeURIComponent(input.workspaceId)}`,
+      {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+    if (listRes.ok) {
+      const listPayload = await listRes.json();
+      const webhooks = Array.isArray(listPayload)
+        ? listPayload
+        : Array.isArray(listPayload?.value)
+          ? listPayload.value
+          : Array.isArray(listPayload?.data)
+            ? listPayload.data
+            : Array.isArray(listPayload?.webhooks)
+              ? listPayload.webhooks
+              : [];
+      const existing = webhooks.find((webhook: any) => {
+        const url = String(webhook?.url || webhook?.webhook_url || "").trim();
+        const events = Array.isArray(webhook?.events) ? webhook.events.map((e: any) => String(e)) : [];
+        return (
+          url === input.webhookUrl &&
+          (events.includes("ALL_EMAIL_REPLIES") || events.includes("FIRST_EMAIL_REPLIES"))
+        );
+      });
+      if (existing) {
+        return { success: true, reused: true, details: existing };
+      }
+    }
+  } catch {
+    // Non-blocking, attempt creation directly.
+  }
+
+  const createRes = await fetch(`${PLUSVIBE_BASE}/webhooks`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      workspace_id: input.workspaceId,
+      webhook_url: input.webhookUrl,
+      url: input.webhookUrl,
+      events: ["ALL_EMAIL_REPLIES"],
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+
+  if (!createRes.ok) {
+    const errText = await createRes.text().catch(() => "Unknown error");
+    return { success: false, reused: false, error: errText };
+  }
+  const created = await createRes.json().catch(() => ({}));
+  return { success: true, reused: false, details: created };
 }
 
 export async function POST(
@@ -119,6 +199,27 @@ export async function POST(
         onboardingData.plusvibe_api_key;
       integrationCredentials.plusvibe_workspace_id =
         onboardingData.plusvibe_workspace_id;
+
+      if (onboardingData.plusvibe_workspace_id) {
+        const publicBaseUrl = resolvePublicBaseUrl(req);
+        const webhookUrl = `${publicBaseUrl}/api/webhooks/plusvibe`;
+        integrationCredentials.plusvibe_webhook_url = webhookUrl;
+        const webhookSetup = await ensurePlusVibeReplyWebhook({
+          apiKey: onboardingData.plusvibe_api_key,
+          workspaceId: onboardingData.plusvibe_workspace_id,
+          webhookUrl,
+        });
+        integrationCredentials.plusvibe_webhook_status = webhookSetup.success
+          ? webhookSetup.reused
+            ? "reused"
+            : "created"
+          : "failed";
+        if (!webhookSetup.success) {
+          integrationCredentials.plusvibe_webhook_error = webhookSetup.error || "Webhook setup failed";
+        } else {
+          delete integrationCredentials.plusvibe_webhook_error;
+        }
+      }
     }
     if (onboardingData.calendly_api_key) {
       integrationCredentials.calendly_api_key =

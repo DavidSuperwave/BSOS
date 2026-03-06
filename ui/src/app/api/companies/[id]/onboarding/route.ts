@@ -5,6 +5,7 @@ import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-l
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
 
 let adminClient: ReturnType<typeof createClient> | null = null;
 function getAdmin() {
@@ -13,6 +14,83 @@ function getAdmin() {
 }
 
 const limiter = createRateLimiter({ limit: 30, window: 60 });
+
+function resolvePublicBaseUrl(req: NextRequest) {
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const forwardedHost = req.headers.get("x-forwarded-host");
+  if (forwardedProto && forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+  const host = req.headers.get("host");
+  if (host) {
+    const proto = host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https";
+    return `${proto}://${host}`;
+  }
+  return req.nextUrl.origin;
+}
+
+async function ensurePlusVibeReplyWebhook(input: {
+  apiKey: string;
+  workspaceId: string;
+  webhookUrl: string;
+}) {
+  const headers = {
+    "x-api-key": input.apiKey,
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const listRes = await fetch(
+      `${PLUSVIBE_BASE}/webhooks?workspace_id=${encodeURIComponent(input.workspaceId)}`,
+      {
+        headers,
+        signal: AbortSignal.timeout(10000),
+      }
+    );
+    if (listRes.ok) {
+      const listPayload = await listRes.json();
+      const webhooks = Array.isArray(listPayload)
+        ? listPayload
+        : Array.isArray(listPayload?.value)
+          ? listPayload.value
+          : Array.isArray(listPayload?.data)
+            ? listPayload.data
+            : Array.isArray(listPayload?.webhooks)
+              ? listPayload.webhooks
+              : [];
+      const existing = webhooks.find((webhook: any) => {
+        const url = String(webhook?.url || webhook?.webhook_url || "").trim();
+        const events = Array.isArray(webhook?.events) ? webhook.events.map((e: any) => String(e)) : [];
+        return (
+          url === input.webhookUrl &&
+          (events.includes("ALL_EMAIL_REPLIES") || events.includes("FIRST_EMAIL_REPLIES"))
+        );
+      });
+      if (existing) {
+        return { success: true, reused: true };
+      }
+    }
+  } catch {
+    // Keep going and try create directly.
+  }
+
+  const createRes = await fetch(`${PLUSVIBE_BASE}/webhooks`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      workspace_id: input.workspaceId,
+      webhook_url: input.webhookUrl,
+      url: input.webhookUrl,
+      events: ["ALL_EMAIL_REPLIES"],
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!createRes.ok) {
+    const errText = await createRes.text().catch(() => "Webhook setup failed");
+    return { success: false, error: errText };
+  }
+  return { success: true, reused: false };
+}
 
 export async function GET(
   req: NextRequest,
@@ -103,6 +181,31 @@ export async function PATCH(
       if ("plusvibe_workspace_id" in mergedIntegrationCredentials) {
         updateData.plusvibe_workspace_id =
           mergedIntegrationCredentials.plusvibe_workspace_id || null;
+      }
+
+      const plusvibeApiKey = String(mergedIntegrationCredentials.plusvibe_api_key || "").trim();
+      const plusvibeWorkspaceId = String(
+        mergedIntegrationCredentials.plusvibe_workspace_id || ""
+      ).trim();
+      if (plusvibeApiKey && plusvibeWorkspaceId) {
+        const webhookUrl = `${resolvePublicBaseUrl(req)}/api/webhooks/plusvibe`;
+        const webhookResult = await ensurePlusVibeReplyWebhook({
+          apiKey: plusvibeApiKey,
+          workspaceId: plusvibeWorkspaceId,
+          webhookUrl,
+        });
+        updateData.integration_credentials = {
+          ...mergedIntegrationCredentials,
+          plusvibe_webhook_url: webhookUrl,
+          plusvibe_webhook_status: webhookResult.success
+            ? webhookResult.reused
+              ? "reused"
+              : "created"
+            : "failed",
+          ...(webhookResult.success
+            ? { plusvibe_webhook_error: null }
+            : { plusvibe_webhook_error: webhookResult.error || "Webhook setup failed" }),
+        };
       }
     }
 
