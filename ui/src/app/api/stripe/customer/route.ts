@@ -3,7 +3,13 @@ import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+function getStripeClient() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeSecretKey) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
+  return new Stripe(stripeSecretKey);
+}
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -71,6 +77,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const stripe = getStripeClient();
     const body = (await request.json()) as CustomerBody;
     const companyId = body.company_id;
 

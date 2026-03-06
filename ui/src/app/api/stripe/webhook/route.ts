@@ -2,7 +2,13 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
+function getStripeClient() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeSecretKey) {
+    throw new Error("STRIPE_SECRET_KEY is not configured");
+  }
+  return new Stripe(stripeSecretKey);
+}
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -28,8 +34,16 @@ function getPeriodBounds(invoice: Stripe.Invoice): {
 }
 
 export async function POST(request: Request) {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
   const signature = request.headers.get("stripe-signature");
   const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!stripeSecretKey) {
+    return NextResponse.json(
+      { error: "Stripe secret key is not configured" },
+      { status: 500 }
+    );
+  }
 
   if (!signature || !webhookSecret) {
     return NextResponse.json(
@@ -38,6 +52,7 @@ export async function POST(request: Request) {
     );
   }
 
+  const stripe = getStripeClient();
   let event: Stripe.Event;
   const rawBody = await request.text();
 
@@ -136,7 +151,8 @@ export async function POST(request: Request) {
               domain_inventory_id: domainInventoryId,
               mailbox_count: mailboxItem?.quantity ?? 3,
               price_per_mailbox:
-                mailboxItem?.price?.unit_amount != null
+                mailboxItem?.price?.unit_amount !== null &&
+                mailboxItem?.price?.unit_amount !== undefined
                   ? mailboxItem.price.unit_amount / 100
                   : 10,
               stripe_subscription_id: subscriptionId,
