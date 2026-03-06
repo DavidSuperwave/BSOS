@@ -2,7 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { getProjectCredentials } from "@/lib/plusvibe-project";
 
-const PLUSVIBE_API = "https://server.plusvibe.com/api/v1";
+const PLUSVIBE_API = "https://api.plusvibe.ai/api/v1";
+
+function toCampaignArray(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.campaigns)) return payload.campaigns;
+  if (Array.isArray(payload?.data?.campaigns)) return payload.data.campaigns;
+  return [];
+}
 
 export async function GET(
   req: NextRequest,
@@ -24,75 +33,111 @@ export async function GET(
   }
 
   try {
-    // Fetch campaign stats and analytics from PlusVibe
-    const [statsRes, analyticsRes] = await Promise.all([
-      fetch(`${PLUSVIBE_API}/campaigns/${campaignId}/stats`, {
-        headers: {
-          Authorization: `Bearer ${creds.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        signal: AbortSignal.timeout(10000),
-      }),
-      fetch(`${PLUSVIBE_API}/campaigns/${campaignId}/analytics`, {
-        headers: {
-          Authorization: `Bearer ${creds.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        signal: AbortSignal.timeout(10000),
-      }),
+    const headers = {
+      "x-api-key": creds.apiKey,
+      "Content-Type": "application/json",
+    };
+
+    const [statsByCampaignRes, allStatsRes, campaignDetailsRes, leadsRes] = await Promise.all([
+      fetch(
+        `${PLUSVIBE_API}/campaign/${campaignId}/stats?workspace_id=${encodeURIComponent(
+          creds.workspaceId
+        )}`,
+        {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        }
+      ),
+      fetch(
+        `${PLUSVIBE_API}/campaign/stats?workspace_id=${encodeURIComponent(creds.workspaceId)}`,
+        {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        }
+      ),
+      fetch(
+        `${PLUSVIBE_API}/campaign/list-all?workspace_id=${encodeURIComponent(
+          creds.workspaceId
+        )}&campaign_id=${encodeURIComponent(campaignId)}`,
+        {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        }
+      ),
+      fetch(
+        `${PLUSVIBE_API}/lead/workspace-leads?workspace_id=${encodeURIComponent(
+          creds.workspaceId
+        )}&campaign_id=${encodeURIComponent(campaignId)}&limit=500`,
+        {
+          headers,
+          signal: AbortSignal.timeout(10000),
+        }
+      ),
     ]);
 
     let stats: any = {};
-    let analytics: any = {};
-
-    if (statsRes.ok) {
-      stats = await statsRes.json();
+    if (statsByCampaignRes.ok) {
+      stats = await statsByCampaignRes.json();
+    } else if (allStatsRes.ok) {
+      const allStatsPayload = await allStatsRes.json();
+      const allStats = Array.isArray(allStatsPayload)
+        ? allStatsPayload
+        : Array.isArray(allStatsPayload?.value)
+          ? allStatsPayload.value
+          : Array.isArray(allStatsPayload?.data)
+            ? allStatsPayload.data
+            : [];
+      stats =
+        allStats.find((entry: any) => String(entry?._id || entry?.campaign_id || entry?.id) === campaignId) ||
+        {};
     }
 
-    if (analyticsRes.ok) {
-      analytics = await analyticsRes.json();
-    }
+    const campaignDetailsPayload = campaignDetailsRes.ok ? await campaignDetailsRes.json() : {};
+    const campaignDetails =
+      toCampaignArray(campaignDetailsPayload).find(
+        (entry: any) => String(entry?._id || entry?.id || entry?.campaign_id) === campaignId
+      ) || null;
+    const sequences = Array.isArray(campaignDetails?.sequences) ? campaignDetails.sequences : [];
 
-    // Build daily stats from analytics data
-    const dailyStats = (analytics.daily || analytics.daily_stats || []).map(
-      (d: any) => ({
-        date: d.date,
-        newLead: d.new_leads || d.new_lead || 0,
-        followUp: d.follow_ups || d.follow_up || 0,
-      })
+    const leadsPayload = leadsRes.ok ? await leadsRes.json() : {};
+    const leads = Array.isArray(leadsPayload?.value)
+      ? leadsPayload.value
+      : Array.isArray(leadsPayload?.data)
+        ? leadsPayload.data
+        : Array.isArray(leadsPayload)
+          ? leadsPayload
+          : [];
+
+    const dailyStats = [] as Array<{ date: string; newLead: number; followUp: number }>;
+    const dailyMetrics = [] as Array<{
+      date: string;
+      reply: number;
+      replyWithOOO: number;
+      positive: number;
+      bounce: number;
+    }>;
+
+    const stepStats = sequences.map((step: any, i: number) => ({
+      id: String(step?.id || `step-${i + 1}`),
+      title: step?.name || `Step ${Number(step?.step || i + 1)}`,
+      sent: 0,
+      replied: 0,
+      positive: 0,
+    }));
+
+    const sent = Number(stats.sent_count || stats.sent || stats.total_sent || 0);
+    const contacted = Number(
+      stats.lead_contacted_count || stats.contacted || stats.leads_contacted || 0
     );
-
-    // Build daily metrics
-    const dailyMetrics = (analytics.daily || analytics.daily_stats || []).map(
-      (d: any) => ({
-        date: d.date,
-        reply: d.replies || d.reply || 0,
-        replyWithOOO: (d.replies || 0) + (d.ooo || 0),
-        positive: d.positive || 0,
-        bounce: d.bounced || d.bounce || 0,
-      })
+    const completed = Number(stats.completed_lead_count || stats.completed || 0);
+    const replies = Number(stats.replied_count || stats.replies || stats.total_replies || 0);
+    const positive = Number(
+      stats.positive_reply_count || stats.positive || stats.positive_replies || 0
     );
-
-    // Build step stats
-    const stepStats = (analytics.steps || analytics.sequence_steps || stats.steps || []).map(
-      (s: any, i: number) => ({
-        id: s.id || `step-${i + 1}`,
-        title: s.title || s.name || `Step ${i + 1}`,
-        sent: s.sent || s.emails_sent || 0,
-        replied: s.replied || s.replies || 0,
-        positive: s.positive || s.positive_replies || 0,
-      })
-    );
-
-    // Totals from stats
-    const sent = stats.sent || stats.emails_sent || stats.total_sent || 0;
-    const contacted = stats.contacted || stats.leads_contacted || 0;
-    const completed = stats.completed || stats.leads_completed || 0;
-    const replies = stats.replies || stats.total_replies || 0;
-    const positive = stats.positive || stats.positive_replies || 0;
-    const bounced = stats.bounced || stats.total_bounced || 0;
-    const opened = stats.opened || stats.total_opened || 0;
-    const unsubscribed = stats.unsubscribed || 0;
+    const bounced = Number(stats.bounced_count || stats.bounced || stats.total_bounced || 0);
+    const opened = Number(stats.unique_opened_count || stats.opened || stats.total_opened || 0);
+    const unsubscribed = Number(stats.unsubscribed_count || stats.unsubscribed || 0);
+    const totalLeads = Number(stats.lead_count || leads.length || 0);
 
     return NextResponse.json({
       dailyStats,
@@ -100,13 +145,14 @@ export async function GET(
       stepStats,
       totals: {
         sent,
-        contacted,
+        contacted: contacted || Math.max(replies, 0),
         completed,
         replyRate: sent > 0 ? Number(((replies / sent) * 100).toFixed(1)) : 0,
         positiveRate: sent > 0 ? Number(((positive / sent) * 100).toFixed(1)) : 0,
         bounceRate: sent > 0 ? Number(((bounced / sent) * 100).toFixed(1)) : 0,
         openRate: sent > 0 ? Number(((opened / sent) * 100).toFixed(1)) : 0,
         unsubscribeRate: sent > 0 ? Number(((unsubscribed / sent) * 100).toFixed(1)) : 0,
+        totalLeads,
       },
     });
   } catch (err: any) {

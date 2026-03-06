@@ -30,9 +30,6 @@ export async function GET(
       .single();
 
     if (threadError) throw threadError;
-    if (!thread) {
-      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-    }
 
     // Get all messages in this thread
     const { data: messages, error: messagesError } = await admin
@@ -42,9 +39,20 @@ export async function GET(
       .order("created_at", { ascending: true });
 
     if (messagesError) throw messagesError;
+    if (!thread && (!messages || messages.length === 0)) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
 
     return NextResponse.json({
-      thread,
+      thread:
+        thread ||
+        ({
+          id,
+          subject: messages?.[0]?.subject || "Conversation",
+          message_count: messages?.length || 0,
+          status: "active",
+          last_activity: messages?.[messages.length - 1]?.created_at || null,
+        } as any),
       messages: messages || [],
     });
   } catch (err: any) {

@@ -23,123 +23,184 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
+    const admin = createClient(supabaseUrl, supabaseServiceKey);
+    const webhookEvent = String(body?.webhook_event || "").toUpperCase();
+    const campaign_id = String(body?.campaign_id || "").trim();
+    const from_email = String(body?.from_email || body?.email || "").trim().toLowerCase();
+    const to_email = String(
+      body?.to_email || body?.eaccount || body?.sender_email || body?.from || ""
+    )
+      .trim()
+      .toLowerCase();
+    const subject = String(body?.subject || "").trim();
+    const emailBody = String(body?.body || body?.text_body || body?.html_body || "").trim();
+    const bodyText = String(body?.text_body || body?.body_text || emailBody).trim();
+    const plusvibeId = String(body?.plusvibe_id || body?.id || body?.message_id || "").trim();
+    const workspaceId = String(body?.workspace_id || "").trim();
 
-    // Validate required fields
-    const {
-      campaign_id,
-      from_email,
-      to_email,
-      subject,
-      body: emailBody,
-    } = body;
-
-    if (!campaign_id || !from_email || !to_email || !subject || !emailBody) {
+    // Reply-related webhooks can omit fields on edge events; acknowledge instead of 4xx retries.
+    if (!campaign_id || !from_email || !subject || !emailBody) {
       return NextResponse.json(
-        { error: "Missing required fields: campaign_id, from_email, to_email, subject, body" },
-        { status: 400 }
+        {
+          success: true,
+          ignored: true,
+          reason: "missing_required_reply_fields",
+          webhook_event: webhookEvent || null,
+        },
+        { status: 200 }
       );
     }
 
-    const admin = createClient(supabaseUrl, supabaseServiceKey);
-
-    // Resolve company from campaign_id or explicit company_id
-    let companyId = body.company_id;
-
+    let companyId = String(body?.company_id || "").trim() || null;
+    if (!companyId && workspaceId) {
+      const { data: byWorkspace } = await admin
+        .from("companies")
+        .select("id")
+        .eq("plusvibe_workspace_id", workspaceId)
+        .limit(1)
+        .single();
+      companyId = byWorkspace?.id || null;
+    }
+    if (!companyId && workspaceId) {
+      const { data: byIntegrationWorkspace } = await admin
+        .from("companies")
+        .select("id")
+        .contains("integration_credentials", { plusvibe_workspace_id: workspaceId })
+        .limit(1)
+        .single();
+      companyId = byIntegrationWorkspace?.id || null;
+    }
     if (!companyId) {
-      // Try to find company by looking up which company owns this campaign
       const { data: existing } = await admin
         .from("inbox_messages")
         .select("company_id")
         .eq("campaign_id", campaign_id)
         .limit(1)
         .single();
-
-      companyId = existing?.company_id;
+      companyId = existing?.company_id || null;
     }
-
     if (!companyId) {
       return NextResponse.json(
-        { error: "Could not resolve company for this campaign" },
+        { error: "Could not resolve company for webhook payload" },
         { status: 400 }
       );
     }
 
-    // Build message record
-    const fromDomain = from_email.split("@")[1] || "";
+    const sentimentRaw = String(body?.sentiment || "neutral").toLowerCase();
+    const sentiment = ["positive", "neutral", "negative", "ooo", "auto_reply"].includes(sentimentRaw)
+      ? sentimentRaw
+      : "neutral";
+    const intentRaw = String(body?.intent || body?.label || "").toLowerCase();
+    const intent = ["interested", "not_interested", "meeting_request", "question", "referral"].includes(intentRaw)
+      ? intentRaw
+      : null;
+    const tags = Array.isArray(body?.tags)
+      ? body.tags.map((tag: any) => String(tag))
+      : body?.label
+        ? [String(body.label)]
+        : [];
+
+    const { data: existingThread } = await admin
+      .from("email_threads")
+      .select("id, message_count")
+      .eq("company_id", companyId)
+      .eq("campaign_id", campaign_id)
+      .eq("prospect_email", from_email)
+      .limit(1)
+      .single();
+
+    let threadId = existingThread?.id || null;
+    if (!threadId) {
+      const { data: insertedThread, error: threadInsertError } = await admin
+        .from("email_threads")
+        .insert({
+          company_id: companyId,
+          campaign_id,
+          prospect_email: from_email,
+          prospect_name: body?.from_name || body?.first_name || null,
+          prospect_company: body?.company_name || null,
+          subject,
+          status: "active",
+          message_count: 1,
+          last_activity: new Date().toISOString(),
+        } as any)
+        .select("id")
+        .single();
+      if (threadInsertError) {
+        console.error("[Webhook PlusVibe] Thread insert error:", threadInsertError);
+        return NextResponse.json({ error: "Failed to save email thread" }, { status: 500 });
+      }
+      threadId = insertedThread?.id || null;
+    } else {
+      await admin
+        .from("email_threads")
+        .update({
+          subject,
+          prospect_name: body?.from_name || body?.first_name || null,
+          prospect_company: body?.company_name || null,
+          status: "active",
+          message_count: Number(existingThread?.message_count || 0) + 1,
+          last_activity: new Date().toISOString(),
+        })
+        .eq("id", threadId);
+    }
+
     const messageData = {
       company_id: companyId,
       campaign_id,
-      campaign_name: body.campaign_name || null,
-      thread_id: body.thread_id || null,
-      plusvibe_id: body.plusvibe_id || null,
+      campaign_name: body?.campaign_name || null,
+      thread_id: threadId || `${campaign_id}:${from_email}`,
+      plusvibe_id: plusvibeId || null,
       from_email,
-      from_name: body.from_name || null,
-      from_domain: fromDomain,
-      to_email,
+      from_name: body?.from_name || body?.first_name || null,
+      from_domain: from_email.split("@")[1] || null,
+      to_email: to_email || "unknown@plusvibe.local",
       subject,
       body: emailBody,
-      body_text: body.body_text || null,
-      sentiment: body.sentiment || null,
-      intent: body.intent || null,
-      tags: body.tags || [],
+      body_text: bodyText || null,
+      sentiment,
+      intent,
+      tags,
       status: "unread",
-      priority: body.priority || "medium",
+      priority: ["high", "medium", "low"].includes(String(body?.priority || "").toLowerCase())
+        ? String(body?.priority).toLowerCase()
+        : "medium",
+      last_reply_at: new Date().toISOString(),
     };
 
-    // Upsert into inbox_messages
-    const { data: message, error: insertError } = await admin
-      .from("inbox_messages")
-      .upsert(messageData as any, {
-        onConflict: "plusvibe_id",
-        ignoreDuplicates: false,
-      })
-      .select("id")
-      .single();
-
-    if (insertError) {
-      // If upsert fails (e.g. no plusvibe_id), try insert
-      const { data: inserted, error: fallbackError } = await admin
+    let messageId: string | null = null;
+    if (plusvibeId) {
+      const { data: existingMessage } = await admin
+        .from("inbox_messages")
+        .select("id")
+        .eq("plusvibe_id", plusvibeId)
+        .limit(1)
+        .single();
+      if (existingMessage?.id) {
+        const { data: updatedMessage, error: updateMessageError } = await admin
+          .from("inbox_messages")
+          .update(messageData as any)
+          .eq("id", existingMessage.id)
+          .select("id")
+          .single();
+        if (updateMessageError) {
+          console.error("[Webhook PlusVibe] Message update error:", updateMessageError);
+          return NextResponse.json({ error: "Failed to update inbox message" }, { status: 500 });
+        }
+        messageId = updatedMessage?.id || null;
+      }
+    }
+    if (!messageId) {
+      const { data: insertedMessage, error: insertMessageError } = await admin
         .from("inbox_messages")
         .insert(messageData as any)
         .select("id")
         .single();
-
-      if (fallbackError) {
-        console.error("[Webhook PlusVibe] Insert error:", fallbackError);
-        return NextResponse.json(
-          { error: "Failed to save message" },
-          { status: 500 }
-        );
+      if (insertMessageError) {
+        console.error("[Webhook PlusVibe] Message insert error:", insertMessageError);
+        return NextResponse.json({ error: "Failed to save inbox message" }, { status: 500 });
       }
-
-      var messageId = inserted?.id;
-    } else {
-      var messageId = message?.id;
-    }
-
-    // Update email thread if thread_id exists
-    if (body.thread_id) {
-      await admin
-        .from("email_threads")
-        .upsert(
-          {
-            thread_id: body.thread_id,
-            company_id: companyId,
-            prospect_email: from_email,
-            prospect_name: body.from_name || null,
-            subject,
-            last_message_body: emailBody,
-            last_activity: new Date().toISOString(),
-            status: "active",
-          } as any,
-          { onConflict: "thread_id" }
-        )
-        .then(() => {
-          // Increment message count
-          admin.rpc("increment_thread_message_count", {
-            tid: body.thread_id,
-          }).then(() => {});
-        });
+      messageId = insertedMessage?.id || null;
     }
 
     // Create event for the company

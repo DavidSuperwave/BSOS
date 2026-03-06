@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProjectCredentials } from "@/lib/plusvibe-project";
+import { requireCompanyAccess } from "@/lib/api-auth";
 
 const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
+
+function sanitizeError(raw: string) {
+  return raw.replace(/\s+/g, " ").trim().slice(0, 400);
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const companyId = searchParams.get("companyId") || undefined;
+  const lead = (searchParams.get("lead") || "").trim();
+  const campaignId = (searchParams.get("campaignId") || "").trim();
+
+  if (companyId) {
+    const access = await requireCompanyAccess(companyId);
+    if (access.error) return access.error;
+  }
 
   const credentials = await getProjectCredentials(companyId);
   
@@ -17,9 +29,20 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Note: PlusVibe's unibox endpoint may vary - trying common patterns
+    if (!lead) {
+      return NextResponse.json(
+        { error: "lead query parameter is required" },
+        { status: 400 }
+      );
+    }
+    const query = new URLSearchParams({
+      workspace_id: credentials.workspaceId,
+      lead,
+    });
+    if (campaignId) query.set("campaign_id", campaignId);
+
     const res = await fetch(
-      `${PLUSVIBE_BASE}/unibox?workspace_id=${credentials.workspaceId}`,
+      `${PLUSVIBE_BASE}/unibox/campaign-emails?${query.toString()}`,
       {
         headers: {
           "Content-Type": "application/json",
@@ -29,17 +52,26 @@ export async function GET(request: NextRequest) {
     );
     
     if (!res.ok) {
-      // Fallback: return empty since unibox endpoint may not exist in v1
-      return NextResponse.json({
-        emails: [],
-        message: "Unibox endpoint not available in API v1",
-        credentialsSource: credentials.source,
-      });
+      const errorText = await res.text();
+      return NextResponse.json(
+        {
+          error: `PlusVibe API error: ${res.status}`,
+          details: sanitizeError(errorText),
+        },
+        { status: res.status }
+      );
     }
     
     const data = await res.json();
+    const emails = Array.isArray(data?.data)
+      ? data.data
+      : Array.isArray(data?.value)
+        ? data.value
+        : Array.isArray(data)
+          ? data
+          : [];
     return NextResponse.json({
-      emails: data.data || data.value || data,
+      emails,
       credentialsSource: credentials.source,
     });
   } catch (err: any) {
