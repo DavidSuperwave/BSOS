@@ -192,11 +192,13 @@ export interface PlusVibeAccount {
   domain: string;
   esp: "gmail" | "microsoft" | "smtp";
   provider_type: string;
+  provider_raw?: string;
   warmup_status?: string | null;
   status?: string;
   is_managed_domain: boolean;
   provider_access: "full" | "external_provider";
   external_provider: boolean;
+  can_transfer_to_managed?: boolean;
 }
 
 export function usePlusVibeAccounts(companyId?: string) {
@@ -208,6 +210,11 @@ export function usePlusVibeAccounts(companyId?: string) {
       managed_domains: number;
       external_domains: number;
       by_domain: Array<{ domain: string; user_count: number; managed: boolean }>;
+      by_esp?: {
+        gmail: number;
+        microsoft: number;
+        smtp: number;
+      };
     };
   }>(companyId ? `/api/plusvibe/accounts?companyId=${encodeURIComponent(companyId)}` : null);
 }

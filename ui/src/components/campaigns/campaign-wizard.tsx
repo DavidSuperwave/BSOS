@@ -77,9 +77,6 @@ interface SubsequenceDraft {
   status: "Active" | "Draft";
 }
 
-const INITIAL_SEQUENCE_STEPS: SequenceStepDraft[] = [
-];
-
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 const DAY_TO_INDEX: Record<string, string> = {
   Mon: "1",
@@ -105,9 +102,21 @@ function createEmptySequenceStep(index: number): SequenceStepDraft {
   };
 }
 
-function mapScheduleDaysToLabels(days?: Record<string, boolean>) {
+function mapScheduleDaysToLabels(days?: Record<string, boolean> | string[]) {
+  if (Array.isArray(days)) {
+    const normalized = new Set(
+      days
+        .map((value) => String(value || "").slice(0, 3).toLowerCase())
+        .filter(Boolean)
+    );
+    const labels = DAY_LABELS.filter((day) =>
+      normalized.has(day.slice(0, 3).toLowerCase())
+    );
+    return labels.length > 0 ? labels : ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  }
   if (!days || typeof days !== "object") return ["Mon", "Tue", "Wed", "Thu", "Fri"];
-  return DAY_LABELS.filter((day) => Boolean(days[DAY_TO_INDEX[day]]));
+  const labels = DAY_LABELS.filter((day) => Boolean((days as Record<string, boolean>)[DAY_TO_INDEX[day]]));
+  return labels.length > 0 ? labels : ["Mon", "Tue", "Wed", "Thu", "Fri"];
 }
 
 function mapLabelsToScheduleDays(labels: string[]) {
@@ -124,6 +133,16 @@ function mapLabelsToScheduleDays(labels: string[]) {
 
 function accountLabel(account: PlusVibeAccount) {
   return account.email || account.id;
+}
+
+function pickBestVariation(step: any) {
+  if (!Array.isArray(step?.variations) || step.variations.length === 0) return undefined;
+  const firstWithCopy = step.variations.find((variation: any) => {
+    const subject = String(variation?.subject || "").trim();
+    const body = String(variation?.body || "").trim();
+    return subject.length > 0 || body.length > 0;
+  });
+  return firstWithCopy || step.variations[0];
 }
 
 const INITIAL_SCHEDULE_DATE = new Date().toISOString().slice(0, 10);
@@ -163,9 +182,15 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     companyId
   );
   const { data: accountData, isLoading: accountsLoading } = usePlusVibeAccounts(companyId);
-  const availableAccounts = accountData?.accounts || [];
   const { data: leadData, mutate: mutateLeads } = useCampaignLeads(campaign.id, companyId);
-  const allLeads: CampaignLead[] = leadData?.leads || [];
+  const availableAccounts = useMemo(
+    () => accountData?.accounts || [],
+    [accountData?.accounts]
+  );
+  const allLeads: CampaignLead[] = useMemo(
+    () => leadData?.leads || [],
+    [leadData?.leads]
+  );
 
   // Add lead dialog state
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
@@ -217,11 +242,12 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     }
   };
 
-  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>(INITIAL_SEQUENCE_STEPS);
-  const [selectedSequenceStepId, setSelectedSequenceStepId] = useState(
-    INITIAL_SEQUENCE_STEPS[0]?.id || ""
-  );
+  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>([
+    createEmptySequenceStep(0),
+  ]);
+  const [selectedSequenceStepId, setSelectedSequenceStepId] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [campaignStatus, setCampaignStatus] = useState(campaign.status || "DRAFT");
 
   const [settingsName, setSettingsName] = useState(campaign.name || "");
   const [dailyLimit, setDailyLimit] = useState("200");
@@ -284,10 +310,11 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     if (!details) return;
 
     setSettingsName(details.name || campaign.name || "");
+    setCampaignStatus(String(details.status || campaign.status || "DRAFT"));
 
     const hydratedSequences = Array.isArray(details.sequences)
       ? details.sequences.map((step, index) => {
-          const variation = Array.isArray(step.variations) ? step.variations[0] : undefined;
+          const variation = pickBestVariation(step);
           return {
             id: `step-${step.step || index + 1}`,
             title: variation?.name || `Step ${step.step || index + 1}`,
@@ -301,25 +328,35 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
           };
         })
       : [];
-    setSequenceSteps(hydratedSequences);
-    setSelectedSequenceStepId(hydratedSequences[0]?.id || "");
+    const safeSequences = hydratedSequences.length > 0 ? hydratedSequences : [createEmptySequenceStep(0)];
+    setSequenceSteps(safeSequences);
+    setSelectedSequenceStepId((current) => current || safeSequences[0]?.id || "");
 
     const schedule = Array.isArray(details.schedules) ? details.schedules[0] : undefined;
     if (schedule) {
       setDailyLimit(String(schedule.daily_limit || 25));
-      setTimezone(schedule.timezone || "America/New_York");
+      setTimezone(schedule.timezone || schedule.tz || "America/New_York");
       setScheduleStartDate(schedule.start_date || INITIAL_SCHEDULE_DATE);
-      setStartHour(schedule.timing?.from || "09:00");
-      setEndHour(schedule.timing?.to || "17:00");
+      setStartHour(schedule.timing?.from || schedule.from_time || "09:00");
+      setEndHour(schedule.timing?.to || schedule.to_time || "17:00");
       setSendingDays(mapScheduleDaysToLabels(schedule.days));
     }
 
     setSelectedAccountIds(
       Array.isArray(details.email_accounts)
-        ? details.email_accounts.map((value) => String(value))
+        ? Array.from(new Set(details.email_accounts.map((value) => String(value))))
         : []
     );
-  }, [campaign.id, campaign.name, campaignDetailsData?.campaign]);
+  }, [campaign.id, campaign.name, campaign.status, campaignDetailsData?.campaign]);
+
+  useEffect(() => {
+    setCampaignStatus(campaign.status || "DRAFT");
+  }, [campaign.id, campaign.status]);
+
+  useEffect(() => {
+    if (selectedSequenceStepId || sequenceSteps.length === 0) return;
+    setSelectedSequenceStepId(sequenceSteps[0]?.id || "");
+  }, [selectedSequenceStepId, sequenceSteps]);
 
   const savePatch = async (payload: Record<string, unknown>) => {
     setSaving(true);
@@ -436,6 +473,57 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     });
   };
 
+  const accountSummary = useMemo(() => {
+    const byEsp = {
+      gmail: availableAccounts.filter((account) => account.esp === "gmail").length,
+      microsoft: availableAccounts.filter((account) => account.esp === "microsoft").length,
+      smtp: availableAccounts.filter((account) => account.esp === "smtp").length,
+    };
+    const byDomain = new Map<string, { users: number; managed: boolean }>();
+    for (const account of availableAccounts) {
+      if (!account.domain) continue;
+      const current = byDomain.get(account.domain);
+      if (!current) {
+        byDomain.set(account.domain, {
+          users: 1,
+          managed: account.is_managed_domain,
+        });
+      } else {
+        current.users += 1;
+        current.managed = current.managed || account.is_managed_domain;
+      }
+    }
+    return {
+      byEsp,
+      domainCount: byDomain.size,
+      domainRows: Array.from(byDomain.entries())
+        .map(([domain, value]) => ({ domain, users: value.users, managed: value.managed }))
+        .sort((a, b) => a.domain.localeCompare(b.domain)),
+    };
+  }, [availableAccounts]);
+
+  const runCampaignLifecycleAction = async (action: "activate" | "pause") => {
+    setSaving(true);
+    setError(null);
+    try {
+      const endpoint =
+        action === "activate"
+          ? `/api/plusvibe/campaigns/${campaign.id}/activate${companyQuery}`
+          : `/api/plusvibe/campaigns/${campaign.id}/pause${companyQuery}`;
+      const response = await fetch(endpoint, { method: "POST" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({ error: "Failed campaign action" }));
+        throw new Error(data.error || data.details || "Failed campaign action");
+      }
+      setCampaignStatus(action === "activate" ? "ACTIVE" : "PAUSED");
+      onRefresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed campaign action");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-4 w-full min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -453,20 +541,20 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
           <Button
             variant="outline"
             size="sm"
-            onClick={() => savePatch({ status: "PAUSED", first_wait_time: 0 })}
+            onClick={() => void runCampaignLifecycleAction("pause")}
             disabled={saving}
           >
             Pause
           </Button>
           <Button
             size="sm"
-            onClick={() => savePatch({ status: "ACTIVE", first_wait_time: 0 })}
+            onClick={() => void runCampaignLifecycleAction("activate")}
             disabled={saving}
           >
             Activate
           </Button>
           <Badge variant="outline" className="capitalize">
-            {campaign.status || "Draft"}
+            {(campaignStatus || "Draft").toLowerCase()}
           </Badge>
         </div>
       </div>
@@ -957,6 +1045,59 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Accounts</p>
+                  <p className="mt-1 text-base font-semibold text-foreground">{availableAccounts.length}</p>
+                </div>
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Domains</p>
+                  <p className="mt-1 text-base font-semibold text-foreground">{accountSummary.domainCount}</p>
+                </div>
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Gmail</p>
+                  <p className="mt-1 text-base font-semibold text-foreground">{accountSummary.byEsp.gmail}</p>
+                </div>
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">Microsoft</p>
+                  <p className="mt-1 text-base font-semibold text-foreground">{accountSummary.byEsp.microsoft}</p>
+                </div>
+                <div className="rounded-md border border-border bg-muted/20 p-3">
+                  <p className="text-xs text-muted-foreground">SMTP</p>
+                  <p className="mt-1 text-base font-semibold text-foreground">{accountSummary.byEsp.smtp}</p>
+                </div>
+              </div>
+
+              {accountSummary.domainRows.length > 0 ? (
+                <div className="overflow-hidden rounded-md border border-border">
+                  <table className="w-full text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground">
+                      <tr>
+                        <th className="p-2 text-left">Domain</th>
+                        <th className="p-2 text-left">Users</th>
+                        <th className="p-2 text-left">Access</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {accountSummary.domainRows.map((row) => (
+                        <tr key={row.domain} className="border-t border-border">
+                          <td className="p-2 text-foreground">{row.domain}</td>
+                          <td className="p-2 text-muted-foreground">{row.users}</td>
+                          <td className="p-2">
+                            <Badge
+                              variant="outline"
+                              className={row.managed ? "text-emerald-700" : "text-amber-700"}
+                            >
+                              {row.managed ? "Managed Domain" : "External Provider"}
+                            </Badge>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+
               {accountsLoading ? (
                 <p className="text-sm text-muted-foreground">Loading inbox accounts…</p>
               ) : availableAccounts.length === 0 ? (
@@ -970,6 +1111,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                       <tr>
                         <th className="p-3 text-left w-10"> </th>
                         <th className="p-3 text-left">Inbox</th>
+                        <th className="p-3 text-left">Domain</th>
                         <th className="p-3 text-left">ESP</th>
                         <th className="p-3 text-left">Domain Access</th>
                         <th className="p-3 text-left">Status</th>
@@ -987,15 +1129,17 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                                 checked={selected}
                                 disabled={limited}
                                 onChange={(event) =>
-                                  setSelectedAccountIds((prev) =>
-                                    event.target.checked
-                                      ? [...prev, account.id]
-                                      : prev.filter((value) => value !== account.id)
-                                  )
+                                  setSelectedAccountIds((prev) => {
+                                    if (event.target.checked) {
+                                      return Array.from(new Set([...prev, account.id]));
+                                    }
+                                    return prev.filter((value) => value !== account.id);
+                                  })
                                 }
                               />
                             </td>
                             <td className="p-3 text-foreground">{accountLabel(account)}</td>
+                            <td className="p-3 text-xs text-muted-foreground">{account.domain || "—"}</td>
                             <td className="p-3 uppercase text-xs text-muted-foreground">{account.esp}</td>
                             <td className="p-3">
                               <Badge variant="outline" className={limited ? "text-amber-700" : "text-emerald-700"}>
@@ -1015,6 +1159,10 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                 External providers are import-only. Agent automation is restricted unless the domain is managed in our inboxing account.
               </div>
 
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                Transfer to managed inboxing is coming soon. Until then, external-provider inboxes remain read-only for agent actions.
+              </div>
+
               <div className="flex justify-end">
                 <Button
                   onClick={() =>
@@ -1023,7 +1171,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                       email_accounts: selectedAccountIds,
                     })
                   }
-                  disabled={saving || selectedAccountIds.length === 0}
+                  disabled={saving}
                   className="gap-2"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}

@@ -27,7 +27,6 @@ export async function POST(req: NextRequest) {
       emails,
       platform_connection_id,
       enable_warmup = true,
-      sync_tags = true,
       skip_verified = true,
     } = body;
 
@@ -105,14 +104,14 @@ export async function POST(req: NextRequest) {
       const result = await inboxing.uploadDomainToPlatform(domain.inboxing_id, {
         platform_connection_id,
         enable_warmup,
-        sync_tags,
+        sync_tags: false,
         skip_verified,
       });
 
       const jobPayload = {
         platform_connection_id,
         enable_warmup,
-        sync_tags,
+        sync_tags: false,
         skip_verified,
         retries: 0,
       };
