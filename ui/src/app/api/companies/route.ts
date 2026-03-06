@@ -4,6 +4,9 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { envConfig } from "@/lib/env";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
@@ -24,34 +27,62 @@ export async function GET() {
 
     const admin = getAdmin();
 
-    // Get user's account memberships
+    // Get account IDs from explicit memberships.
     const { data: memberships } = await admin
       .from("account_members")
       .select("account_id")
       .eq("user_id", user.id);
 
-    const accountIds = (memberships || []).map((m: any) => m.account_id);
+    // Also include accounts where this user is the owner. This covers
+    // edge-cases where membership rows are missing/out-of-sync.
+    const { data: ownedAccounts } = await admin
+      .from("accounts")
+      .select("id")
+      .eq("owner_user_id", user.id);
 
-    if (accountIds.length === 0) {
-      // Fallback: try legacy user_id-based companies
-      const { data: legacyCompanies } = await admin
+    const accountIds = Array.from(
+      new Set([
+        ...(memberships || []).map((m: any) => m.account_id),
+        ...(ownedAccounts || []).map((a: any) => a.id),
+      ].filter(Boolean))
+    );
+
+    let accountCompanies: any[] = [];
+    if (accountIds.length > 0) {
+      const { data: companies, error } = await admin
         .from("companies")
         .select("*")
-        .eq("user_id", user.id)
+        .in("account_id", accountIds)
         .order("name");
 
-      return NextResponse.json({ companies: legacyCompanies || [] });
+      if (error) throw error;
+      accountCompanies = companies || [];
     }
 
-    const { data: companies, error } = await admin
+    // Legacy fallback for pre-account companies.
+    const { data: legacyCompanies, error: legacyError } = await admin
       .from("companies")
       .select("*")
-      .in("account_id", accountIds)
+      .eq("user_id", user.id)
       .order("name");
 
-    if (error) throw error;
+    if (legacyError) throw legacyError;
 
-    return NextResponse.json({ companies: companies || [] });
+    const mergedMap = new Map<string, any>();
+    for (const company of accountCompanies) {
+      if (company?.id) mergedMap.set(company.id, company);
+    }
+    for (const company of legacyCompanies || []) {
+      if (company?.id && !mergedMap.has(company.id)) {
+        mergedMap.set(company.id, company);
+      }
+    }
+
+    const mergedCompanies = Array.from(mergedMap.values()).sort((a, b) =>
+      String(a?.name || "").localeCompare(String(b?.name || ""))
+    );
+
+    return NextResponse.json({ companies: mergedCompanies });
   } catch (err: any) {
     console.error("[Companies API] GET error:", err);
     return NextResponse.json(

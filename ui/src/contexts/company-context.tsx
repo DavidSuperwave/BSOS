@@ -75,8 +75,14 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    setHasResolvedCompanyFetch(false);
+
     try {
-      const res = await fetch("/api/companies");
+      // Prevent stale cached responses during auth/session transitions.
+      const res = await fetch("/api/companies", {
+        cache: "no-store",
+        credentials: "include",
+      });
       if (!res.ok) {
         devLog("Company fetch returned non-ok response", { status: res.status });
         return;
@@ -168,6 +174,13 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
 
     // No companies at all \u2192 send to fresh onboarding
     if (companies.length === 0) {
+      if (selectedCompany && isReadyCompanyStatus(selectedCompany.status)) {
+        devLog("Skipping onboarding redirect with retained ready selection", {
+          selectedCompanyId: selectedCompany.id,
+          selectedStatus: selectedCompany.status,
+        });
+        return;
+      }
       router.replace("/onboarding");
       devLog("Redirecting user without companies to onboarding", { userId });
       return;

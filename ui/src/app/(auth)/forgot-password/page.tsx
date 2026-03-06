@@ -36,7 +36,7 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto w-full max-w-md space-y-6">
       <div className="flex flex-col items-center gap-3">
         <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-info">
           <Zap className="h-8 w-8 text-primary-foreground" />

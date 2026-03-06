@@ -17,7 +17,14 @@ const AUTH_ROUTES = ["/login", "/signup", "/forgot-password", "/reset-password",
 export function AuthGate({ children }: AuthGateProps) {
   const pathname = usePathname();
   const { user, isLoading: authLoading } = useAuth();
-  const { companies, isLoading: companyLoading, hasResolvedCompanyFetch } = useCompany();
+  const {
+    companies,
+    selectedCompany,
+    isLoading: companyLoading,
+    hasResolvedCompanyFetch,
+    refresh,
+  } = useCompany();
+  const emptyRetryRef = useRef(false);
 
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
   const isOnboardingRoute = pathname.startsWith("/onboarding");
@@ -29,7 +36,7 @@ export function AuthGate({ children }: AuthGateProps) {
   }
 
   // While auth or company data is resolving, show a loading spinner
-  if (authLoading || companyLoading) {
+  if (authLoading || companyLoading || (user && !hasResolvedCompanyFetch)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -50,11 +57,36 @@ export function AuthGate({ children }: AuthGateProps) {
   // block rendering and redirect to /onboarding.
   // This prevents any dashboard flash for users who haven't finished setup.
   if (user && !companyLoading && hasResolvedCompanyFetch) {
-    const hasReadyCompany = companies.some(
+    const hasReadySelectedCompany =
+      selectedCompany?.status === "active" || selectedCompany?.status === "onboarded";
+
+    if (companies.length === 0 && !emptyRetryRef.current) {
+      emptyRetryRef.current = true;
+      void refresh();
+      return (
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-info">
+              <Zap className="h-8 w-8 text-primary-foreground" />
+            </div>
+            <div className="h-2 w-32 overflow-hidden rounded-full bg-muted">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-primary/70" />
+            </div>
+            <p className="text-sm text-muted-foreground">Loading workspace...</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (companies.length > 0) {
+      emptyRetryRef.current = false;
+    }
+
+    const hasReadyCompany = hasReadySelectedCompany || companies.some(
       (c) => c.status === "active" || c.status === "onboarded"
     );
 
-    if (companies.length === 0 || !hasReadyCompany) {
+    if ((companies.length === 0 && !hasReadySelectedCompany) || !hasReadyCompany) {
       // Find a partially-created company to resume, or go fresh
       const partial = companies.find(
         (c) => c.status !== "active" && c.status !== "onboarded"
