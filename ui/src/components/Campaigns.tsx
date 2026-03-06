@@ -320,7 +320,7 @@ export default function Campaigns() {
   const [campaignNote, setCampaignNote] = useState('');
   const [copyTargetCampaignId, setCopyTargetCampaignId] = useState('');
   const [archiveCampaignOnDelete, setArchiveCampaignOnDelete] = useState(true);
-  const [saveLeadsOnDelete, setSaveLeadsOnDelete] = useState(false);
+  const [saveLeadsOnDelete, setSaveLeadsOnDelete] = useState(true);
   const campaignRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const focusedCampaignId = (searchParams.get("campaignId") || "").trim();
   const deepLinkSearch = (searchParams.get("q") || "").trim();
@@ -459,7 +459,7 @@ export default function Campaigns() {
     setCampaignNote('');
     setCopyTargetCampaignId('');
     setArchiveCampaignOnDelete(true);
-    setSaveLeadsOnDelete(false);
+    setSaveLeadsOnDelete(true);
   };
 
   const handleCreateCampaign = async () => {
@@ -1112,7 +1112,7 @@ export default function Campaigns() {
                   checked={saveLeadsOnDelete}
                   onChange={(event) => setSaveLeadsOnDelete(event.target.checked)}
                 />
-                Save Leads data to List
+                Save Leads data to List (recommended)
               </label>
             </div>
           ) : null}

@@ -145,6 +145,33 @@ function pickBestVariation(step: any) {
   return firstWithCopy || step.variations[0];
 }
 
+function normalizeTemplatePreview(text: string) {
+  if (!text) return "";
+  return text
+    .replace(/\{\{\s*random\|([^}]+)\}\}/gi, (_, variants: string) => {
+      const [first] = String(variants || "").split("|");
+      return first || "";
+    })
+    .replace(/\{\{\s*(first_name|fname)\s*\}\}/gi, "there")
+    .replace(/\{\{\s*(last_name|lname)\s*\}\}/gi, "")
+    .replace(/\{\{\s*company_name\s*\}\}/gi, "your company")
+    .replace(/\{\{[^}]+\}\}/g, "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveHookErrorMessage(error: unknown, fallback: string) {
+  const anyError = error as any;
+  return (
+    anyError?.info?.details ||
+    anyError?.info?.error ||
+    anyError?.message ||
+    fallback
+  );
+}
+
 const INITIAL_SCHEDULE_DATE = new Date().toISOString().slice(0, 10);
 
 const INITIAL_SUBSEQUENCES: SubsequenceDraft[] = [
@@ -177,12 +204,25 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [leadTagFilter, setLeadTagFilter] = useState("all");
 
   // Real lead data and campaign config from PlusVibe
-  const { data: campaignDetailsData, isLoading: campaignDetailsLoading } = useCampaignDetails(
+  const {
+    data: campaignDetailsData,
+    isLoading: campaignDetailsLoading,
+    error: campaignDetailsError,
+  } = useCampaignDetails(
     campaign.id,
     companyId
   );
-  const { data: accountData, isLoading: accountsLoading } = usePlusVibeAccounts(companyId);
-  const { data: leadData, mutate: mutateLeads } = useCampaignLeads(campaign.id, companyId);
+  const {
+    data: accountData,
+    isLoading: accountsLoading,
+    error: accountsError,
+  } = usePlusVibeAccounts(companyId);
+  const {
+    data: leadData,
+    mutate: mutateLeads,
+    isLoading: leadsLoading,
+    error: leadsError,
+  } = useCampaignLeads(campaign.id, companyId);
   const availableAccounts = useMemo(
     () => accountData?.accounts || [],
     [accountData?.accounts]
@@ -242,9 +282,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     }
   };
 
-  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>([
-    createEmptySequenceStep(0),
-  ]);
+  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>([]);
   const [selectedSequenceStepId, setSelectedSequenceStepId] = useState("");
   const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
   const [campaignStatus, setCampaignStatus] = useState(campaign.status || "DRAFT");
@@ -285,6 +323,17 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   }, [allLeads, leadSearch, leadStatusFilter, leadTagFilter]);
 
   const totalSent = sequenceSteps.reduce((sum, step) => sum + step.sent, 0);
+  const expectedLeadCount = Number(campaign.stats?.leadCount || 0);
+  const hasLeadCountGap = expectedLeadCount > 0 && allLeads.length === 0;
+  const isArchivedCampaign = String(campaignStatus || campaign.status || "")
+    .toUpperCase()
+    .includes("ARCHIVED");
+  const leadWarning =
+    hasLeadCountGap && !leadsLoading
+      ? isArchivedCampaign
+        ? "PlusVibe reports leads for this campaign, but archived campaigns do not expose individual lead rows via workspace-leads."
+        : "PlusVibe reports leads for this campaign, but no lead rows were returned. This is usually an upstream indexing lag."
+      : null;
   const quickLeadContext = leads.slice(0, 6);
   const selectedSequenceStep =
     sequenceSteps.find((step) => step.id === selectedSequenceStepId) || sequenceSteps[0] || null;
@@ -592,7 +641,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 md:grid-cols-6">
+        <TabsList className="grid h-auto w-full grid-cols-3 gap-1 p-1 lg:grid-cols-6">
           <TabsTrigger value="leads">Leads</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
@@ -659,6 +708,18 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                 </div>
               </div>
 
+              {leadsError ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  {resolveHookErrorMessage(leadsError, "Failed to load campaign leads.")}
+                </div>
+              ) : null}
+
+              {leadWarning ? (
+                <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {leadWarning}
+                </div>
+              ) : null}
+
               <div className="max-w-full rounded-lg border border-border overflow-hidden">
                 <div className="w-full max-w-full overflow-x-auto">
                   <table className="w-full min-w-[860px] table-fixed text-sm">
@@ -700,6 +761,11 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
         </TabsContent>
 
         <TabsContent value="sequences" className="mt-4">
+          {campaignDetailsError ? (
+            <div className="mb-3 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+              {resolveHookErrorMessage(campaignDetailsError, "Failed to load campaign sequence details.")}
+            </div>
+          ) : null}
           <div className="overflow-hidden rounded-lg border border-border bg-card">
             <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -814,7 +880,9 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                           <p className="text-sm font-semibold text-foreground">Step {index + 1}</p>
                           <span className="text-[11px] text-muted-foreground">{step.sent} sent</span>
                         </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">{step.subject}</p>
+                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                          {normalizeTemplatePreview(step.body || step.subject) || "No copy yet"}
+                        </p>
                         <p className="mt-2 text-[11px] text-muted-foreground">
                           {index === 0 ? "Initial email" : `Wait ${step.waitDays} days`} · 1 variation
                         </p>
@@ -1045,6 +1113,12 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {accountsError ? (
+                <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                  {resolveHookErrorMessage(accountsError, "Failed to load workspace inboxes.")}
+                </div>
+              ) : null}
+
               <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                 <div className="rounded-md border border-border bg-muted/20 p-3">
                   <p className="text-xs text-muted-foreground">Accounts</p>
