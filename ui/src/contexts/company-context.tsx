@@ -12,6 +12,7 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AUTH_SIGN_OUT_EVENT, useAuth } from "./auth-context";
+import { authenticatedFetch } from "@/lib/client-auth-fetch";
 
 export interface Company {
   id: string;
@@ -76,7 +77,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      const res = await fetch("/api/companies");
+      const res = await authenticatedFetch("/api/companies");
       if (!res.ok) {
         devLog("Company fetch returned non-ok response", { status: res.status });
         return;

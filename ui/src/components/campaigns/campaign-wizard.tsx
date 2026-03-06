@@ -48,6 +48,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { authenticatedFetch } from "@/lib/client-auth-fetch";
 
 interface CampaignWizardProps {
   campaign: PlusVibeCampaign;
@@ -245,7 +246,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     if (!newLeadEmail.trim() || !companyId) return;
     setAddingLead(true);
     try {
-      const res = await fetch(
+      const res = await authenticatedFetch(
         `/api/plusvibe/campaigns/${campaign.id}/leads?companyId=${companyId}`,
         {
           method: "POST",
@@ -411,7 +412,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch(`/api/plusvibe/campaigns/${campaign.id}${companyQuery}`, {
+      const response = await authenticatedFetch(`/api/plusvibe/campaigns/${campaign.id}${companyQuery}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -559,7 +560,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
         action === "activate"
           ? `/api/plusvibe/campaigns/${campaign.id}/activate${companyQuery}`
           : `/api/plusvibe/campaigns/${campaign.id}/pause${companyQuery}`;
-      const response = await fetch(endpoint, { method: "POST" });
+      const response = await authenticatedFetch(endpoint, { method: "POST" });
       if (!response.ok) {
         const data = await response.json().catch(() => ({ error: "Failed campaign action" }));
         throw new Error(data.error || data.details || "Failed campaign action");

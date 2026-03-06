@@ -1,9 +1,10 @@
 "use client";
 
 import useSWR, { type SWRConfiguration } from "swr";
+import { authenticatedFetch } from "@/lib/client-auth-fetch";
 
 const fetcher = async (url: string) => {
-  const res = await fetch(url);
+  const res = await authenticatedFetch(url);
   if (!res.ok) {
     const error = new Error("API request failed");
     (error as any).status = res.status;

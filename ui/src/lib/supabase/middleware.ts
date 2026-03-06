@@ -3,6 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
+  const pathname = request.nextUrl.pathname;
+  const isApiRoute = pathname.startsWith("/api/");
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -39,8 +41,6 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getSession();
   const user = session?.user ?? null;
 
-  const pathname = request.nextUrl.pathname;
-
   const isAuthRoute =
     pathname.startsWith("/login") ||
     pathname.startsWith("/signup") ||
@@ -50,7 +50,7 @@ export async function updateSession(request: NextRequest) {
 
   // If not logged in and not on auth page, redirect to login
   // (reset-password needs a session from the callback, so it's excluded from this redirect)
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isApiRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);

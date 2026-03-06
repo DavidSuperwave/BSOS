@@ -47,6 +47,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
+import { authenticatedFetch } from '@/lib/client-auth-fetch';
 
 type CampaignRowAction =
   | 'rename'
@@ -417,10 +418,10 @@ export default function Campaigns() {
     try {
       const response =
         newStatus === 'ACTIVE'
-          ? await fetch(`/api/plusvibe/campaigns/${campaignId}/activate${companyQuery}`, {
+          ? await authenticatedFetch(`/api/plusvibe/campaigns/${campaignId}/activate${companyQuery}`, {
               method: 'POST',
             })
-          : await fetch(`/api/plusvibe/campaigns/${campaignId}/pause${companyQuery}`, {
+          : await authenticatedFetch(`/api/plusvibe/campaigns/${campaignId}/pause${companyQuery}`, {
               method: 'POST',
             });
       if (!response.ok) {
@@ -497,7 +498,7 @@ export default function Campaigns() {
     }, { revalidate: false });
 
     try {
-      const response = await fetch(`/api/plusvibe/campaigns${companyQuery}`, {
+      const response = await authenticatedFetch(`/api/plusvibe/campaigns${companyQuery}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -552,7 +553,7 @@ export default function Campaigns() {
             ),
           };
         }, { revalidate: false });
-        const response = await fetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
+        const response = await authenticatedFetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ camp_name: nextName }),
@@ -571,7 +572,7 @@ export default function Campaigns() {
         if (!nextName) {
           throw new Error('Duplicated campaign name is required.');
         }
-        const response = await fetch(`/api/plusvibe/campaigns${companyQuery}`, {
+        const response = await authenticatedFetch(`/api/plusvibe/campaigns${companyQuery}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -589,7 +590,7 @@ export default function Campaigns() {
       }
 
       if (activeAction === 'note') {
-        const response = await fetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
+        const response = await authenticatedFetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ note: campaignNote.trim() }),
@@ -606,7 +607,7 @@ export default function Campaigns() {
         if (!copyTargetCampaignId) {
           throw new Error('Select a destination campaign first.');
         }
-        const response = await fetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
+        const response = await authenticatedFetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -628,7 +629,7 @@ export default function Campaigns() {
           if (!prev) return prev;
           return { campaigns: prev.campaigns.filter((campaign) => campaign.id !== activeActionCampaign.id) };
         }, { revalidate: false });
-        const response = await fetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
+        const response = await authenticatedFetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

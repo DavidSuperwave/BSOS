@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useCompany } from "./company-context";
+import { authenticatedFetch } from "@/lib/client-auth-fetch";
 
 export interface AppEvent {
   id: string;
@@ -67,7 +68,7 @@ export function EventProvider({ children }: { children: ReactNode }) {
     isFetchingRef.current = true;
     setIsLoading(true);
     try {
-      const res = await fetch(
+      const res = await authenticatedFetch(
         `/api/events?companyId=${selectedCompany.id}&limit=50`
       );
       if (res.ok) {
@@ -98,7 +99,7 @@ export function EventProvider({ children }: { children: ReactNode }) {
   const updateEventStatus = async (id: string, status: string) => {
     if (!selectedCompany?.id) return;
     try {
-      const res = await fetch("/api/events", {
+      const res = await authenticatedFetch("/api/events", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status, companyId: selectedCompany.id }),

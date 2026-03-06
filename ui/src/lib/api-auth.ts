@@ -16,6 +16,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { createClient } from "@supabase/supabase-js";
+import { headers } from "next/headers";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -42,20 +43,37 @@ export interface CompanyAccessResult {
  * Returns null if not authenticated.
  */
 export async function authenticateUser(): Promise<AuthResult | null> {
+  const reqHeaders = headers();
+  const authHeader = reqHeaders?.get("authorization") || "";
+  const hasBearer = /^Bearer\s+/i.test(authHeader);
+  const bearerToken = hasBearer ? authHeader.replace(/^Bearer\s+/i, "").trim() : "";
+
+  const tryBearerAuth = async (): Promise<AuthResult | null> => {
+    if (!bearerToken) return null;
+    const { data, error } = await getAdmin().auth.getUser(bearerToken);
+    if (!data?.user || error) return null;
+    return {
+      userId: data.user.id,
+      email: data.user.email,
+    };
+  };
+
   try {
     const supabase = await createServerClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user) return null;
+    if (!user) {
+      return await tryBearerAuth();
+    }
 
     return {
       userId: user.id,
       email: user.email,
     };
   } catch {
-    return null;
+    return await tryBearerAuth();
   }
 }
 
