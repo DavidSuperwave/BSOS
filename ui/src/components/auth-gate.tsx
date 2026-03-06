@@ -6,7 +6,6 @@ import { useEffect, useRef } from "react";
 import { Zap } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 import { useCompany } from "@/contexts/company-context";
-import { clientDebugLog } from "@/lib/debug/client-log";
 
 interface AuthGateProps {
   children: ReactNode;
@@ -63,23 +62,6 @@ export function AuthGate({ children }: AuthGateProps) {
       const target = partial
         ? `/onboarding?companyId=${partial.id}`
         : "/onboarding";
-      // #region agent log
-      clientDebugLog({
-        hypothesisId: "A",
-        location: "src/components/auth-gate.tsx:62",
-        message: "AuthGate redirecting to onboarding",
-        data: {
-          pathname,
-          authLoading,
-          companyLoading,
-          companiesLength: companies.length,
-          hasReadyCompany,
-          partialCompanyId: partial?.id ?? null,
-          statuses: companies.map((c) => c.status),
-          userPresent: Boolean(user),
-        },
-      });
-      // #endregion
 
       // Return the loading spinner while the redirect happens to avoid a flash
       return (

@@ -12,7 +12,6 @@ import {
 } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { AUTH_SIGN_OUT_EVENT, useAuth } from "./auth-context";
-import { clientDebugLog } from "@/lib/debug/client-log";
 
 export interface Company {
   id: string;
@@ -70,17 +69,6 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       }
       setHasResolvedCompanyFetch(false);
       setIsLoading(false);
-      // #region agent log
-      clientDebugLog({
-        hypothesisId: "B",
-        location: "src/contexts/company-context.tsx:69",
-        message: "Skipped company fetch because userId missing",
-        data: {
-          authLoading,
-          signOutClear: signOutClearRef.current,
-        },
-      });
-      // #endregion
       devLog("Skipping company fetch because user is null", {
         clearedBySignOut: signOutClearRef.current,
       });
@@ -88,50 +76,14 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     }
 
     try {
-      // #region agent log
-      clientDebugLog({
-        hypothesisId: "B",
-        location: "src/contexts/company-context.tsx:84",
-        message: "Starting company fetch",
-        data: {
-          userIdPresent: Boolean(userId),
-          pathname,
-          selectedCompanyId: selectedCompanyRef.current?.id ?? null,
-        },
-      });
-      // #endregion
       const res = await fetch("/api/companies");
       if (!res.ok) {
-        // #region agent log
-        clientDebugLog({
-          hypothesisId: "C",
-          location: "src/contexts/company-context.tsx:97",
-          message: "Company fetch returned non-ok",
-          data: {
-            status: res.status,
-            statusText: res.statusText,
-            pathname,
-          },
-        });
-        // #endregion
         devLog("Company fetch returned non-ok response", { status: res.status });
         return;
       }
       signOutClearRef.current = false;
       const data = await res.json();
       const list: Company[] = data.companies || [];
-      // #region agent log
-      clientDebugLog({
-        hypothesisId: "D",
-        location: "src/contexts/company-context.tsx:116",
-        message: "Company fetch completed",
-        data: {
-          listLength: list.length,
-          statuses: list.map((c) => c.status),
-          readyCount: list.filter((c) => isReadyCompanyStatus(c.status)).length,
-        },
-      });
-      // #endregion
       setHasResolvedCompanyFetch(true);
       setCompanies(list);
 
@@ -188,7 +140,7 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [authLoading, pathname, userId]);
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) {

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { appendFileSync } from "node:fs";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { envConfig } from "@/lib/env";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
@@ -14,42 +13,12 @@ function getAdmin() {
   return adminClient;
 }
 
-function writeDebugLog(payload: {
-  hypothesisId: string;
-  location: string;
-  message: string;
-  data?: Record<string, unknown>;
-}) {
-  try {
-    appendFileSync(
-      "/opt/cursor/logs/debug.log",
-      `${JSON.stringify({
-        ...payload,
-        data: payload.data || {},
-        timestamp: Date.now(),
-      })}\n`
-    );
-  } catch {
-    // Ignore debug logging failures.
-  }
-}
-
 export async function GET() {
   try {
     const supabase = await createServerClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-      // #region agent log
-      writeDebugLog({
-        hypothesisId: "C",
-        location: "src/app/api/companies/route.ts:42",
-        message: "Companies GET unauthorized",
-        data: {
-          reason: "supabase.auth.getUser returned null",
-        },
-      });
-      // #endregion
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -70,19 +39,6 @@ export async function GET() {
         .select("*")
         .eq("user_id", user.id)
         .order("name");
-      // #region agent log
-      writeDebugLog({
-        hypothesisId: "D",
-        location: "src/app/api/companies/route.ts:66",
-        message: "Companies GET using legacy fallback",
-        data: {
-          userId: user.id,
-          membershipCount: memberships?.length ?? 0,
-          companiesLength: legacyCompanies?.length ?? 0,
-          statuses: (legacyCompanies || []).map((c: any) => c.status),
-        },
-      });
-      // #endregion
 
       return NextResponse.json({ companies: legacyCompanies || [] });
     }
@@ -94,20 +50,6 @@ export async function GET() {
       .order("name");
 
     if (error) throw error;
-    // #region agent log
-    writeDebugLog({
-      hypothesisId: "D",
-      location: "src/app/api/companies/route.ts:85",
-      message: "Companies GET returning account-scoped results",
-      data: {
-        userId: user.id,
-        membershipCount: memberships?.length ?? 0,
-        accountCount: accountIds.length,
-        companiesLength: companies?.length ?? 0,
-        statuses: (companies || []).map((c: any) => c.status),
-      },
-    });
-    // #endregion
 
     return NextResponse.json({ companies: companies || [] });
   } catch (err: any) {
