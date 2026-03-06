@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { authenticateUser } from "@/lib/api-auth";
-import { isAdminEmail } from "@/lib/bsos-db";
+import { isAdminEmail } from "@/lib/bsos/db";
 import * as inboxing from "@/lib/inboxing-client";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;

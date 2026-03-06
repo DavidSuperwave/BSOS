@@ -13,8 +13,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Next 14.1+ uses top-level serverExternalPackages
-  serverExternalPackages: ["ssh2", "ws"],
   experimental: {
     serverComponentsExternalPackages: ["ssh2", "ws"],
   },
