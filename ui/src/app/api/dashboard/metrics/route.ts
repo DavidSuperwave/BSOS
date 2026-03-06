@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
   let positiveReplies = 0;
   let activeLeads = 0;
   let meetingsBooked = 0;
-  let activeCampaigns: any[] = [];
+  const activeCampaigns: any[] = [];
   let totalCampaigns = 0;
   let totalSends = 0;
   

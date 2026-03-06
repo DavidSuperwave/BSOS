@@ -96,6 +96,7 @@ export async function POST(req: NextRequest) {
       .select("id")
       .single();
 
+    let messageId: string | undefined;
     if (insertError) {
       // If upsert fails (e.g. no plusvibe_id), try insert
       const { data: inserted, error: fallbackError } = await admin
@@ -112,9 +113,9 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      var messageId = inserted?.id;
+      messageId = inserted?.id;
     } else {
-      var messageId = message?.id;
+      messageId = message?.id;
     }
 
     // Update email thread if thread_id exists

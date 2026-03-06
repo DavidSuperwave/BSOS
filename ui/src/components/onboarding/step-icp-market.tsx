@@ -342,7 +342,7 @@ export function StepICPMarket({ data, onChange }: StepICPMarketProps) {
 
         {competitors.length === 0 && (
           <p className="text-xs text-muted-foreground">
-            No competitors added yet. Click "Add" to list your main competitors.
+            No competitors added yet. Click &quot;Add&quot; to list your main competitors.
           </p>
         )}
 

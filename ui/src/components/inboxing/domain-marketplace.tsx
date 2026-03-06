@@ -253,7 +253,7 @@ export function DomainMarketplace({ companyId }: DomainMarketplaceProps) {
                 >
                   {domain.domain_type === "elite" ? "Elite" : "Standard"}
                 </Badge>
-                {domain.health_score != null && (
+                {domain.health_score !== null && domain.health_score !== undefined && (
                   <span className="text-xs text-zinc-500">{domain.health_score}/100</span>
                 )}
               </div>
@@ -423,7 +423,7 @@ export function DomainMarketplace({ companyId }: DomainMarketplaceProps) {
           <div className="bg-zinc-900 rounded-xl p-8 text-center space-y-3">
             <Loader2 className="h-8 w-8 text-red-400 animate-spin mx-auto" />
             <p className="text-white font-medium">Setting up checkout...</p>
-            <p className="text-sm text-zinc-400">You'll be redirected to Stripe momentarily</p>
+            <p className="text-sm text-zinc-400">You&apos;ll be redirected to Stripe momentarily</p>
           </div>
         </div>
       )}
