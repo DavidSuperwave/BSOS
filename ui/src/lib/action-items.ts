@@ -15,7 +15,8 @@ export interface SkillIssueAction {
     | "install_error"
     | "sync_error"
     | "missing_requirements"
-    | "uninstall_error";
+    | "uninstall_error"
+    | "monitor_alert";
   skillSlug: string;
   skillName: string;
   agentType: CompanyAgentType;
@@ -72,7 +73,7 @@ function buildChatHref(input: BuildSkillIssueEventInput) {
 
 export function buildSkillIssueEvent(input: BuildSkillIssueEventInput): AppEventInsert {
   const issueKey = `${input.issueCode}:${input.skillSlug}:${input.agentType}`;
-  const title = `${input.skillName} (${input.agentType}) needs attention`;
+  const title = buildSkillIssueTitle(input.skillName, input.agentType);
 
   return {
     company_id: input.companyId,
@@ -99,7 +100,7 @@ export function buildSkillIssueEvent(input: BuildSkillIssueEventInput): AppEvent
       },
       {
         type: "navigate",
-        label: "Ask Julian",
+        label: "Talk to agent",
         href: buildChatHref(input),
       },
     ],
@@ -115,7 +116,7 @@ export async function emitSkillIssueEvent(admin: any, input: BuildSkillIssueEven
     .select("id")
     .eq("company_id", input.companyId)
     .eq("event_type", "action_item")
-    .eq("status", "unread")
+    .in("status", ["unread", "read", "acted"])
     .eq("title", event.title)
     .limit(1)
     .maybeSingle();
@@ -128,4 +129,37 @@ export async function emitSkillIssueEvent(admin: any, input: BuildSkillIssueEven
   }
 
   return { skipped: false };
+}
+
+export function buildSkillIssueTitle(
+  skillName: string,
+  agentType: CompanyAgentType
+) {
+  return `${skillName} (${agentType}) needs attention`;
+}
+
+export async function resolveSkillIssueEvents(
+  admin: any,
+  input: { companyId: string; skillName: string; agentType: CompanyAgentType }
+) {
+  const title = buildSkillIssueTitle(input.skillName, input.agentType);
+  const { data, error } = await admin
+    .from("events")
+    .update({
+      status: "dismissed",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("company_id", input.companyId)
+    .eq("event_type", "action_item")
+    .eq("title", title)
+    .in("status", ["unread", "read", "acted"])
+    .select("id");
+
+  if (error) {
+    throw new Error(error.message || "Failed to resolve skill issue events");
+  }
+
+  return {
+    resolvedCount: data?.length || 0,
+  };
 }
