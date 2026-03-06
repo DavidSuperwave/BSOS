@@ -200,7 +200,7 @@ export function generateAgentConfig(company: CompanyData) {
   const containerTag = companyContainerTag(company.slug);
 
   return {
-    model: "openrouter/kimi-coding/k2p5",
+    model: "openrouter/moonshotai/kimi-k2.5",
     maxTokens: 4096,
     temperature: 0.7,
     tools: {

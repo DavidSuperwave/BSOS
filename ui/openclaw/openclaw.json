@@ -41,9 +41,9 @@
     "defaults": {
       "workspace": "/data/agents/main",
       "model": {
-        "primary": "openrouter/kimi-coding/k2p5",
+        "primary": "openrouter/moonshotai/kimi-k2.5",
         "fallbacks": [
-          "anthropic/claude-opus-4-5"
+          "openrouter/anthropic/claude-opus-4-5"
         ]
       }
     },

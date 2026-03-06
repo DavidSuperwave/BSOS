@@ -209,8 +209,8 @@ function generateOpenclawJson(): string {
         defaults: {
           workspace: "/data/agents/main",
           model: {
-            primary: "openrouter/kimi-coding/k2p5",
-            fallbacks: ["anthropic/claude-opus-4-5"],
+            primary: "openrouter/moonshotai/kimi-k2.5",
+            fallbacks: ["openrouter/anthropic/claude-opus-4-5"],
           },
         },
         list: [

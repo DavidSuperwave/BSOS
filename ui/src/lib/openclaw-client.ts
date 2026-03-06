@@ -3,7 +3,7 @@ import crypto from "crypto";
 
 const GATEWAY_TOKEN = () => process.env.OPENCLAW_GATEWAY_TOKEN || "";
 const PROTOCOL_VERSION = 3;
-const CLIENT_ID = "blitzscale-ui";
+const CLIENT_ID = "gateway-client";
 const CLIENT_VERSION = "1.0.0";
 const CLIENT_MODE = "backend";
 const CLIENT_CAPS = ["tool-events"];
