@@ -14,15 +14,16 @@ import {
 import { DomainsPanel } from "@/components/inboxing/domains-panel";
 import { PlatformUploadPanel } from "@/components/inboxing/platform-upload-panel";
 import { PlatformConnectionsPanel } from "@/components/inboxing/platform-connections-panel";
+import { WorkspaceInboxesPanel } from "@/components/inboxing/workspace-inboxes-panel";
 import { Globe, Upload, Link2, ShieldCheck, ShieldAlert, ShieldX } from "lucide-react";
 import type { PlatformConnection, UploadJobsResponse } from "@/components/inboxing/types";
 
-type InboxingTab = "domains" | "upload" | "platforms";
+type InboxingTab = "inboxes" | "domains" | "upload" | "platforms";
 
 export default function InboxesPage() {
   const { selectedCompany } = useCompany();
   const companyId = selectedCompany?.id;
-  const [activeTab, setActiveTab] = useState<InboxingTab>("domains");
+  const [activeTab, setActiveTab] = useState<InboxingTab>("inboxes");
 
   const { data: domainsData, mutate: mutateDomains } = useInboxingDomainsQuery(companyId);
   const { data: healthData } = useInboxingHealth(companyId);
@@ -65,6 +66,11 @@ export default function InboxesPage() {
                 Add Platform
               </Button>
             ) : null}
+            {activeTab === "inboxes" ? (
+              <Button variant="outline" size="sm" onClick={() => setActiveTab("domains")}>
+                Manage Domains
+              </Button>
+            ) : null}
           </div>
         ),
       }}
@@ -95,6 +101,7 @@ export default function InboxesPage() {
 
         <div className="flex items-center gap-1 border-b border-border">
           {[
+            { id: "inboxes" as const, label: "Inboxes", icon: Globe },
             { id: "domains" as const, label: "Domains", icon: Globe },
             { id: "upload" as const, label: "Platform Upload", icon: Upload },
             { id: "platforms" as const, label: "Platform Connections", icon: Link2 },
@@ -119,6 +126,8 @@ export default function InboxesPage() {
             Select a company to manage inboxing.
           </div>
         ) : null}
+
+        {companyId && activeTab === "inboxes" ? <WorkspaceInboxesPanel companyId={companyId} /> : null}
 
         {companyId && activeTab === "domains" ? (
           <DomainsPanel

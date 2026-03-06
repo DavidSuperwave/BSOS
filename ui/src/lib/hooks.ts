@@ -127,6 +127,45 @@ export function useCampaigns(companyId?: string) {
   );
 }
 
+export interface CampaignSequenceVariation {
+  variation: string;
+  name: string;
+  subject: string;
+  body: string;
+}
+
+export interface CampaignSequenceStep {
+  step: number;
+  wait_time: number;
+  variations: CampaignSequenceVariation[];
+}
+
+export interface CampaignSchedule {
+  daily_limit: number;
+  start_date: string;
+  timezone: string;
+  days: Record<string, boolean>;
+  timing: {
+    from: string;
+    to: string;
+  };
+}
+
+export interface PlusVibeCampaignDetails extends PlusVibeCampaign {
+  first_wait_time?: number;
+  sequences?: CampaignSequenceStep[];
+  schedules?: CampaignSchedule[];
+  email_accounts?: string[];
+}
+
+export function useCampaignDetails(campaignId?: string, companyId?: string) {
+  return useApiData<{ campaign: PlusVibeCampaignDetails }>(
+    campaignId && companyId
+      ? `/api/plusvibe/campaigns/${campaignId}?companyId=${encodeURIComponent(companyId)}`
+      : null
+  );
+}
+
 export interface CampaignLead {
   id: string;
   name: string;
@@ -145,6 +184,32 @@ export function useCampaignLeads(campaignId?: string, companyId?: string) {
       ? `/api/plusvibe/campaigns/${campaignId}/leads?companyId=${companyId}`
       : null
   );
+}
+
+export interface PlusVibeAccount {
+  id: string;
+  email: string;
+  domain: string;
+  esp: "gmail" | "microsoft" | "smtp";
+  provider_type: string;
+  warmup_status?: string | null;
+  status?: string;
+  is_managed_domain: boolean;
+  provider_access: "full" | "external_provider";
+  external_provider: boolean;
+}
+
+export function usePlusVibeAccounts(companyId?: string) {
+  return useApiData<{
+    accounts: PlusVibeAccount[];
+    summary?: {
+      total_accounts: number;
+      total_domains: number;
+      managed_domains: number;
+      external_domains: number;
+      by_domain: Array<{ domain: string; user_count: number; managed: boolean }>;
+    };
+  }>(companyId ? `/api/plusvibe/accounts?companyId=${encodeURIComponent(companyId)}` : null);
 }
 
 export interface CampaignAnalyticsData {
@@ -376,7 +441,11 @@ export function useInboxMessages(filters?: InboxFilters) {
   return useApiData<{
     messages: InboxMessage[];
     pagination: { page: number; limit: number; total: number; pages: number };
-  }>(`/api/inbox/messages?${qs}`);
+  }>(`/api/inbox/messages?${qs}`, {
+    refreshInterval: 15000,
+    dedupingInterval: 5000,
+    revalidateOnReconnect: true,
+  });
 }
 
 export interface EmailTag {

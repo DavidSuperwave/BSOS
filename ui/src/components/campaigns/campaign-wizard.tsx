@@ -24,7 +24,14 @@ import {
   Underline,
   Users,
 } from "lucide-react";
-import { type PlusVibeCampaign, useCampaignLeads, type CampaignLead } from "@/lib/hooks";
+import {
+  type PlusVibeCampaign,
+  useCampaignLeads,
+  type CampaignLead,
+  useCampaignDetails,
+  usePlusVibeAccounts,
+  type PlusVibeAccount,
+} from "@/lib/hooks";
 import { useStreamingChat } from "@/lib/hooks/use-streaming-chat";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -71,40 +78,55 @@ interface SubsequenceDraft {
 }
 
 const INITIAL_SEQUENCE_STEPS: SequenceStepDraft[] = [
-  {
-    id: "step-1",
-    title: "Step 1 - Intro",
-    subject: "Quick idea for {{company}}",
-    body: "Hey {{first_name}}, I noticed {{company}} is scaling outbound...",
-    waitDays: 0,
-    sent: 412,
-    openRate: 71,
-    replyRate: 6.4,
-    positiveRate: 2.1,
-  },
-  {
-    id: "step-2",
-    title: "Step 2 - Follow-up",
-    subject: "Worth a quick look?",
-    body: "Wanted to bump this in case it got buried...",
-    waitDays: 3,
-    sent: 276,
-    openRate: 63,
-    replyRate: 4.1,
-    positiveRate: 1.4,
-  },
-  {
-    id: "step-3",
-    title: "Step 3 - Final touch",
-    subject: "Should I close this out?",
-    body: "Last follow-up from me - happy to circle back later.",
-    waitDays: 5,
-    sent: 181,
-    openRate: 58,
-    replyRate: 3.3,
-    positiveRate: 1.0,
-  },
 ];
+
+const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+const DAY_TO_INDEX: Record<string, string> = {
+  Mon: "1",
+  Tue: "2",
+  Wed: "3",
+  Thu: "4",
+  Fri: "5",
+  Sat: "6",
+  Sun: "7",
+};
+
+function createEmptySequenceStep(index: number): SequenceStepDraft {
+  return {
+    id: `step-${Date.now()}-${index}`,
+    title: `Step ${index + 1}`,
+    subject: "",
+    body: "",
+    waitDays: index === 0 ? 1 : 3,
+    sent: 0,
+    openRate: 0,
+    replyRate: 0,
+    positiveRate: 0,
+  };
+}
+
+function mapScheduleDaysToLabels(days?: Record<string, boolean>) {
+  if (!days || typeof days !== "object") return ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  return DAY_LABELS.filter((day) => Boolean(days[DAY_TO_INDEX[day]]));
+}
+
+function mapLabelsToScheduleDays(labels: string[]) {
+  return {
+    "1": labels.includes("Mon"),
+    "2": labels.includes("Tue"),
+    "3": labels.includes("Wed"),
+    "4": labels.includes("Thu"),
+    "5": labels.includes("Fri"),
+    "6": labels.includes("Sat"),
+    "7": labels.includes("Sun"),
+  };
+}
+
+function accountLabel(account: PlusVibeAccount) {
+  return account.email || account.id;
+}
+
+const INITIAL_SCHEDULE_DATE = new Date().toISOString().slice(0, 10);
 
 const INITIAL_SUBSEQUENCES: SubsequenceDraft[] = [
   {
@@ -135,7 +157,13 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [leadStatusFilter, setLeadStatusFilter] = useState("all");
   const [leadTagFilter, setLeadTagFilter] = useState("all");
 
-  // Real lead data from PlusVibe
+  // Real lead data and campaign config from PlusVibe
+  const { data: campaignDetailsData, isLoading: campaignDetailsLoading } = useCampaignDetails(
+    campaign.id,
+    companyId
+  );
+  const { data: accountData, isLoading: accountsLoading } = usePlusVibeAccounts(companyId);
+  const availableAccounts = accountData?.accounts || [];
   const { data: leadData, mutate: mutateLeads } = useCampaignLeads(campaign.id, companyId);
   const allLeads: CampaignLead[] = leadData?.leads || [];
 
@@ -193,6 +221,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [selectedSequenceStepId, setSelectedSequenceStepId] = useState(
     INITIAL_SEQUENCE_STEPS[0]?.id || ""
   );
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
 
   const [settingsName, setSettingsName] = useState(campaign.name || "");
   const [dailyLimit, setDailyLimit] = useState("200");
@@ -203,6 +232,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [selectedSenderPool, setSelectedSenderPool] = useState("Primary Senders");
 
   const [timezone, setTimezone] = useState("America/New_York");
+  const [scheduleStartDate, setScheduleStartDate] = useState(INITIAL_SCHEDULE_DATE);
   const [startHour, setStartHour] = useState("09:00");
   const [endHour, setEndHour] = useState("17:00");
   const [sendingDays, setSendingDays] = useState<string[]>(["Mon", "Tue", "Wed", "Thu", "Fri"]);
@@ -249,6 +279,48 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     sequenceAgentEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sequenceAgentMessages]);
 
+  useEffect(() => {
+    const details = campaignDetailsData?.campaign;
+    if (!details) return;
+
+    setSettingsName(details.name || campaign.name || "");
+
+    const hydratedSequences = Array.isArray(details.sequences)
+      ? details.sequences.map((step, index) => {
+          const variation = Array.isArray(step.variations) ? step.variations[0] : undefined;
+          return {
+            id: `step-${step.step || index + 1}`,
+            title: variation?.name || `Step ${step.step || index + 1}`,
+            subject: variation?.subject || "",
+            body: variation?.body || "",
+            waitDays: Number(step.wait_time || 1),
+            sent: 0,
+            openRate: 0,
+            replyRate: 0,
+            positiveRate: 0,
+          };
+        })
+      : [];
+    setSequenceSteps(hydratedSequences);
+    setSelectedSequenceStepId(hydratedSequences[0]?.id || "");
+
+    const schedule = Array.isArray(details.schedules) ? details.schedules[0] : undefined;
+    if (schedule) {
+      setDailyLimit(String(schedule.daily_limit || 25));
+      setTimezone(schedule.timezone || "America/New_York");
+      setScheduleStartDate(schedule.start_date || INITIAL_SCHEDULE_DATE);
+      setStartHour(schedule.timing?.from || "09:00");
+      setEndHour(schedule.timing?.to || "17:00");
+      setSendingDays(mapScheduleDaysToLabels(schedule.days));
+    }
+
+    setSelectedAccountIds(
+      Array.isArray(details.email_accounts)
+        ? details.email_accounts.map((value) => String(value))
+        : []
+    );
+  }, [campaign.id, campaign.name, campaignDetailsData?.campaign]);
+
   const savePatch = async (payload: Record<string, unknown>) => {
     setSaving(true);
     setError(null);
@@ -278,31 +350,29 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   };
 
   const addSequenceStep = () => {
-    const stepId = `step-${Date.now()}`;
-    setSequenceSteps((prev) => [
-      ...prev,
-      {
-        id: stepId,
-        title: `Step ${prev.length + 1} - New step`,
-        subject: "New follow-up subject",
-        body: "Write your follow-up message...",
-        waitDays: 3,
-        sent: 0,
-        openRate: 0,
-        replyRate: 0,
-        positiveRate: 0,
-      },
-    ]);
+    const stepId = `step-${Date.now()}-${sequenceSteps.length + 1}`;
+    setSequenceSteps((prev) => [...prev, { ...createEmptySequenceStep(prev.length), id: stepId }]);
     setSelectedSequenceStepId(stepId);
   };
 
   const saveSequences = () => {
+    if (sequenceSteps.length === 0) {
+      setError("Add at least one sequence step before saving.");
+      return;
+    }
     void savePatch({
-      sequence: sequenceSteps.map((step, index) => ({
+      first_wait_time: 0,
+      sequences: sequenceSteps.map((step, index) => ({
         step: index + 1,
-        subject: step.subject,
-        body: step.body,
-        delay_days: step.waitDays,
+        wait_time: Math.max(1, Number(step.waitDays) || 1),
+        variations: [
+          {
+            variation: "A",
+            name: step.title || `Step ${index + 1}`,
+            subject: step.subject || "",
+            body: step.body || "",
+          },
+        ],
       })),
     });
   };
@@ -379,12 +449,32 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
             <p className="text-sm text-muted-foreground">Campaign Builder</p>
           </div>
         </div>
-        <Badge variant="outline" className="capitalize">
-          {campaign.status || "Draft"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => savePatch({ status: "PAUSED", first_wait_time: 0 })}
+            disabled={saving}
+          >
+            Pause
+          </Button>
+          <Button
+            size="sm"
+            onClick={() => savePatch({ status: "ACTIVE", first_wait_time: 0 })}
+            disabled={saving}
+          >
+            Activate
+          </Button>
+          <Badge variant="outline" className="capitalize">
+            {campaign.status || "Draft"}
+          </Badge>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      {campaignDetailsLoading ? (
+        <p className="text-sm text-muted-foreground">Loading campaign configuration…</p>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Card>
@@ -414,10 +504,11 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 md:grid-cols-5">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 md:grid-cols-6">
           <TabsTrigger value="leads">Leads</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
+          <TabsTrigger value="accounts">Inboxes</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
           <TabsTrigger value="subsequences">Subsequences</TabsTrigger>
         </TabsList>
@@ -750,7 +841,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
                 <div>
                   <label className="text-sm font-medium">Timezone</label>
                   <select
@@ -762,6 +853,14 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                     <option value="Europe/London">Europe/London</option>
                     <option value="UTC">UTC</option>
                   </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium">Start Date</label>
+                  <Input
+                    type="date"
+                    value={scheduleStartDate}
+                    onChange={(event) => setScheduleStartDate(event.target.value)}
+                  />
                 </div>
                 <div>
                   <label className="text-sm font-medium">Start Time</label>
@@ -776,7 +875,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               <div>
                 <label className="text-sm font-medium">Sending Days</label>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
+                  {DAY_LABELS.map((day) => (
                     <Button
                       key={day}
                       type="button"
@@ -823,14 +922,19 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                 <Button
                   onClick={() =>
                     savePatch({
-                      timezone,
-                      daily_limit: Number(dailyLimit) || 0,
-                      schedule: {
-                        start_time: startHour,
-                        end_time: endHour,
-                        days: sendingDays,
-                        min_delay_minutes: Number(minDelayMinutes) || 0,
-                      },
+                      first_wait_time: 0,
+                      schedules: [
+                        {
+                          daily_limit: Number(dailyLimit) || 25,
+                          start_date: scheduleStartDate || INITIAL_SCHEDULE_DATE,
+                          days: mapLabelsToScheduleDays(sendingDays),
+                          timezone,
+                          timing: {
+                            from: startHour,
+                            to: endHour,
+                          },
+                        },
+                      ],
                     })
                   }
                   disabled={saving}
@@ -838,6 +942,92 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   Save Schedule
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="accounts" className="space-y-4 mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                Sender Inboxes
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {accountsLoading ? (
+                <p className="text-sm text-muted-foreground">Loading inbox accounts…</p>
+              ) : availableAccounts.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No PlusVibe accounts found in this workspace. Add inboxes in PlusVibe first.
+                </p>
+              ) : (
+                <div className="max-h-[360px] overflow-auto rounded-md border border-border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50 text-xs text-muted-foreground">
+                      <tr>
+                        <th className="p-3 text-left w-10"> </th>
+                        <th className="p-3 text-left">Inbox</th>
+                        <th className="p-3 text-left">ESP</th>
+                        <th className="p-3 text-left">Domain Access</th>
+                        <th className="p-3 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {availableAccounts.map((account) => {
+                        const selected = selectedAccountIds.includes(account.id);
+                        const limited = account.provider_access === "external_provider";
+                        return (
+                          <tr key={account.id} className="border-t border-border">
+                            <td className="p-3">
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                disabled={limited}
+                                onChange={(event) =>
+                                  setSelectedAccountIds((prev) =>
+                                    event.target.checked
+                                      ? [...prev, account.id]
+                                      : prev.filter((value) => value !== account.id)
+                                  )
+                                }
+                              />
+                            </td>
+                            <td className="p-3 text-foreground">{accountLabel(account)}</td>
+                            <td className="p-3 uppercase text-xs text-muted-foreground">{account.esp}</td>
+                            <td className="p-3">
+                              <Badge variant="outline" className={limited ? "text-amber-700" : "text-emerald-700"}>
+                                {limited ? "External Provider" : "Managed Domain"}
+                              </Badge>
+                            </td>
+                            <td className="p-3 text-xs text-muted-foreground">{account.status || "unknown"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
+                External providers are import-only. Agent automation is restricted unless the domain is managed in our inboxing account.
+              </div>
+
+              <div className="flex justify-end">
+                <Button
+                  onClick={() =>
+                    savePatch({
+                      first_wait_time: 0,
+                      email_accounts: selectedAccountIds,
+                    })
+                  }
+                  disabled={saving || selectedAccountIds.length === 0}
+                  className="gap-2"
+                >
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Save Inboxes
                 </Button>
               </div>
             </CardContent>
@@ -911,14 +1101,6 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                   onClick={() =>
                     savePatch({
                       camp_name: settingsName.trim(),
-                      sender_pool: selectedSenderPool,
-                      daily_limit: Number(dailyLimit) || 0,
-                      tracking: {
-                        opens: trackOpens,
-                        clicks: trackClicks,
-                      },
-                      stop_on_reply: stopOnReply,
-                      unsubscribe_footer: unsubscribeFooter,
                     })
                   }
                   disabled={saving || !settingsName.trim()}

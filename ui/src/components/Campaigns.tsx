@@ -473,9 +473,14 @@ export default function Campaigns() {
         const payload = await response.json().catch(() => ({ error: 'Failed to create campaign' }));
         throw new Error(payload.error || payload.details || 'Failed to create campaign');
       }
+      const payload = await response.json().catch(() => ({}));
+      const createdCampaignId = String(payload?.id || payload?.campaign_id || '').trim();
       setCreateCampaignName('');
       setIsCreateDialogOpen(false);
-      mutate();
+      await mutate();
+      if (createdCampaignId) {
+        setEditingCampaignId(createdCampaignId);
+      }
     } catch (err) {
       console.error('Failed to create campaign:', err);
       await mutate(snapshot, { revalidate: false });

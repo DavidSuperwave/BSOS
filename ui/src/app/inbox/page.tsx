@@ -26,7 +26,6 @@ import {
   Minus,
   Clock,
   Bot,
-  RefreshCw,
   Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -238,6 +237,7 @@ export default function InboxPage() {
           to: selected.from_email,
           subject: `Re: ${selected.subject}`,
           body: replyText,
+          from: selected.to_email,
           thread_id: selected.thread_id,
           message_id: selected.id,
           company_id: selected.company_id,
@@ -349,12 +349,6 @@ export default function InboxPage() {
       header={{
         title: "Inbox",
         subtitle: `${pagination?.total || 0} messages`,
-        actions: (
-          <Button variant="outline" className="gap-2" onClick={() => mutate()}>
-            <RefreshCw className="h-4 w-4" />
-            Sync
-          </Button>
-        ),
       }}
     >
       <div className="flex h-full min-h-0 flex-col gap-4">

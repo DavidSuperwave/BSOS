@@ -14,6 +14,7 @@ export function StepIntegrations({ data, onChange }: StepIntegrationsProps) {
         <h2 className="text-lg font-semibold text-foreground">Integrations</h2>
         <p className="text-sm text-muted-foreground mt-1">
           Connect your tools so Julian can manage campaigns and track meetings. All fields are optional — you can add them later in Settings.
+          When PlusVibe is configured, inbound reply webhook setup is automated during deployment.
         </p>
       </div>
 
