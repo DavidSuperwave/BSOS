@@ -91,12 +91,13 @@ export function useDashboardActivities(
   sort: "date_desc" | "date_asc" = "date_desc",
   search?: string
 ) {
-  if (!companyId) return useApiData<{ activities: DashboardActivity[] }>(null);
-  const params = new URLSearchParams({ companyId, range, sort });
-  if (search && search.trim()) params.set("search", search.trim());
-  return useApiData<{ activities: DashboardActivity[] }>(
-    `/api/dashboard/activities?${params.toString()}`
-  );
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams({ companyId, range, sort });
+    if (search && search.trim()) params.set("search", search.trim());
+    url = `/api/dashboard/activities?${params.toString()}`;
+  }
+  return useApiData<{ activities: DashboardActivity[] }>(url);
 }
 
 export interface PlusVibeCampaign {
@@ -202,19 +203,20 @@ export interface ReportDefinition {
 }
 
 export function useReports(companyId?: string, pinnedOnly = false) {
-  if (!companyId) return useApiData<{ reports: ReportDefinition[] }>(null);
-  const params = new URLSearchParams({ companyId });
-  if (pinnedOnly) params.set("pinned", "true");
-  return useApiData<{ reports: ReportDefinition[] }>(
-    `/api/reports?${params.toString()}`
-  );
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams({ companyId });
+    if (pinnedOnly) params.set("pinned", "true");
+    url = `/api/reports?${params.toString()}`;
+  }
+  return useApiData<{ reports: ReportDefinition[] }>(url);
 }
 
 export function useReport(companyId?: string, reportId?: string) {
-  if (!companyId || !reportId) return useApiData<{ report: ReportDefinition }>(null);
-  return useApiData<{ report: ReportDefinition }>(
-    `/api/reports/${reportId}?companyId=${encodeURIComponent(companyId)}`
-  );
+  const url = companyId && reportId
+    ? `/api/reports/${reportId}?companyId=${encodeURIComponent(companyId)}`
+    : null;
+  return useApiData<{ report: ReportDefinition }>(url);
 }
 
 export function useReportData(
@@ -222,14 +224,13 @@ export function useReportData(
   reportId?: string,
   options?: { range?: "24h" | "7d" | "30d" | "90d" }
 ) {
-  if (!companyId || !reportId) {
-    return useApiData<{ report: ReportDefinition; data: any[]; meta: any }>(null);
+  let url: string | null = null;
+  if (companyId && reportId) {
+    const params = new URLSearchParams({ companyId });
+    if (options?.range) params.set("range", options.range);
+    url = `/api/reports/${reportId}/data?${params.toString()}`;
   }
-  const params = new URLSearchParams({ companyId });
-  if (options?.range) params.set("range", options.range);
-  return useApiData<{ report: ReportDefinition; data: any[]; meta: any }>(
-    `/api/reports/${reportId}/data?${params.toString()}`
-  );
+  return useApiData<{ report: ReportDefinition; data: any[]; meta: any }>(url);
 }
 
 export interface SupermemoryDocument {
@@ -259,13 +260,14 @@ export interface KnowledgeDoc {
 }
 
 export function useSupermemoryDocuments(companyId?: string, container?: string) {
-  if (!companyId) return useApiData<{ documents: SupermemoryDocument[]; containerTag: string; count: number }>(null);
-  const params = new URLSearchParams();
-  params.set("companyId", companyId);
-  if (container) params.set("container", container);
-  return useApiData<{ documents: SupermemoryDocument[]; containerTag: string; count: number }>(
-    `/api/supermemory/documents?${params.toString()}`
-  );
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams();
+    params.set("companyId", companyId);
+    if (container) params.set("container", container);
+    url = `/api/supermemory/documents?${params.toString()}`;
+  }
+  return useApiData<{ documents: SupermemoryDocument[]; containerTag: string; count: number }>(url);
 }
 
 export interface StructuredDocument {
@@ -284,22 +286,21 @@ export function useDocuments(
   companyId?: string,
   options?: { category?: string; status?: string }
 ) {
-  if (!companyId) return useApiData<{ documents: StructuredDocument[] }>(null);
-  const params = new URLSearchParams({ companyId });
-  if (options?.category) params.set("category", options.category);
-  if (options?.status) params.set("status", options.status);
-  return useApiData<{ documents: StructuredDocument[] }>(
-    `/api/documents?${params.toString()}`
-  );
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams({ companyId });
+    if (options?.category) params.set("category", options.category);
+    if (options?.status) params.set("status", options.status);
+    url = `/api/documents?${params.toString()}`;
+  }
+  return useApiData<{ documents: StructuredDocument[] }>(url);
 }
 
 export function useDocument(companyId?: string, documentId?: string) {
-  if (!companyId || !documentId) {
-    return useApiData<{ document: StructuredDocument }>(null);
-  }
-  return useApiData<{ document: StructuredDocument }>(
-    `/api/documents/${documentId}?companyId=${encodeURIComponent(companyId)}`
-  );
+  const url = companyId && documentId
+    ? `/api/documents/${documentId}?companyId=${encodeURIComponent(companyId)}`
+    : null;
+  return useApiData<{ document: StructuredDocument }>(url);
 }
 
 export interface ApiStatus {
@@ -357,26 +358,22 @@ export interface InboxFilters {
 }
 
 export function useInboxMessages(filters?: InboxFilters) {
-  if (!filters?.companyId) {
-    return useApiData<{
-      messages: InboxMessage[];
-      pagination: { page: number; limit: number; total: number; pages: number };
-    }>(null);
+  let url: string | null = null;
+  if (filters?.companyId) {
+    const params = new URLSearchParams();
+    params.set("companyId", filters.companyId);
+    if (filters.campaignId) params.set("campaignId", filters.campaignId);
+    if (filters.sentiment) params.set("sentiment", filters.sentiment);
+    if (filters.status) params.set("status", filters.status);
+    if (filters.priority) params.set("priority", filters.priority);
+    if (filters.search) params.set("search", filters.search);
+    if (filters.page) params.set("page", String(filters.page));
+    url = `/api/inbox/messages?${params.toString()}`;
   }
-  const params = new URLSearchParams();
-  params.set("companyId", filters.companyId);
-  if (filters.campaignId) params.set("campaignId", filters.campaignId);
-  if (filters.sentiment) params.set("sentiment", filters.sentiment);
-  if (filters.status) params.set("status", filters.status);
-  if (filters.priority) params.set("priority", filters.priority);
-  if (filters.search) params.set("search", filters.search);
-  if (filters.page) params.set("page", String(filters.page));
-
-  const qs = params.toString();
   return useApiData<{
     messages: InboxMessage[];
     pagination: { page: number; limit: number; total: number; pages: number };
-  }>(`/api/inbox/messages?${qs}`);
+  }>(url);
 }
 
 export interface EmailTag {
@@ -418,17 +415,17 @@ export interface InboxingDomain {
 }
 
 export function useInboxingDomains(companyId?: string, status?: string) {
-  if (!companyId) {
-    return useApiData<{ domains: InboxingDomain[]; pagination: any }>(null);
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams();
+    params.set("companyId", companyId);
+    if (status) params.set("status", status);
+    url = `/api/inboxing/domains?${params.toString()}`;
   }
-  const params = new URLSearchParams();
-  params.set("companyId", companyId);
-  if (status) params.set("status", status);
-  const qs = params.toString();
   return useApiData<{
     domains: InboxingDomain[];
     pagination: any;
-  }>(`/api/inboxing/domains?${qs}`);
+  }>(url);
 }
 
 export function useInboxingDomainsQuery(
@@ -440,18 +437,17 @@ export function useInboxingDomainsQuery(
     limit?: number;
   }
 ) {
-  if (!companyId) {
-    return useApiData<{ domains: InboxingDomain[]; pagination: any }>(null);
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams();
+    params.set("companyId", companyId);
+    if (options?.status) params.set("status", options.status);
+    if (options?.search) params.set("search", options.search);
+    if (options?.page) params.set("page", String(options.page));
+    if (options?.limit) params.set("limit", String(options.limit));
+    url = `/api/inboxing/domains?${params.toString()}`;
   }
-  const params = new URLSearchParams();
-  params.set("companyId", companyId);
-  if (options?.status) params.set("status", options.status);
-  if (options?.search) params.set("search", options.search);
-  if (options?.page) params.set("page", String(options.page));
-  if (options?.limit) params.set("limit", String(options.limit));
-  return useApiData<{ domains: InboxingDomain[]; pagination: any }>(
-    `/api/inboxing/domains?${params.toString()}`
-  );
+  return useApiData<{ domains: InboxingDomain[]; pagination: any }>(url);
 }
 
 export function useInboxingHealth(companyId?: string) {
@@ -488,19 +484,22 @@ export function useMediaFiles(
   companyId?: string,
   options?: { context?: string; contextId?: string; fileType?: string }
 ) {
-  if (!companyId) return useApiData<{ media: MediaFile[] }>(null);
-  const params = new URLSearchParams({ companyId });
-  if (options?.context) params.set("context", options.context);
-  if (options?.contextId) params.set("contextId", options.contextId);
-  if (options?.fileType) params.set("fileType", options.fileType);
-  return useApiData<{ media: MediaFile[] }>(`/api/media?${params.toString()}`);
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams({ companyId });
+    if (options?.context) params.set("context", options.context);
+    if (options?.contextId) params.set("contextId", options.contextId);
+    if (options?.fileType) params.set("fileType", options.fileType);
+    url = `/api/media?${params.toString()}`;
+  }
+  return useApiData<{ media: MediaFile[] }>(url);
 }
 
 export function useMediaFile(companyId?: string, mediaId?: string) {
-  if (!companyId || !mediaId) return useApiData<{ media: MediaFile }>(null);
-  return useApiData<{ media: MediaFile }>(
-    `/api/media/${mediaId}?companyId=${encodeURIComponent(companyId)}`
-  );
+  const url = companyId && mediaId
+    ? `/api/media/${mediaId}?companyId=${encodeURIComponent(companyId)}`
+    : null;
+  return useApiData<{ media: MediaFile }>(url);
 }
 
 export function useRegistrars(companyId?: string) {
@@ -537,24 +536,22 @@ export function useInboxingUploadJobs(
     platform_connection_id?: string;
   }
 ) {
-  if (!companyId) {
-    return useApiData<{
-      jobs: InboxingUploadJob[];
-      summary: { total: number; completed: number; failed: number };
-    }>(null);
-  }
-  const params = new URLSearchParams();
-  params.set("companyId", companyId);
-  if (options?.status) params.set("status", options.status);
-  if (options?.email) params.set("email", options.email);
-  if (options?.domain) params.set("domain", options.domain);
-  if (options?.platform_connection_id) {
-    params.set("platform_connection_id", options.platform_connection_id);
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams();
+    params.set("companyId", companyId);
+    if (options?.status) params.set("status", options.status);
+    if (options?.email) params.set("email", options.email);
+    if (options?.domain) params.set("domain", options.domain);
+    if (options?.platform_connection_id) {
+      params.set("platform_connection_id", options.platform_connection_id);
+    }
+    url = `/api/inboxing/upload/status?${params.toString()}`;
   }
   return useApiData<{
     jobs: InboxingUploadJob[];
     summary: { total: number; completed: number; failed: number };
-  }>(`/api/inboxing/upload/status?${params.toString()}`);
+  }>(url);
 }
 
 // ---- Chat Hooks ----
@@ -587,12 +584,13 @@ export interface ChatMessageRow {
 }
 
 export function useChatSessions(companyId?: string, sessionType = "main") {
-  if (!companyId) return useApiData<{ sessions: ChatSession[] }>(null);
-  const params = new URLSearchParams({ sessionType });
-  params.set("companyId", companyId);
-  return useApiData<{ sessions: ChatSession[] }>(
-    `/api/chat/sessions?${params.toString()}`
-  );
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams({ sessionType });
+    params.set("companyId", companyId);
+    url = `/api/chat/sessions?${params.toString()}`;
+  }
+  return useApiData<{ sessions: ChatSession[] }>(url);
 }
 
 export function useEventsData(companyId?: string, status?: string) {
@@ -638,21 +636,22 @@ export function usePipelineEntries(
     search?: string;
   }
 ) {
-  if (!companyId) return useApiData<{ entries: PipelineEntry[] }>(null);
-  const params = new URLSearchParams({ companyId });
-  if (options?.pipelineId) params.set("pipelineId", options.pipelineId);
-  if (options?.stageId) params.set("stageId", options.stageId);
-  if (options?.search) params.set("search", options.search);
-  return useApiData<{ entries: PipelineEntry[] }>(
-    `/api/pipelines/entries?${params.toString()}`
-  );
+  let url: string | null = null;
+  if (companyId) {
+    const params = new URLSearchParams({ companyId });
+    if (options?.pipelineId) params.set("pipelineId", options.pipelineId);
+    if (options?.stageId) params.set("stageId", options.stageId);
+    if (options?.search) params.set("search", options.search);
+    url = `/api/pipelines/entries?${params.toString()}`;
+  }
+  return useApiData<{ entries: PipelineEntry[] }>(url);
 }
 
 export function usePipelineEntry(companyId?: string, entryId?: string) {
-  if (!companyId || !entryId) return useApiData<{ entry: PipelineEntry }>(null);
-  return useApiData<{ entry: PipelineEntry }>(
-    `/api/pipelines/entries/${entryId}?companyId=${encodeURIComponent(companyId)}`
-  );
+  const url = companyId && entryId
+    ? `/api/pipelines/entries/${entryId}?companyId=${encodeURIComponent(companyId)}`
+    : null;
+  return useApiData<{ entry: PipelineEntry }>(url);
 }
 
 export async function updatePipelineEntry(
@@ -948,11 +947,12 @@ export async function createCompanySkillShareLink(
 }
 
 export function useCompanySkillShareLinks(companyId?: string, slug?: string) {
-  if (!companyId) return useApiData<{ success: boolean; links: any[] }>(null);
-  const qs = slug ? `?slug=${encodeURIComponent(slug)}` : "";
-  return useApiData<{ success: boolean; links: any[] }>(
-    `/api/companies/${companyId}/agent/skills/share${qs}`
-  );
+  let url: string | null = null;
+  if (companyId) {
+    const qs = slug ? `?slug=${encodeURIComponent(slug)}` : "";
+    url = `/api/companies/${companyId}/agent/skills/share${qs}`;
+  }
+  return useApiData<{ success: boolean; links: any[] }>(url);
 }
 
 export async function revokeCompanySkillShareLink(companyId: string, id: string) {

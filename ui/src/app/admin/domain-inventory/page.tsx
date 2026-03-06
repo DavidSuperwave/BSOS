@@ -128,7 +128,7 @@ function domainTypeBadgeClass(domainType: string) {
 }
 
 function formatCurrency(value: number | null | undefined) {
-  if (value == null || Number.isNaN(value)) return "—";
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
   return currencyFormatter.format(value);
 }
 
@@ -323,7 +323,7 @@ export default function AdminDomainInventoryPage() {
 
   const openEditDialog = useCallback((domain: DomainRecord) => {
     setEditingDomain(domain);
-    setEditSalePrice(domain.sale_price != null ? String(domain.sale_price) : "");
+    setEditSalePrice(domain.sale_price !== null && domain.sale_price !== undefined ? String(domain.sale_price) : "");
     setEditTags((domain.tags ?? []).join(", "));
     setEditNotes(domain.notes ?? "");
     setEditStatus(domain.status);
@@ -675,7 +675,7 @@ export default function AdminDomainInventoryPage() {
                       <td className="px-3 py-3">{domain.mailbox_count ?? "—"}</td>
                       <td className="px-3 py-3 text-zinc-300">{domain.assigned_to_company_id ?? "—"}</td>
                       <td className="px-3 py-3">
-                        {domain.health_score != null ? (
+                        {domain.health_score !== null && domain.health_score !== undefined ? (
                           <span className={domain.health_score >= 80 ? "text-emerald-400" : domain.health_score >= 60 ? "text-amber-400" : "text-red-400"}>
                             {domain.health_score}
                           </span>
