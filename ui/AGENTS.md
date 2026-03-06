@@ -391,3 +391,35 @@ openclaw deploy ui/dist --name=blitzscale-ui
 - [Tailwind CSS Documentation](https://tailwindcss.com/docs)
 - [Recharts Documentation](https://recharts.org/en-US)
 - [Lucide Icons](https://lucide.dev/icons/)
+
+---
+
+## Cursor Cloud specific instructions
+
+### Services Overview
+
+This repo has two services:
+
+| Service | Location | Dev command | Port | Description |
+|---------|----------|-------------|------|-------------|
+| GTM Engine (webhook backend) | `/workspace` | `PORT=3001 npm run dev` | 3001 | Express.js webhook receiver |
+| Blitzscale OS UI | `/workspace/ui` | `npm run dev` | 3000 | Next.js 14 dashboard |
+
+### Running Services
+
+- **Backend**: Run with `PORT=3001` to avoid port conflict with the UI (both default to 3000).
+- **UI**: `npm run dev` in `/workspace/ui` starts Next.js dev server on port 3000.
+- **Lint**: `npm run lint` in `/workspace/ui` (ESLint via `next lint`). Pre-existing lint warnings/errors exist in the codebase.
+- **Tests**: No test framework is configured. No Jest, Vitest, or other test runner exists.
+- **Build**: `npm run build` in `/workspace/ui` has pre-existing failures due to missing `@/lib/bsos-db` module and uninstalled `stripe` package. The dev server works fine since Next.js compiles pages on demand.
+
+### Environment Variables
+
+- Both services use `.env` / `.env.local` files. See `.env.example` (root) and `ui/.env.example`.
+- The app degrades gracefully when optional credentials (PlusVibe, Close CRM, Telegram, etc.) are missing.
+- Required for full UI functionality: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Without real Supabase credentials, the UI loads the login page but auth/data features won't work.
+
+### Known Caveats
+
+- The `next.config.js` warning about `serverExternalPackages` is expected on Next.js 14.1.0 (the key was renamed in a later version).
+- The health endpoint at `/api/health` will report "degraded" status when OpenClaw and Supermemory services are not running — this is normal for local dev without those external services.
