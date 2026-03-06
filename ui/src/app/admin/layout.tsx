@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
   Shield, LayoutDashboard, Users, Activity, BarChart3,
-  Settings, Bell, LogOut, ChevronRight, Loader2, Globe, Key
+  Settings, Bell, LogOut, ChevronRight, Loader2, Globe, Key, Link2
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -19,6 +19,8 @@ const NAV_ITEMS = [
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/campaigns", label: "Campaigns", icon: Activity },
   { href: "/admin/domain-inventory", label: "Domain Inventory", icon: Globe },
+  { href: "/admin/domain-assignments", label: "Domain Assignments", icon: Link2 },
+  { href: "/admin/inboxing-domains", label: "Inboxing Domains", icon: Globe },
   { href: "/admin/health", label: "System Health", icon: BarChart3 },
   { href: "/admin/approvals", label: "Approvals", icon: Bell },
   { href: "/admin/supermemory-keys", label: "Supermemory Keys", icon: Key },
