@@ -23,17 +23,23 @@ function toAccountsArray(payload: any): any[] {
 }
 
 function inferEsp(account: Record<string, any>, email: string) {
+  const payloadProvider = String(account?.payload?.provider || "").toLowerCase();
+  const payloadSmtpHost = String(account?.payload?.smtp_host || "").toLowerCase();
+  const payloadImapHost = String(account?.payload?.imap_host || "").toLowerCase();
   const hint = String(
     account?.esp ||
       account?.provider ||
       account?.service_provider ||
       account?.mailbox_provider ||
       account?.smtp_provider ||
+      account?.payload?.provider ||
       account?.type ||
       ""
   ).toLowerCase();
-  const smtpHost = String(account?.smtp_host || account?.host || "").toLowerCase();
-  const source = `${hint} ${smtpHost} ${email.toLowerCase()}`;
+  const smtpHost = String(
+    account?.smtp_host || account?.host || account?.payload?.smtp_host || ""
+  ).toLowerCase();
+  const source = `${hint} ${smtpHost} ${payloadProvider} ${payloadSmtpHost} ${payloadImapHost} ${email.toLowerCase()}`;
   if (source.includes("gmail") || source.includes("google") || source.includes("gsuite")) {
     return "gmail";
   }
@@ -46,6 +52,41 @@ function inferEsp(account: Record<string, any>, email: string) {
     return "microsoft";
   }
   return "smtp";
+}
+
+function normalizeDomain(raw: string) {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, "")
+    .replace(/\.+$/, "");
+}
+
+function extractDomainFromEmail(email: string) {
+  const normalized = String(email || "").trim().toLowerCase();
+  if (!normalized.includes("@")) return "";
+  return normalizeDomain(normalized.split("@")[1] || "");
+}
+
+function rootDomain(domain: string) {
+  const normalized = normalizeDomain(domain);
+  if (!normalized) return "";
+  const labels = normalized.split(".").filter(Boolean);
+  if (labels.length <= 2) return normalized;
+  return labels.slice(-2).join(".");
+}
+
+function isManagedDomain(domain: string, managedDomains: Set<string>) {
+  const normalized = normalizeDomain(domain);
+  if (!normalized) return false;
+  if (managedDomains.has(normalized)) return true;
+  const root = rootDomain(normalized);
+  if (root && managedDomains.has(root)) return true;
+
+  for (const candidate of managedDomains) {
+    if (normalized === candidate || normalized.endsWith(`.${candidate}`)) return true;
+  }
+  return false;
 }
 
 export async function GET(request: NextRequest) {
@@ -109,21 +150,28 @@ export async function GET(request: NextRequest) {
     );
 
     const accounts = rawAccounts.map((account: any, index: number) => {
-      const email = String(account?.email || account?.email_account || account?.username || "").trim();
-      const domain = email.includes("@") ? email.split("@")[1].toLowerCase().trim() : "";
+      const email = String(
+        account?.email || account?.email_account || account?.username || account?.payload?.email || ""
+      ).trim();
+      const payloadDomain = normalizeDomain(
+        String(account?.payload?.custom_domain || account?.custom_domain || "")
+      );
+      const domain = payloadDomain || extractDomainFromEmail(email);
       const esp = inferEsp(account, email);
-      const isManagedDomain = managedDomains.has(domain);
+      const isManaged = isManagedDomain(domain, managedDomains);
       return {
         id: String(account?._id || account?.id || account?.account_id || `account-${index}`),
         email,
         domain,
         esp,
         provider_type: esp,
+        provider_raw: String(account?.provider || account?.payload?.provider || "").trim(),
         warmup_status: account?.warmup_status || account?.warmup || null,
         status: account?.status || "unknown",
-        is_managed_domain: isManagedDomain,
-        provider_access: isManagedDomain ? "full" : "external_provider",
-        external_provider: !isManagedDomain,
+        is_managed_domain: isManaged,
+        provider_access: isManaged ? "full" : "external_provider",
+        external_provider: !isManaged,
+        can_transfer_to_managed: !isManaged,
         raw: account,
       };
     });
@@ -157,6 +205,11 @@ export async function GET(request: NextRequest) {
         by_domain: Array.from(domainSummaryMap.values()).sort((a, b) =>
           a.domain.localeCompare(b.domain)
         ),
+        by_esp: {
+          gmail: accounts.filter((account) => account.esp === "gmail").length,
+          microsoft: accounts.filter((account) => account.esp === "microsoft").length,
+          smtp: accounts.filter((account) => account.esp === "smtp").length,
+        },
       },
       credentialsSource: credentials.source,
     });

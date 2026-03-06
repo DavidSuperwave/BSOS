@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
-import { AlertCircle, Building2, Mail, Server, ShieldCheck } from "lucide-react";
+import { AlertCircle, ArrowRightLeft, Building2, Mail, Server, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePlusVibeAccounts } from "@/lib/hooks";
 
@@ -18,7 +19,8 @@ function espLabel(esp: string) {
 
 export function WorkspaceInboxesPanel({ companyId }: WorkspaceInboxesPanelProps) {
   const { data, isLoading } = usePlusVibeAccounts(companyId);
-  const accounts = data?.accounts || [];
+  const accounts = useMemo(() => data?.accounts || [], [data?.accounts]);
+  const domainRows = data?.summary?.by_domain || [];
 
   const summary = useMemo(() => {
     return {
@@ -99,6 +101,7 @@ export function WorkspaceInboxesPanel({ companyId }: WorkspaceInboxesPanelProps)
                     <th className="p-3 text-left">ESP</th>
                     <th className="p-3 text-left">Access</th>
                     <th className="p-3 text-left">Agent Capability</th>
+                    <th className="p-3 text-left">Transfer</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -135,12 +138,55 @@ export function WorkspaceInboxesPanel({ companyId }: WorkspaceInboxesPanelProps)
                           </span>
                         )}
                       </td>
+                      <td className="p-3">
+                        {account.is_managed_domain ? (
+                          <span className="text-xs text-emerald-700">Already managed</span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            disabled
+                            title="Transfer flow is planned but not yet enabled"
+                          >
+                            <ArrowRightLeft className="mr-1 h-3 w-3" />
+                            Transfer (soon)
+                          </Button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+
+          {domainRows.length > 0 ? (
+            <div className="overflow-hidden rounded-md border border-border">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/40 text-muted-foreground">
+                  <tr>
+                    <th className="p-2 text-left">Domain</th>
+                    <th className="p-2 text-left">Users</th>
+                    <th className="p-2 text-left">Domain Type</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {domainRows.map((row) => (
+                    <tr key={row.domain} className="border-t border-border">
+                      <td className="p-2 text-foreground">{row.domain}</td>
+                      <td className="p-2 text-muted-foreground">{row.user_count}</td>
+                      <td className="p-2">
+                        <Badge variant="outline" className={row.managed ? "text-emerald-700" : "text-amber-700"}>
+                          {row.managed ? "Managed Domain" : "External Provider"}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
 
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             <div className="flex items-start gap-2">

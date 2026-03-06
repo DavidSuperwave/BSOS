@@ -40,7 +40,6 @@ export function UploadModal({
   const [emailsText, setEmailsText] = useState("");
   const [platformConnectionId, setPlatformConnectionId] = useState("");
   const [enableWarmup, setEnableWarmup] = useState(true);
-  const [syncTags, setSyncTags] = useState(true);
   const [skipVerified, setSkipVerified] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [domainSearch, setDomainSearch] = useState("");
@@ -85,7 +84,6 @@ export function UploadModal({
               domain_ids: selectedDomainIds,
               platform_connection_id: platformConnectionId,
               enable_warmup: enableWarmup,
-              sync_tags: syncTags,
               skip_verified: skipVerified,
             }
           : {
@@ -93,7 +91,6 @@ export function UploadModal({
               emails,
               platform_connection_id: platformConnectionId,
               enable_warmup: enableWarmup,
-              sync_tags: syncTags,
               skip_verified: skipVerified,
             };
 
@@ -200,10 +197,6 @@ export function UploadModal({
           <label className="flex items-center justify-between text-sm">
             <span>Enable Warmup</span>
             <Switch checked={enableWarmup} onCheckedChange={setEnableWarmup} />
-          </label>
-          <label className="flex items-center justify-between text-sm">
-            <span>Sync Domain Tags</span>
-            <Switch checked={syncTags} onCheckedChange={setSyncTags} />
           </label>
           <label className="flex items-center justify-between text-sm">
             <span>Skip Already Uploaded</span>

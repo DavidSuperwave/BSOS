@@ -56,6 +56,29 @@ type CampaignRowAction =
   | 'copyId'
   | 'delete';
 
+function extractCreatedCampaignId(payload: any) {
+  const candidates = [
+    payload?.id,
+    payload?.campaign_id,
+    payload?.value?.id,
+    payload?.value?.campaign_id,
+    payload?.data?.id,
+    payload?.data?.campaign_id,
+    payload?.raw?.id,
+    payload?.raw?.campaign_id,
+    payload?.raw?.value?.id,
+    payload?.raw?.value?.campaign_id,
+    payload?.raw?.data?.id,
+    payload?.raw?.data?.campaign_id,
+  ];
+
+  for (const candidate of candidates) {
+    const value = String(candidate || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
 interface CampaignRowProps {
   campaign: PlusVibeCampaign;
   isSelected: boolean;
@@ -280,6 +303,7 @@ export default function Campaigns() {
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null);
+  const [createdCampaignDraft, setCreatedCampaignDraft] = useState<PlusVibeCampaign | null>(null);
   const [analyticsCampaignId, setAnalyticsCampaignId] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createCampaignName, setCreateCampaignName] = useState('');
@@ -305,7 +329,9 @@ export default function Campaigns() {
     : '';
 
   const campaigns = data?.campaigns || [];
-  const selectedEditCampaign = campaigns.find((campaign) => campaign.id === editingCampaignId) ?? null;
+  const selectedEditCampaign =
+    campaigns.find((campaign) => campaign.id === editingCampaignId) ??
+    (createdCampaignDraft?.id === editingCampaignId ? createdCampaignDraft : null);
 
   // Calculate aggregated stats for overview
   const overviewStats = useMemo(() => {
@@ -380,14 +406,23 @@ export default function Campaigns() {
     node.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusedCampaignId, visibleCampaigns.length]);
 
+  useEffect(() => {
+    if (!createdCampaignDraft) return;
+    if (!campaigns.some((campaign) => campaign.id === createdCampaignDraft.id)) return;
+    setCreatedCampaignDraft(null);
+  }, [campaigns, createdCampaignDraft]);
+
   const handleStatusChange = async (campaignId: string, newStatus: string) => {
     setActionLoading(campaignId);
     try {
-      const response = await fetch(`/api/plusvibe/campaigns/${campaignId}${companyQuery}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      const response =
+        newStatus === 'ACTIVE'
+          ? await fetch(`/api/plusvibe/campaigns/${campaignId}/activate${companyQuery}`, {
+              method: 'POST',
+            })
+          : await fetch(`/api/plusvibe/campaigns/${campaignId}/pause${companyQuery}`, {
+              method: 'POST',
+            });
       if (!response.ok) {
         throw new Error('Failed to update campaign status');
       }
@@ -474,13 +509,20 @@ export default function Campaigns() {
         throw new Error(payload.error || payload.details || 'Failed to create campaign');
       }
       const payload = await response.json().catch(() => ({}));
-      const createdCampaignId = String(payload?.id || payload?.campaign_id || '').trim();
+      const createdCampaignId = extractCreatedCampaignId(payload);
       setCreateCampaignName('');
       setIsCreateDialogOpen(false);
-      await mutate();
       if (createdCampaignId) {
+        setCreatedCampaignDraft({
+          id: createdCampaignId,
+          name,
+          status: 'DRAFT',
+          createdAt: new Date().toISOString(),
+          stats: optimisticCampaign.stats,
+        });
         setEditingCampaignId(createdCampaignId);
       }
+      await mutate();
     } catch (err) {
       console.error('Failed to create campaign:', err);
       await mutate(snapshot, { revalidate: false });
@@ -640,7 +682,10 @@ export default function Campaigns() {
         campaign={selectedEditCampaign}
         companyId={selectedCompany?.id}
         companyQuery={companyQuery}
-        onClose={() => setEditingCampaignId(null)}
+        onClose={() => {
+          setEditingCampaignId(null);
+          setCreatedCampaignDraft(null);
+        }}
         onRefresh={() => {
           mutate();
         }}

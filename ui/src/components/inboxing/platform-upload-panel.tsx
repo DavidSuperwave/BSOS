@@ -158,9 +158,6 @@ export function PlatformUploadPanel({
             </option>
           ))}
         </select>
-        <Button variant="outline" size="icon" onClick={onRefresh}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
         <Button variant="outline" size="sm" onClick={clearHistory}>
           Clear History
         </Button>

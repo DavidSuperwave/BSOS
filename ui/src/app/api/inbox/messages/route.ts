@@ -22,20 +22,30 @@ function toCampaignArray(payload: any): any[] {
   return [];
 }
 
-function toReplyArray(payload: any): any[] {
-  if (Array.isArray(payload)) return payload;
-  if (Array.isArray(payload?.value)) return payload.value;
-  if (Array.isArray(payload?.data)) return payload.data;
-  if (Array.isArray(payload?.replies)) return payload.replies;
-  if (Array.isArray(payload?.data?.replies)) return payload.data.replies;
-  return [];
-}
-
 function normalizeSentiment(value: unknown) {
   const sentiment = String(value || "neutral").toLowerCase();
   return ["positive", "neutral", "negative", "ooo", "auto_reply"].includes(sentiment)
     ? sentiment
     : "neutral";
+}
+
+function sentimentFromLabel(label: unknown) {
+  const value = String(label || "").toUpperCase();
+  if (!value) return "neutral";
+  if (value.includes("INTERESTED") || value.includes("MEETING")) return "positive";
+  if (value.includes("NOT_INTERESTED") || value.includes("UNSUBSCRIBE")) return "negative";
+  if (value.includes("OOO")) return "ooo";
+  if (value.includes("AUTO")) return "auto_reply";
+  return "neutral";
+}
+
+function toUniboxRows(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload?.value?.data)) return payload.value.data;
+  if (Array.isArray(payload?.emails)) return payload.emails;
+  return [];
 }
 
 async function getOrCreateThreadId(admin: ReturnType<typeof createClient>, input: {
@@ -97,33 +107,45 @@ async function importRepliesFromPlusVibe(admin: ReturnType<typeof createClient>,
     "Content-Type": "application/json",
   };
 
-  const listRes = await fetch(
-    `${PLUSVIBE_BASE}/campaign/list?workspace_id=${encodeURIComponent(credentials.workspaceId)}&limit=20`,
+  const campaignNameById = new Map<string, string>();
+  const campaignListRes = await fetch(
+    `${PLUSVIBE_BASE}/campaign/list-all?workspace_id=${encodeURIComponent(
+      credentials.workspaceId
+    )}&campaign_type=all&limit=100`,
     { headers, signal: AbortSignal.timeout(10000) }
   );
-  if (!listRes.ok) return 0;
-  const campaignsPayload = await listRes.json();
-  const campaigns = toCampaignArray(campaignsPayload);
+  if (campaignListRes.ok) {
+    const campaignsPayload = await campaignListRes.json();
+    const campaigns = toCampaignArray(campaignsPayload);
+    for (const campaign of campaigns) {
+      const id = String(campaign?._id || campaign?.id || campaign?.campaign_id || "").trim();
+      if (!id) continue;
+      campaignNameById.set(id, String(campaign?.name || campaign?.camp_name || "").trim());
+    }
+  }
+
   let inserted = 0;
+  let pageTrail = "";
+  for (let i = 0; i < 8; i += 1) {
+    const query = new URLSearchParams({
+      workspace_id: credentials.workspaceId,
+      email_type: "received",
+      preview_only: "false",
+    });
+    if (pageTrail) query.set("page_trail", pageTrail);
 
-  for (const campaign of campaigns) {
-    const campaignId = String(campaign?._id || campaign?.id || campaign?.campaign_id || "");
-    if (!campaignId) continue;
-    const repliesRes = await fetch(
-      `${PLUSVIBE_BASE}/campaign/${campaignId}/replies?workspace_id=${encodeURIComponent(
-        credentials.workspaceId
-      )}&limit=100`,
-      {
-        headers,
-        signal: AbortSignal.timeout(10000),
-      }
-    );
-    if (!repliesRes.ok) continue;
-    const repliesPayload = await repliesRes.json();
-    const replies = toReplyArray(repliesPayload);
+    const uniboxRes = await fetch(`${PLUSVIBE_BASE}/unibox/emails?${query.toString()}`, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!uniboxRes.ok) break;
 
-    for (const reply of replies) {
-      const plusvibeId = String(reply?.id || reply?.message_id || reply?.plusvibe_id || "").trim();
+    const uniboxPayload = await uniboxRes.json();
+    const emails = toUniboxRows(uniboxPayload);
+    if (!Array.isArray(emails) || emails.length === 0) break;
+
+    for (const email of emails) {
+      const plusvibeId = String(email?.id || email?.message_id || "").trim();
       if (!plusvibeId) continue;
       const { data: existingMessage } = await admin
         .from("inbox_messages")
@@ -133,43 +155,62 @@ async function importRepliesFromPlusVibe(admin: ReturnType<typeof createClient>,
         .single();
       if (existingMessage?.id) continue;
 
-      const fromEmail = String(reply?.from_email || reply?.email || "").trim().toLowerCase();
-      const toEmail = String(reply?.to_email || reply?.eaccount || reply?.sender_email || "").trim().toLowerCase();
-      const subject = String(reply?.subject || "").trim();
-      const body = String(reply?.body || reply?.text_body || "").trim();
-      if (!fromEmail || !subject || !body) continue;
+      const campaignId = String(email?.campaign_id || "").trim();
+      if (!campaignId) continue;
+
+      const fromEmail = String(
+        email?.from_address_email || email?.lead || email?.from_email || ""
+      )
+        .trim()
+        .toLowerCase();
+      const toEmail = String(
+        email?.eaccount || email?.to_email || email?.to_address_email_list || ""
+      )
+        .trim()
+        .toLowerCase();
+      const subject = String(email?.subject || "").trim();
+      const bodyHtml = String(email?.body?.html || email?.body?.text || "").trim();
+      const bodyText = String(
+        email?.body?.text || email?.content_preview || bodyHtml.replace(/<[^>]*>/g, " ")
+      ).trim();
+      if (!fromEmail || !subject || (!bodyHtml && !bodyText)) continue;
 
       const threadId = await getOrCreateThreadId(admin, {
         companyId,
         campaignId,
         fromEmail,
-        fromName: reply?.from_name || reply?.first_name || null,
-        companyName: reply?.company_name || null,
+        fromName:
+          email?.from_address_json?.[0]?.name || email?.first_name || email?.from_name || null,
+        companyName: email?.company_name || null,
         subject,
       });
 
       const { error: insertError } = await admin.from("inbox_messages").insert({
         company_id: companyId,
         campaign_id: campaignId,
-        campaign_name: campaign?.name || campaign?.camp_name || null,
-        thread_id: threadId || `${campaignId}:${fromEmail}`,
+        campaign_name: campaignNameById.get(campaignId) || null,
+        thread_id: String(email?.thread_id || threadId || `${campaignId}:${fromEmail}`),
         plusvibe_id: plusvibeId,
         from_email: fromEmail,
-        from_name: reply?.from_name || reply?.first_name || null,
+        from_name:
+          email?.from_address_json?.[0]?.name || email?.first_name || email?.from_name || null,
         from_domain: fromEmail.split("@")[1] || null,
         to_email: toEmail || "unknown@plusvibe.local",
         subject,
-        body,
-        body_text: String(reply?.text_body || body),
-        sentiment: normalizeSentiment(reply?.sentiment),
+        body: bodyHtml || bodyText,
+        body_text: bodyText || bodyHtml,
+        sentiment: normalizeSentiment(email?.sentiment || sentimentFromLabel(email?.label)),
         intent: null,
-        tags: Array.isArray(reply?.tags) ? reply.tags : [],
-        status: "unread",
+        tags: email?.label ? [String(email.label)] : [],
+        status: email?.is_unread ? "unread" : "read",
         priority: "medium",
         last_reply_at: new Date().toISOString(),
       } as any);
       if (!insertError) inserted += 1;
     }
+
+    pageTrail = String(uniboxPayload?.page_trail || "").trim();
+    if (!pageTrail) break;
   }
 
   return inserted;

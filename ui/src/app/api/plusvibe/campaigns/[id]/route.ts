@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getProjectCredentials } from "@/lib/plusvibe-project";
 import { requireCompanyAccess } from "@/lib/api-auth";
+import { createClient } from "@supabase/supabase-js";
 
 const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 function sanitizePlusVibeErrorDetails(raw: string) {
   return raw.replace(/\s+/g, " ").trim().slice(0, 400);
@@ -54,19 +57,15 @@ function mapDaysToScheduleFlags(days: unknown) {
     const selected = new Set(
       days
         .map((value) => {
-          const key = String(value || "").slice(0, 3).toLowerCase();
+          const normalized = String(value || "").trim();
+          if (/^[1-7]$/.test(normalized)) return normalized;
+          const key = normalized.slice(0, 3).toLowerCase();
           return labelToNumber[key];
         })
         .filter(Boolean)
     );
     if (selected.size > 0) {
-      // PlusVibe validation currently expects all seven days present/true.
       return dayFlags;
-    }
-    for (const value of days) {
-      const key = String(value || "").slice(0, 3).toLowerCase();
-      const mapped = labelToNumber[key];
-      if (mapped) dayFlags[mapped] = true;
     }
     return dayFlags;
   }
@@ -82,6 +81,52 @@ function mapDaysToScheduleFlags(days: unknown) {
     return dayFlags;
   }
   return dayFlags;
+}
+
+function toAccountArray(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.accounts)) return payload.accounts;
+  if (Array.isArray(payload?.data?.accounts)) return payload.data.accounts;
+  if (Array.isArray(payload?.data?.email_accounts)) return payload.data.email_accounts;
+  if (Array.isArray(payload?.email_accounts)) return payload.email_accounts;
+  return [];
+}
+
+function normalizeDomain(raw: string) {
+  return String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, "")
+    .replace(/\.+$/, "");
+}
+
+function extractDomainFromEmail(email: string) {
+  const normalized = String(email || "").trim().toLowerCase();
+  if (!normalized.includes("@")) return "";
+  return normalizeDomain(normalized.split("@")[1] || "");
+}
+
+function rootDomain(domain: string) {
+  const normalized = normalizeDomain(domain);
+  if (!normalized) return "";
+  const labels = normalized.split(".").filter(Boolean);
+  if (labels.length <= 2) return normalized;
+  return labels.slice(-2).join(".");
+}
+
+function isManagedDomain(domain: string, managedDomains: Set<string>) {
+  const normalized = normalizeDomain(domain);
+  if (!normalized) return false;
+  if (managedDomains.has(normalized)) return true;
+  const root = rootDomain(normalized);
+  if (root && managedDomains.has(root)) return true;
+
+  for (const candidate of managedDomains) {
+    if (normalized === candidate || normalized.endsWith(`.${candidate}`)) return true;
+  }
+  return false;
 }
 
 function normalizeSequences(raw: any[] | undefined) {
@@ -337,8 +382,80 @@ export async function PATCH(
       ];
     }
 
-    if (Array.isArray(body?.email_accounts) && body.email_accounts.length > 0) {
-      payload.email_accounts = body.email_accounts;
+    if (Array.isArray(body?.email_accounts)) {
+      const requestedAccountIds = Array.from(
+        new Set(
+          body.email_accounts
+            .map((value: unknown) => String(value || "").trim())
+            .filter(Boolean)
+        )
+      );
+
+      if (requestedAccountIds.length === 0) {
+        payload.email_accounts = [];
+      } else {
+        if (companyId) {
+          const [accountsRes, managedDomainsResult] = await Promise.all([
+            pvRequest(
+              credentials.apiKey,
+              `/account/list?workspace_id=${encodeURIComponent(credentials.workspaceId)}&limit=100`
+            ),
+            createClient(supabaseUrl, supabaseServiceKey)
+              .from("inboxing_domains")
+              .select("domain")
+              .eq("company_id", companyId),
+          ]);
+
+          if (!accountsRes.ok) {
+            const errorText = await accountsRes.text();
+            return NextResponse.json(
+              {
+                error: `PlusVibe API error: ${accountsRes.status}`,
+                code: "PLUSVIBE_ERROR",
+                details: sanitizePlusVibeErrorDetails(errorText),
+              },
+              { status: accountsRes.status }
+            );
+          }
+
+          const accountsPayload = await accountsRes.json();
+          const accounts = toAccountArray(accountsPayload);
+          const accountDomainById = new Map<string, string>();
+          for (const account of accounts) {
+            const accountId = String(account?._id || account?.id || account?.account_id || "").trim();
+            if (!accountId) continue;
+            const domain = extractDomainFromEmail(
+              String(account?.email || account?.email_account || account?.username || "")
+            );
+            accountDomainById.set(accountId, domain);
+          }
+
+          const managedDomainSet = new Set(
+            (managedDomainsResult.data || [])
+              .map((row) => normalizeDomain(String(row.domain || "")))
+              .filter(Boolean)
+          );
+
+          const externalSelections = requestedAccountIds.filter((accountId) => {
+            const domain = accountDomainById.get(accountId) || "";
+            return !isManagedDomain(domain, managedDomainSet);
+          });
+
+          if (externalSelections.length > 0) {
+            return NextResponse.json(
+              {
+                error:
+                  "One or more selected inboxes are external providers. Only managed-domain inboxes can be attached to campaigns.",
+                code: "EXTERNAL_PROVIDER_RESTRICTED",
+                restricted_account_ids: externalSelections,
+              },
+              { status: 400 }
+            );
+          }
+        }
+
+        payload.email_accounts = requestedAccountIds;
+      }
     }
 
     const shouldSetFirstWaitTime =
@@ -408,14 +525,17 @@ export async function DELETE(
   const { id } = await params;
 
   try {
+    const body = await req.json().catch(() => ({}));
+    const archiveCampaign = body?.archive_campaign !== false;
+    const saveLeadsToList = body?.save_leads_to_list === true;
     const payload = {
       workspace_id: credentials.workspaceId,
       campaign_id: id,
-      status: "INACTIVE",
-      first_wait_time: 0,
+      is_archive: archiveCampaign ? "yes" : "no",
+      is_save_lead_data: saveLeadsToList ? "yes" : "no",
     };
-    const res = await pvRequest(credentials.apiKey, "/campaign/update/campaign", {
-      method: "PATCH",
+    const res = await pvRequest(credentials.apiKey, "/campaign/delete", {
+      method: "DELETE",
       body: JSON.stringify(payload),
     });
     
@@ -431,7 +551,12 @@ export async function DELETE(
       );
     }
     
-    return NextResponse.json({ success: true, status: "INACTIVE" });
+    const responsePayload = await res.json().catch(() => ({}));
+    return NextResponse.json({
+      success: true,
+      status: archiveCampaign ? "ARCHIVED" : "DELETED",
+      raw: responsePayload,
+    });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Failed to delete campaign" },

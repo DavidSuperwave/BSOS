@@ -28,6 +28,18 @@ function normalizeStatus(status: string): string {
   return status;
 }
 
+function toLeadRows(payload: any) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.leads)) return payload.leads;
+  if (Array.isArray(payload?.value?.data)) return payload.value.data;
+  if (Array.isArray(payload?.value?.leads)) return payload.value.leads;
+  if (Array.isArray(payload?.data?.data)) return payload.data.data;
+  if (Array.isArray(payload?.data?.leads)) return payload.data.leads;
+  return [];
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -46,63 +58,138 @@ export async function GET(
 
   try {
     const status = req.nextUrl.searchParams.get("status") || undefined;
+    const page = Number(req.nextUrl.searchParams.get("page") || "1");
     const limit = Number(req.nextUrl.searchParams.get("limit") || "200");
-    const query = new URLSearchParams({
-      workspace_id: creds.workspaceId,
-      campaign_id: campaignId,
-      limit: String(Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 500) : 200),
-    });
-    if (status) query.set("status", status);
+    const safeLimit = Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 500) : 200;
+    const safePage = Number.isFinite(page) ? Math.max(page, 1) : 1;
+    const maxPages = 8;
 
-    const res = await fetch(
-      `${PLUSVIBE_API}/lead/workspace-leads?${query.toString()}`,
-      {
+    const rows: any[] = [];
+    let currentPage = safePage;
+    let didFetch = false;
+
+    while (currentPage < safePage + maxPages) {
+      const query = new URLSearchParams({
+        workspace_id: creds.workspaceId,
+        campaign_id: campaignId,
+        limit: String(safeLimit),
+        page: String(currentPage),
+        sort: "_id",
+        direction: "desc",
+      });
+      if (status) query.set("status", status.toUpperCase());
+
+      const res = await fetch(`${PLUSVIBE_API}/lead/workspace-leads?${query.toString()}`, {
         headers: {
           "x-api-key": creds.apiKey,
           "Content-Type": "application/json",
         },
         signal: AbortSignal.timeout(10000),
-      }
-    );
+      });
 
-    if (!res.ok) {
-      const body = await res.text();
-      return NextResponse.json(
-        {
-          error: `PlusVibe API error: ${res.status}`,
-          details: sanitizeError(body),
-        },
-        { status: res.status }
-      );
+      if (!res.ok) {
+        const body = await res.text();
+        if (!didFetch) {
+          return NextResponse.json(
+            {
+              error: `PlusVibe API error: ${res.status}`,
+              details: sanitizeError(body),
+            },
+            { status: res.status }
+          );
+        }
+        break;
+      }
+
+      const data = await res.json();
+      const pageRows = toLeadRows(data);
+      didFetch = true;
+      if (!Array.isArray(pageRows) || pageRows.length === 0) {
+        break;
+      }
+      rows.push(...pageRows);
+      if (pageRows.length < safeLimit) {
+        break;
+      }
+      currentPage += 1;
     }
 
-    const data = await res.json();
-    const rows = Array.isArray(data?.value)
-      ? data.value
-      : Array.isArray(data?.data)
-        ? data.data
-        : Array.isArray(data?.leads)
-          ? data.leads
-          : Array.isArray(data)
-            ? data
-            : [];
+    let filteredRows = rows.filter((lead) => {
+      const leadCampaignId = String(lead?.campaign_id || lead?.camp_id || "").trim();
+      return !leadCampaignId || leadCampaignId === campaignId;
+    });
+
+    if (filteredRows.length === 0) {
+      const workspaceRows: any[] = [];
+      let fallbackPage = safePage;
+      while (fallbackPage < safePage + 4) {
+        const fallbackQuery = new URLSearchParams({
+          workspace_id: creds.workspaceId,
+          limit: String(safeLimit),
+          page: String(fallbackPage),
+          sort: "_id",
+          direction: "desc",
+        });
+        if (status) fallbackQuery.set("status", status.toUpperCase());
+        const fallbackRes = await fetch(
+          `${PLUSVIBE_API}/lead/workspace-leads?${fallbackQuery.toString()}`,
+          {
+            headers: {
+              "x-api-key": creds.apiKey,
+              "Content-Type": "application/json",
+            },
+            signal: AbortSignal.timeout(10000),
+          }
+        );
+        if (!fallbackRes.ok) break;
+        const fallbackData = await fallbackRes.json();
+        const fallbackRows = toLeadRows(fallbackData);
+        if (!Array.isArray(fallbackRows) || fallbackRows.length === 0) break;
+        workspaceRows.push(...fallbackRows);
+        if (fallbackRows.length < safeLimit) break;
+        fallbackPage += 1;
+      }
+      filteredRows = workspaceRows.filter((lead) => {
+        const leadCampaignId = String(lead?.campaign_id || lead?.camp_id || "").trim();
+        return leadCampaignId === campaignId;
+      });
+    }
 
     // Normalize lead data into our LeadRow shape
-    const leads = rows.map(
+    const leads = filteredRows.map(
       (lead: any, index: number) => ({
         id: String(lead.id || lead._id || lead.lead_id || `lead-${index}`),
-        name: lead.name || lead.full_name || `${lead.first_name || ""} ${lead.last_name || ""}`.trim() || "Unknown",
+        name:
+          lead.name ||
+          lead.full_name ||
+          `${lead.first_name || ""} ${lead.last_name || ""}`.trim() ||
+          "Unknown",
         email: lead.email || lead.email_address || "",
         company: lead.company || lead.company_name || lead.organization || "",
         title: lead.title || lead.job_title || "",
         status: normalizeStatus(lead.status || lead.state),
-        tag: lead.tag || lead.tags?.[0] || "",
-        step: lead.step || lead.current_step || lead.sequence_step || "Not started",
-        lastActivity: lead.last_activity || lead.updated_at || lead.last_activity_at || "",
+        tag: lead.tag || lead.label || lead.tags?.[0] || "",
+        step:
+          lead.step ||
+          lead.current_step ||
+          lead.sent_step ||
+          lead.sequence_step ||
+          "Not started",
+        lastActivity:
+          lead.last_sent_at ||
+          lead.modified_at ||
+          lead.last_activity ||
+          lead.updated_at ||
+          lead.last_activity_at ||
+          "",
       })
     );
 
-    return NextResponse.json({ leads, total: leads.length });
+    const dedupedLeads = Array.from(
+      new Map(leads.map((lead) => [lead.id, lead])).values()
+    );
+
+    return NextResponse.json({ leads: dedupedLeads, total: dedupedLeads.length });
   } catch (err: any) {
     console.error("[PlusVibe Leads] Error:", err);
     return NextResponse.json(
