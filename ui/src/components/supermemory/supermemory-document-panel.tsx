@@ -127,31 +127,22 @@ export function SupermemoryDocumentPanel({
   onToggleHistory,
   onSelectVersion,
 }: SupermemoryDocumentPanelProps) {
-  if (!document) {
-    return (
-      <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
-        <Cloud className="h-12 w-12 mb-4 opacity-50" />
-        <p>Select a Supermemory document to view</p>
-      </div>
-    );
-  }
-
-  const resolvedContent = document.content || document.raw || "";
+  const resolvedContent = document?.content || document?.raw || "";
   const title =
-    document.title ||
-    document.metadata?.title ||
+    document?.title ||
+    document?.metadata?.title ||
     resolvedContent.split("\n")[0]?.replace(/^#+\s*/, "") ||
     "Untitled";
-  const type = document.type || document.metadata?.type || "document";
+  const type = document?.type || document?.metadata?.type || "document";
   const createdAt =
-    document.createdAt || document.metadata?.created_at
+    document?.createdAt || document?.metadata?.created_at
       ? new Date(
-          document.createdAt || document.metadata?.created_at
+          document?.createdAt || document?.metadata?.created_at
         ).toLocaleString()
       : null;
   const resolvedContainer =
-    document.containerTag || document.containerTags?.[0] || containerTag || "n/a";
-  const resolvedTags = resolveDocumentTags(document);
+    document?.containerTag || document?.containerTags?.[0] || containerTag || "n/a";
+  const resolvedTags = document ? resolveDocumentTags(document) : { primary: "research", secondary: [] as string[], stage: "draft" };
 
   const [draftTitle, setDraftTitle] = useState(title);
   const [draftContent, setDraftContent] = useState(resolvedContent);
@@ -161,12 +152,13 @@ export function SupermemoryDocumentPanel({
   const contentEditorRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
+    if (!document) return;
     setDraftTitle(title);
     setDraftContent(resolvedContent);
     setDraftTags(resolveDocumentTags(document));
     setSecondaryInput("");
     setViewMode("edit");
-  }, [document.id, title, resolvedContent]);
+  }, [document?.id, title, resolvedContent, document]);
 
   const isDirty = useMemo(() => {
     if (draftTitle !== title) return true;
@@ -177,6 +169,15 @@ export function SupermemoryDocumentPanel({
       return true;
     return false;
   }, [draftContent, draftTags, draftTitle, resolvedContent, resolvedTags, title]);
+
+  if (!document) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+        <Cloud className="h-12 w-12 mb-4 opacity-50" />
+        <p>Select a Supermemory document to view</p>
+      </div>
+    );
+  }
 
   const handleSave = async () => {
     if (!onUpdate || !document.id || !isDirty) return;

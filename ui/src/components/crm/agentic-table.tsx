@@ -173,7 +173,7 @@ export function AgenticTable<TData>({
       {/* Active Filters Display */}
       {activeAiFilter && (
         <div className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">AI Filter:" "</span>
+          <span className="text-muted-foreground">AI Filter: </span>
           <span className="bg-primary/10 text-primary px-2 py-0.5 rounded">
             {activeAiFilter}
           </span>
@@ -356,7 +356,7 @@ export async function parseNaturalLanguageFilter(
   if (lowerQuery.includes("over $") || lowerQuery.includes("more than $") || lowerQuery.includes("> $")) {
     const match = query.match(/\$?([\d,]+(?:k)?)/i);
     if (match) {
-      let value = parseInt(match[1].replace(/,/g, "").replace(/k/i, "000"));
+      const value = parseInt(match[1].replace(/,/g, "").replace(/k/i, "000"));
       return {
         column: availableColumns.find((c) => c.includes("value") || c.includes("amount")) || availableColumns[0],
         operator: "greaterThan",

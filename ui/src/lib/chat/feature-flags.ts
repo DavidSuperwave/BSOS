@@ -6,7 +6,7 @@ export type ChatFeatureFlags = {
 
 function isEnabled(name: string, defaultValue = true): boolean {
   const raw = process.env[name];
-  if (raw == null || raw === "") return defaultValue;
+  if (raw === null || raw === undefined || raw === "") return defaultValue;
   const val = raw.toLowerCase();
   return val === "1" || val === "true" || val === "yes" || val === "on";
 }
