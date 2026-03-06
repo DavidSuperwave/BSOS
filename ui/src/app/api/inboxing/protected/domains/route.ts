@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import * as inboxing from "@/lib/inboxing-client";
-import { getCompanyAssignedDomains, verifyDomainAccess } from "@/lib/inboxing-slots";
+import { getCompanyAssignedDomains } from "@/lib/inboxing-slots";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -36,16 +36,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ domains: [], pagination: { total: 0, page: 1, total_pages: 1 } });
     }
 
-    // Fetch domain details from Inboxing API (using platform key)
-    // Filter to only return assigned domains
-    const allDomains = await inboxing.listDomains(
-      { per_page: 1000 },
-      { usePlatformKey: true }
+    // Fetch only assigned domain IDs, never full platform inventory.
+    const details = await Promise.allSettled(
+      assignedInboxingIds.map((id) => inboxing.getDomain(id, { usePlatformKey: true }))
     );
-
-    const filteredDomains = allDomains.data.filter((d) =>
-      assignedInboxingIds.includes(d.id)
-    );
+    const filteredDomains = details
+      .filter((result): result is PromiseFulfilledResult<any> => result.status === "fulfilled")
+      .map((result) => result.value);
 
     return NextResponse.json({
       domains: filteredDomains,
