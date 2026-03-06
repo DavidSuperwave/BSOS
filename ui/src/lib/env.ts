@@ -1,7 +1,17 @@
 /** Centralized env var access. Returns null when keys missing (never crashes). */
 
 export function env(key: string): string | null {
-  return process.env[key] ?? null;
+  const value = process.env[key];
+  if (typeof value !== "string") return null;
+  return value.trim().length > 0 ? value : null;
+}
+
+function envAny(...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = env(key);
+    if (value) return value;
+  }
+  return null;
 }
 
 export const envConfig = {
@@ -37,8 +47,8 @@ export const envConfig = {
     apiKey: () => env("INBOXING_API_KEY"),
   },
   provisioner: {
-    dropletIp: () => env("DROPLET_IP"),
-    sshKey: () => env("PROVISIONER_SSH_KEY"),
+    dropletIp: () => envAny("DROPLET_IP", "PROVISIONER_DROPLET_IP", "PROVISIONER_HOST"),
+    sshKey: () => envAny("PROVISIONER_SSH_KEY", "PROVISIONER_SSH_PRIVATE_KEY", "SSH_PRIVATE_KEY"),
     ghcrImage: () => env("GHCR_IMAGE") || "ghcr.io/openclaw/openclaw:latest",
     portRangeStart: () => parseInt(env("PORT_RANGE_START") || "18790", 10),
     portRangeEnd: () => parseInt(env("PORT_RANGE_END") || "18850", 10),
