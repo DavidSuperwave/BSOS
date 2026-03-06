@@ -112,7 +112,7 @@ export const MOCK_AGENT_EVENTS: AppEvent[] = [
         issueKey: "pv-rate-limit-2026-02-26",
         skillSlug: "plusvibe-reply-sync",
         skillName: "PlusVibe Reply Sync",
-        agentType: "ops-agent",
+        agentType: "campaigns",
         severity: "high",
         summary: "Rate limit bursts causing delayed reply ingestion.",
         details:

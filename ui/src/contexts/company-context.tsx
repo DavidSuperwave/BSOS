@@ -30,6 +30,7 @@ interface CompanyContextValue {
   selectedCompany: Company | null;
   setSelectedCompany: (company: Company) => void;
   isLoading: boolean;
+  hasResolvedCompanyFetch: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -249,10 +250,20 @@ export function CompanyProvider({ children }: { children: ReactNode }) {
       companies,
       selectedCompany,
       setSelectedCompany,
-      isLoading: isLoading || authLoading,
+      isLoading: isLoading || authLoading || (Boolean(userId) && !hasResolvedCompanyFetch),
+      hasResolvedCompanyFetch,
       refresh: fetchCompanies,
     }),
-    [companies, selectedCompany, setSelectedCompany, isLoading, authLoading, fetchCompanies]
+    [
+      companies,
+      selectedCompany,
+      setSelectedCompany,
+      isLoading,
+      authLoading,
+      userId,
+      hasResolvedCompanyFetch,
+      fetchCompanies,
+    ]
   );
 
   return (

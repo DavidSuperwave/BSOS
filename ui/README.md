@@ -181,6 +181,7 @@ npm run build
 |----------|----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key |
+| `NEXT_PUBLIC_APP_URL` | Yes (prod) | Canonical app URL used in auth email redirects |
 | `SUPABASE_SERVICE_ROLE_KEY` | Yes | Supabase service role |
 | `PLUSVIBE_API_KEY` | Yes | PlusVibe API key |
 | `PLUSVIBE_WORKSPACE_ID` | Yes | PlusVibe workspace |
@@ -188,6 +189,20 @@ npm run build
 | `SUPERMEMORY_API_KEY` | Yes | Supermemory API key |
 | `PERPLEXITY_API_KEY` | Yes | Perplexity API key |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram notifications |
+
+### Supabase Auth URL Configuration (production)
+
+Set these in Supabase **Auth → URL Configuration**:
+
+- **Site URL**: `https://blitzscaleos.com`
+- **Redirect URLs**:
+  - `https://blitzscaleos.com/api/auth/callback**`
+  - `http://localhost:3000/api/auth/callback**`
+  - `https://*-<your-vercel-team-slug>.vercel.app/api/auth/callback**`
+
+Set `NEXT_PUBLIC_APP_URL=https://blitzscaleos.com` in Vercel so signup and reset-password emails always use your main domain.
+
+For branded sender emails (for example `no-reply@blitzscaleos.com`), configure custom SMTP in Supabase **Auth → SMTP Settings**.
 
 ---
 

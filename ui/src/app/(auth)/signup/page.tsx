@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { buildAuthCallbackUrl } from "@/lib/auth-url";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -27,6 +28,7 @@ export default function SignupPage() {
       email,
       password,
       options: {
+        emailRedirectTo: buildAuthCallbackUrl("/onboarding"),
         data: { name },
       },
     });
