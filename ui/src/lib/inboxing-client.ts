@@ -91,7 +91,7 @@ export interface InboxingRequestContext {
 export interface CreateDomainRequest {
   domain: string;
   names: { first_name: string; last_name: string; email_prefix?: string }[];
-  user_count: 25 | 49;
+  user_count: 25 | 49 | 99;
   redirect_url?: string;
   redirect_type?: "NONE" | "REGULAR" | "MASKED";
   tags?: string[];

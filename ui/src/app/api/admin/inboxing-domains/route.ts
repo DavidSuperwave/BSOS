@@ -183,6 +183,8 @@ export async function POST(request: NextRequest) {
         .from("inboxing_domain_assignments")
         .select("id, company_id, status")
         .eq("inboxing_id", inboxingId)
+        .order("assigned_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (existing) {

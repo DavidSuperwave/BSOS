@@ -373,7 +373,7 @@ export default function AdminDomainAssignmentsPage() {
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-zinc-300">
-                          {domain.sale_price != null
+                          {domain.sale_price !== null
                             ? `$${domain.sale_price.toLocaleString()}`
                             : "—"}
                         </td>

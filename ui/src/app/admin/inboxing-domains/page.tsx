@@ -68,6 +68,18 @@ type SlotInfo = {
   available: number;
 };
 
+type SlotAllocation = {
+  company_id: string;
+  company_name: string | null;
+  company_slug: string | null;
+  total_slots: number;
+  used_slots: number;
+  free_slots: number;
+  allocation_type: "free" | "purchased" | "trial";
+  expires_at: string | null;
+  updated_at: string;
+};
+
 export default function AdminInboxingDomainsPage() {
   const [domains, setDomains] = useState<InboxingDomain[]>([]);
   const [slots, setSlots] = useState<SlotInfo | null>(null);
@@ -80,6 +92,7 @@ export default function AdminInboxingDomainsPage() {
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
   const [reclaimingId, setReclaimingId] = useState<string | null>(null);
+  const [selectedDomains, setSelectedDomains] = useState<Record<string, string>>({});
   const [toast, setToast] = useState<ToastState>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -89,6 +102,16 @@ export default function AdminInboxingDomainsPage() {
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [searchingUsers, setSearchingUsers] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [slotAllocations, setSlotAllocations] = useState<SlotAllocation[]>([]);
+  const [slotAllocationsLoading, setSlotAllocationsLoading] = useState(false);
+  const [slotDialogOpen, setSlotDialogOpen] = useState(false);
+  const [slotSearchQuery, setSlotSearchQuery] = useState("");
+  const [slotSearchResults, setSlotSearchResults] = useState<User[]>([]);
+  const [slotSearchingUsers, setSlotSearchingUsers] = useState(false);
+  const [slotSelectedUser, setSlotSelectedUser] = useState<User | null>(null);
+  const [slotTotalInput, setSlotTotalInput] = useState("5");
+  const [slotAllocationType, setSlotAllocationType] = useState<"free" | "purchased" | "trial">("free");
+  const [savingSlots, setSavingSlots] = useState(false);
 
   const showToast = useCallback((type: "success" | "error", message: string) => {
     setToast({ type, message });
@@ -136,10 +159,28 @@ export default function AdminInboxingDomainsPage() {
     }
   }, []);
 
+  const fetchSlotAllocations = useCallback(async () => {
+    setSlotAllocationsLoading(true);
+    try {
+      const res = await fetch("/api/admin/inboxing-slots?view=allocations&limit=10", {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Failed to fetch slot allocations");
+      const data = await res.json();
+      setSlotAllocations(Array.isArray(data?.allocations) ? data.allocations : []);
+    } catch (error) {
+      console.error(error);
+      showToast("error", "Failed to load company slot allocations.");
+    } finally {
+      setSlotAllocationsLoading(false);
+    }
+  }, [showToast]);
+
   useEffect(() => {
     fetchDomains();
     fetchSlots();
-  }, [fetchDomains, fetchSlots]);
+    fetchSlotAllocations();
+  }, [fetchDomains, fetchSlots, fetchSlotAllocations]);
 
   const handleSearchUsers = useCallback(async (query: string) => {
     if (query.length < 2) {
@@ -173,8 +214,44 @@ export default function AdminInboxingDomainsPage() {
     return () => clearTimeout(timeoutId);
   }, [userSearchQuery, handleSearchUsers]);
 
+  const handleSearchSlotUsers = useCallback(async (query: string) => {
+    if (query.length < 2) {
+      setSlotSearchResults([]);
+      return;
+    }
+
+    setSlotSearchingUsers(true);
+    try {
+      const res = await fetch(`/api/admin/users/search?q=${encodeURIComponent(query)}&limit=10`);
+      if (!res.ok) throw new Error("Failed to search users");
+      const data = await res.json();
+      setSlotSearchResults(Array.isArray(data?.users) ? data.users : []);
+    } catch (error) {
+      console.error(error);
+      showToast("error", "Failed to search users for slot allocation.");
+    } finally {
+      setSlotSearchingUsers(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (slotSearchQuery.trim()) {
+        handleSearchSlotUsers(slotSearchQuery);
+      } else {
+        setSlotSearchResults([]);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [slotSearchQuery, handleSearchSlotUsers]);
+
   const handleAssign = useCallback(async () => {
-    if (!selectedDomain || !selectedUser?.company_id) {
+    const selectedDomainIds = Object.keys(selectedDomains);
+    const inboxingIds =
+      selectedDomainIds.length > 0 ? selectedDomainIds : selectedDomain ? [selectedDomain.id] : [];
+
+    if (inboxingIds.length === 0 || !selectedUser?.company_id) {
       showToast("error", "Please select a user with a company.");
       return;
     }
@@ -185,11 +262,14 @@ export default function AdminInboxingDomainsPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          inboxing_ids: [selectedDomain.id],
+          inboxing_ids: inboxingIds,
           company_id: selectedUser.company_id,
-          domain_names: {
-            [selectedDomain.id]: selectedDomain.domain,
-          },
+          domain_names:
+            selectedDomainIds.length > 0
+              ? selectedDomains
+              : selectedDomain
+                ? { [selectedDomain.id]: selectedDomain.domain }
+                : {},
         }),
       });
 
@@ -204,14 +284,15 @@ export default function AdminInboxingDomainsPage() {
       setSelectedUser(null);
       setUserSearchQuery("");
       setSearchResults([]);
-      await Promise.all([fetchDomains(), fetchSlots()]);
+      setSelectedDomains({});
+      await Promise.all([fetchDomains(), fetchSlots(), fetchSlotAllocations()]);
     } catch (error: any) {
       console.error(error);
       showToast("error", error.message || "Failed to assign domain.");
     } finally {
       setAssigning(false);
     }
-  }, [selectedDomain, selectedUser, showToast, fetchDomains, fetchSlots]);
+  }, [selectedDomains, selectedDomain, selectedUser, showToast, fetchDomains, fetchSlots, fetchSlotAllocations]);
 
   const handleReclaim = useCallback(async (domain: InboxingDomain) => {
     const confirmed = window.confirm(`Remove assignment for ${domain.domain}?`);
@@ -231,14 +312,57 @@ export default function AdminInboxingDomainsPage() {
       }
 
       showToast("success", `Removed assignment for ${domain.domain}.`);
-      await Promise.all([fetchDomains(), fetchSlots()]);
+      await Promise.all([fetchDomains(), fetchSlots(), fetchSlotAllocations()]);
     } catch (error: any) {
       console.error(error);
       showToast("error", error.message || "Failed to remove assignment.");
     } finally {
       setReclaimingId(null);
     }
-  }, [fetchDomains, fetchSlots, showToast]);
+  }, [fetchDomains, fetchSlots, fetchSlotAllocations, showToast]);
+
+  const handleSetSlots = useCallback(async () => {
+    if (!slotSelectedUser?.company_id) {
+      showToast("error", "Select a user with a company first.");
+      return;
+    }
+
+    const totalSlots = Number(slotTotalInput);
+    if (!Number.isInteger(totalSlots) || totalSlots < 0) {
+      showToast("error", "Total slots must be a non-negative integer.");
+      return;
+    }
+
+    setSavingSlots(true);
+    try {
+      const res = await fetch("/api/admin/inboxing-slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company_id: slotSelectedUser.company_id,
+          total_slots: totalSlots,
+          allocation_type: slotAllocationType,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Failed to allocate slots");
+
+      showToast(
+        "success",
+        `Updated ${slotSelectedUser.company_name || slotSelectedUser.email} slots to ${totalSlots}.`
+      );
+      setSlotDialogOpen(false);
+      setSlotSelectedUser(null);
+      setSlotSearchQuery("");
+      setSlotSearchResults([]);
+      await Promise.all([fetchSlots(), fetchSlotAllocations()]);
+    } catch (error: any) {
+      console.error(error);
+      showToast("error", error.message || "Failed to allocate slots.");
+    } finally {
+      setSavingSlots(false);
+    }
+  }, [slotSelectedUser, slotTotalInput, slotAllocationType, fetchSlots, fetchSlotAllocations, showToast]);
 
   const handleDownloadCsv = useCallback(async (domain: InboxingDomain) => {
     try {
@@ -271,7 +395,46 @@ export default function AdminInboxingDomainsPage() {
   }, [showToast]);
 
   const openAssignDialog = (domain: InboxingDomain) => {
+    setSelectedDomains({});
     setSelectedDomain(domain);
+    setAssignDialogOpen(true);
+    setSelectedUser(null);
+    setUserSearchQuery("");
+    setSearchResults([]);
+  };
+
+  const selectedDomainIds = Object.keys(selectedDomains);
+  const selectedCount = selectedDomainIds.length;
+  const selectedOnPageCount = domains.filter((domain) => selectedDomains[domain.id]).length;
+  const allOnPageSelected = domains.length > 0 && selectedOnPageCount === domains.length;
+
+  const toggleSelectDomain = (domain: InboxingDomain) => {
+    setSelectedDomains((prev) => {
+      if (prev[domain.id]) {
+        const next = { ...prev };
+        delete next[domain.id];
+        return next;
+      }
+      return { ...prev, [domain.id]: domain.domain };
+    });
+  };
+
+  const toggleSelectPage = () => {
+    setSelectedDomains((prev) => {
+      if (allOnPageSelected) {
+        const next = { ...prev };
+        for (const domain of domains) delete next[domain.id];
+        return next;
+      }
+      const next = { ...prev };
+      for (const domain of domains) next[domain.id] = domain.domain;
+      return next;
+    });
+  };
+
+  const openBulkAssignDialog = () => {
+    if (selectedCount === 0) return;
+    setSelectedDomain(null);
     setAssignDialogOpen(true);
     setSelectedUser(null);
     setUserSearchQuery("");
@@ -340,6 +503,68 @@ export default function AdminInboxingDomainsPage() {
           </div>
         </div>
 
+        {/* Company Slot Allocations */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-white">Company Slot Allocations</h2>
+              <p className="text-xs text-zinc-500 mt-1">
+                Set total slots per company for managed inboxing automation.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              onClick={() => setSlotDialogOpen(true)}
+              className="h-8 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/20"
+            >
+              Assign Slots
+            </Button>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-zinc-800">
+            <table className="min-w-full text-sm">
+              <thead className="bg-zinc-950/70 text-zinc-400">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Company</th>
+                  <th className="px-3 py-2 text-left font-medium">Total</th>
+                  <th className="px-3 py-2 text-left font-medium">Used</th>
+                  <th className="px-3 py-2 text-left font-medium">Free</th>
+                  <th className="px-3 py-2 text-left font-medium">Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slotAllocationsLoading ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-zinc-400">
+                      <Loader2 className="h-4 w-4 animate-spin inline mr-2" />
+                      Loading slot allocations...
+                    </td>
+                  </tr>
+                ) : slotAllocations.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-3 py-6 text-center text-zinc-500">
+                      No company allocations found.
+                    </td>
+                  </tr>
+                ) : (
+                  slotAllocations.map((allocation) => (
+                    <tr key={allocation.company_id} className="border-t border-zinc-800/80">
+                      <td className="px-3 py-2">
+                        <p className="text-zinc-100 font-medium">{allocation.company_name || "Unknown company"}</p>
+                        <p className="text-xs text-zinc-500">{allocation.company_slug || allocation.company_id}</p>
+                      </td>
+                      <td className="px-3 py-2 text-zinc-200">{allocation.total_slots}</td>
+                      <td className="px-3 py-2 text-amber-300">{allocation.used_slots}</td>
+                      <td className="px-3 py-2 text-emerald-300">{allocation.free_slots}</td>
+                      <td className="px-3 py-2 text-zinc-400">{allocation.allocation_type}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-4">
           <div className="flex flex-col lg:flex-row gap-3">
@@ -367,8 +592,50 @@ export default function AdminInboxingDomainsPage() {
                 className="bg-zinc-950 border-zinc-800 text-white"
               />
             </div>
+
+            <select
+              value={String(pagination.per_page)}
+              onChange={(e) =>
+                setPagination((prev) => ({
+                  ...prev,
+                  page: 1,
+                  per_page: Number(e.target.value),
+                }))
+              }
+              className="h-10 rounded-md bg-zinc-950 border border-zinc-800 px-3 text-sm"
+            >
+              <option value="25">25 / page</option>
+              <option value="50">50 / page</option>
+              <option value="100">100 / page</option>
+            </select>
           </div>
         </div>
+
+        {selectedCount > 0 && (
+          <div className="rounded-lg border border-blue-500/30 bg-blue-500/10 px-4 py-3 flex items-center justify-between">
+            <p className="text-sm text-blue-200">
+              {selectedCount} domain{selectedCount > 1 ? "s" : ""} selected for bulk assignment.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedDomains({})}
+                className="h-8 border-zinc-700 bg-zinc-900 hover:bg-zinc-800"
+              >
+                Clear
+              </Button>
+              <Button
+                size="sm"
+                onClick={openBulkAssignDialog}
+                className="h-8 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 border border-blue-500/20"
+              >
+                <Link2 className="h-3.5 w-3.5 mr-1.5" />
+                Assign Selected
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Domains Table */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
@@ -376,6 +643,14 @@ export default function AdminInboxingDomainsPage() {
             <table className="min-w-full text-sm">
               <thead className="bg-zinc-950/70 text-zinc-400">
                 <tr>
+                  <th className="px-4 py-3 text-left font-medium">
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectPage}
+                      className="rounded border-zinc-700 bg-zinc-950"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left font-medium">Domain Name</th>
                   <th className="px-4 py-3 text-left font-medium">Status</th>
                   <th className="px-4 py-3 text-left font-medium">Mailboxes</th>
@@ -388,20 +663,28 @@ export default function AdminInboxingDomainsPage() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-zinc-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-zinc-400">
                       <Loader2 className="h-5 w-5 animate-spin inline mr-2" />
                       Loading domains...
                     </td>
                   </tr>
                 ) : domains.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-12 text-center text-zinc-400">
+                    <td colSpan={8} className="px-4 py-12 text-center text-zinc-400">
                       No domains found.
                     </td>
                   </tr>
                 ) : (
                   domains.map((domain) => (
                     <tr key={domain.id} className="border-t border-zinc-800/80">
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(selectedDomains[domain.id])}
+                          onChange={() => toggleSelectDomain(domain)}
+                          className="rounded border-zinc-700 bg-zinc-950"
+                        />
+                      </td>
                       <td className="px-4 py-3 font-medium text-zinc-100">{domain.domain}</td>
                       <td className="px-4 py-3">
                         <Badge className={`border ${statusBadgeClass(domain.status)}`}>
@@ -490,7 +773,7 @@ export default function AdminInboxingDomainsPage() {
           {pagination.total_pages > 1 && (
             <div className="px-4 py-3 border-t border-zinc-800 flex items-center justify-between text-sm text-zinc-400">
               <p>
-                Page {pagination.page} of {pagination.total_pages} ({pagination.total} total)
+                Page {pagination.page} of {pagination.total_pages} ({pagination.total} total, {pagination.per_page} / page)
               </p>
               <div className="flex gap-2">
                 <Button
@@ -524,9 +807,13 @@ export default function AdminInboxingDomainsPage() {
         {/* Assign Dialog */}
         <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
           <DialogContent className="bg-zinc-900 border border-zinc-800 text-white max-w-md">
-            <DialogTitle>Assign Domain to Company</DialogTitle>
+            <DialogTitle>
+              {selectedCount > 0 ? `Assign ${selectedCount} Domains to Company` : "Assign Domain to Company"}
+            </DialogTitle>
             <DialogDescription className="text-zinc-400">
-              Search for a user to assign {selectedDomain?.domain} to their company.
+              {selectedCount > 0
+                ? "Search for a user and assign all selected domains to their company."
+                : `Search for a user to assign ${selectedDomain?.domain} to their company.`}
             </DialogDescription>
 
             <div className="space-y-4 mt-4">
@@ -613,7 +900,115 @@ export default function AdminInboxingDomainsPage() {
                       Assigning...
                     </>
                   ) : (
-                    "Assign Domain"
+                    selectedCount > 0 ? `Assign ${selectedCount} Domains` : "Assign Domain"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={slotDialogOpen} onOpenChange={setSlotDialogOpen}>
+          <DialogContent className="bg-zinc-900 border border-zinc-800 text-white max-w-md">
+            <DialogTitle>Allocate Company Slots</DialogTitle>
+            <DialogDescription className="text-zinc-400">
+              Search for a user, select their company, and set total inboxing slots.
+            </DialogDescription>
+
+            <div className="space-y-4 mt-4">
+              <div className="space-y-2">
+                <label className="text-xs text-zinc-400">Search Users</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-500" />
+                  <Input
+                    value={slotSearchQuery}
+                    onChange={(e) => setSlotSearchQuery(e.target.value)}
+                    placeholder="Type email or name..."
+                    className="pl-9 bg-zinc-950 border-zinc-800 text-white"
+                  />
+                </div>
+              </div>
+
+              {slotSearchingUsers && (
+                <div className="text-sm text-zinc-400 flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Searching...
+                </div>
+              )}
+
+              {slotSearchResults.length > 0 && (
+                <div className="border border-zinc-800 rounded-lg max-h-52 overflow-y-auto">
+                  {slotSearchResults.map((user) => (
+                    <button
+                      key={`slot-${user.user_id}`}
+                      onClick={() => setSlotSelectedUser(user)}
+                      className={`w-full text-left px-3 py-2 hover:bg-zinc-800 transition-colors ${
+                        slotSelectedUser?.user_id === user.user_id ? "bg-zinc-800" : ""
+                      }`}
+                    >
+                      <p className="text-sm font-medium text-white">{user.email}</p>
+                      {user.company_name ? (
+                        <p className="text-xs text-zinc-500 mt-1">
+                          Company: {user.company_name} ({user.company_slug})
+                        </p>
+                      ) : (
+                        <p className="text-xs text-amber-400 mt-1">No company assigned</p>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Total Slots</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={slotTotalInput}
+                    onChange={(e) => setSlotTotalInput(e.target.value)}
+                    className="bg-zinc-950 border-zinc-800 text-white"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-xs text-zinc-400">Allocation Type</label>
+                  <select
+                    value={slotAllocationType}
+                    onChange={(e) => setSlotAllocationType(e.target.value as "free" | "purchased" | "trial")}
+                    className="h-10 w-full rounded-md bg-zinc-950 border border-zinc-800 px-3 text-sm"
+                  >
+                    <option value="free">free</option>
+                    <option value="purchased">purchased</option>
+                    <option value="trial">trial</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setSlotDialogOpen(false);
+                    setSlotSelectedUser(null);
+                    setSlotSearchQuery("");
+                    setSlotSearchResults([]);
+                  }}
+                  className="border-zinc-700 bg-zinc-900 hover:bg-zinc-800"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSetSlots}
+                  disabled={savingSlots || !slotSelectedUser?.company_id}
+                  className="bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/20"
+                >
+                  {savingSlots ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save Slots"
                   )}
                 </Button>
               </div>

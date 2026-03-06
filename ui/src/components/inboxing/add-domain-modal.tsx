@@ -59,6 +59,25 @@ function splitDomains(raw: string): string[] {
     .filter(Boolean);
 }
 
+async function postProvisionRequest(payload: Record<string, unknown>) {
+  const workflowResponse = await fetch("/api/inboxing/workflows/provision", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  // Backward-compatible fallback for older deployments.
+  if (workflowResponse.status === 404) {
+    return fetch("/api/inboxing/domains", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  return workflowResponse;
+}
+
 export function AddDomainModal({
   open,
   companyId,
@@ -187,20 +206,18 @@ export function AddDomainModal({
         .map((tag) => tag.trim())
         .filter(Boolean);
 
-      const res = await fetch("/api/inboxing/domains", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          company_id: companyId,
-          domains: quickDomains,
-          names,
-          user_count: quickUserCount,
-          tags,
-          redirect_url: quickRedirectUrl || undefined,
-          redirect_type: quickRedirectType,
-          platform_connection_id: quickPlatformConnectionId || undefined,
-          auto_upload: Boolean(quickPlatformConnectionId),
-        }),
+      const res = await postProvisionRequest({
+        company_id: companyId,
+        domains: quickDomains,
+        names,
+        user_count: quickUserCount,
+        tags,
+        redirect_url: quickRedirectUrl || undefined,
+        redirect_type: quickRedirectType,
+        platform_connection_id: quickPlatformConnectionId || undefined,
+        auto_upload: Boolean(quickPlatformConnectionId),
+        enforce_slots: true,
+        notes: "Created from inboxes quick setup flow",
       });
 
       if (!res.ok) {
@@ -229,20 +246,18 @@ export function AddDomainModal({
           .map((tag) => tag.trim())
           .filter(Boolean);
 
-        const res = await fetch("/api/inboxing/domains", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            company_id: companyId,
-            domains: [row.domain.trim().toLowerCase()],
-            names: names.length > 0 ? names : [DEFAULT_SENDER],
-            user_count: row.user_count,
-            tags,
-            redirect_url: row.redirect_url || undefined,
-            redirect_type: row.redirect_type,
-            platform_connection_id: row.platform_connection_id || undefined,
-            auto_upload: Boolean(row.platform_connection_id),
-          }),
+        const res = await postProvisionRequest({
+          company_id: companyId,
+          domains: [row.domain.trim().toLowerCase()],
+          names: names.length > 0 ? names : [DEFAULT_SENDER],
+          user_count: row.user_count,
+          tags,
+          redirect_url: row.redirect_url || undefined,
+          redirect_type: row.redirect_type,
+          platform_connection_id: row.platform_connection_id || undefined,
+          auto_upload: Boolean(row.platform_connection_id),
+          enforce_slots: true,
+          notes: "Created from inboxes bulk setup flow",
         });
 
         if (!res.ok) {

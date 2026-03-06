@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import * as inboxing from "@/lib/inboxing-client";
 import { requireCompanyAccess } from "@/lib/api-auth";
+import { runInboxingAutomationWorkflow } from "@/lib/inboxing-automation";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -111,75 +111,34 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Platform connection not found" }, { status: 404 });
       }
     }
-    const results = [];
+    const workflowResult = await runInboxingAutomationWorkflow(
+      {
+        companyId: company_id,
+        domains: domainList,
+        names,
+        userCount: user_count,
+        tags,
+        redirectUrl: redirect_url,
+        redirectType: redirect_type,
+        autoUpload: auto_upload,
+        platformConnectionId: platform_connection_id,
+        registrarId: registrar_id,
+        campaignId: campaign_id,
+        cloudflareCredentialId: cloudflare_credential_id,
+        requestedBy: accessResult.auth.userId,
+        createAssignments: true,
+        enforceSlots: false, // Keep backward compatibility for existing callers.
+      },
+      admin
+    );
 
-    for (const domainName of domainList) {
-      // Create via Inboxing API
-      let inboxingResult = null;
-      try {
-        inboxingResult = await inboxing.createDomain({
-          domain: domainName,
-          names,
-          user_count,
-          redirect_url,
-          redirect_type,
-          tags,
-          upload_to_platform: auto_upload,
-          platform_connection_id: platform_connection_id || undefined,
-          cloudflare_credential_id: cloudflare_credential_id || undefined,
-          registrar_credential_id: registrar_id || undefined,
-        });
-      } catch (e: any) {
-        console.error(`[Inboxing] Failed to create ${domainName}:`, e.message);
-      }
-
-      // Store in local DB
-      const { data, error } = await admin
-        .from("inboxing_domains")
-        .insert({
-          company_id,
-          domain: domainName,
-          status: inboxingResult?.status || "pending",
-          inboxing_id: inboxingResult?.id,
-          registrar_id,
-          platform_connection_id,
-          user_count,
-          mailbox_count: inboxingResult?.mailbox_count || 0,
-          tags,
-          campaign_id,
-          redirect_url,
-          redirect_type,
-          cloudflare_id: cloudflare_credential_id || null,
-          nameservers: inboxingResult?.nameservers || [],
-          csv_available_at: inboxingResult?.csv_available_at || null,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        console.error(`[DB] Failed to store ${domainName}:`, error.message);
-        results.push({ domain: domainName, status: "error", error: error.message });
-        continue;
-      }
-
-      // Create tracking job
-      await admin.from("inboxing_jobs").insert({
-        company_id,
-        domain_id: data.id,
-        type: "domain_create",
-        status: "processing",
-        payload: { domain: domainName, user_count, names, auto_upload },
-      });
-
-      results.push({
-        domain: domainName,
-        status: inboxingResult?.status || "pending",
-        id: data.id,
-        inboxing_id: inboxingResult?.id,
-      });
-    }
-
-    return NextResponse.json({ results }, { status: 201 });
+    return NextResponse.json(
+      {
+        results: workflowResult.results,
+        workflow: workflowResult.workflow,
+      },
+      { status: 201 }
+    );
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message || "Failed to create domains" },

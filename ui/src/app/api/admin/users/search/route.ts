@@ -34,15 +34,33 @@ export async function GET(request: NextRequest) {
     const admin = getAdmin();
 
     // Get all account members
-    const { data: members, error: membersError } = await admin
+    const { data: members, error: membersError} = await admin
       .from("account_members")
-      .select("user_id, role, account_id, companies(id, name, slug)")
+      .select("user_id, role, account_id")
       .limit(1000);
 
     if (membersError) throw membersError;
 
+    // Fetch all companies separately and map by account_id
+    const { data: companies } = await admin
+      .from("companies")
+      .select("id, name, slug, account_id");
+
+    const companyByAccountId = new Map<string, { id: string; name: string; slug: string }>();
+    for (const company of companies || []) {
+      if (!company.account_id) continue;
+      if (!companyByAccountId.has(company.account_id)) {
+        companyByAccountId.set(company.account_id, {
+          id: company.id,
+          name: company.name,
+          slug: company.slug,
+        });
+      }
+    }
+
     // Search through users
     const matchingUsers = [];
+    const seenUserIds = new Set<string>();
     const searchLower = query.toLowerCase();
 
     for (const member of members || []) {
@@ -55,9 +73,8 @@ export async function GET(request: NextRequest) {
           email.toLowerCase().includes(searchLower) ||
           name.toLowerCase().includes(searchLower)
         ) {
-          const company = Array.isArray(member.companies)
-            ? member.companies[0]
-            : member.companies;
+          if (seenUserIds.has(member.user_id)) continue;
+          const company = companyByAccountId.get(member.account_id);
 
           matchingUsers.push({
             user_id: member.user_id,
@@ -68,6 +85,7 @@ export async function GET(request: NextRequest) {
             company_name: company?.name || null,
             company_slug: company?.slug || null,
           });
+          seenUserIds.add(member.user_id);
 
           if (matchingUsers.length >= limit) break;
         }

@@ -166,6 +166,7 @@ Auth: X-Agent-Token header (provided automatically)
 Endpoints:
 - GET /api/tools/inboxing/domains \u2014 list company domains
 - GET /api/tools/inboxing/health \u2014 domain health
+- POST /api/tools/inboxing/provision \u2014 run end-to-end domain provisioning workflow
 - GET /api/tools/data/inbox/messages \u2014 inbox messages
 - POST /api/tools/data/inbox/messages/tag-batch \u2014 tag messages for batch analysis
 - GET /api/tools/data/campaigns \u2014 campaign data
