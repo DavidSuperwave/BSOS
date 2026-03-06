@@ -36,6 +36,34 @@ const MAX_REFERENCED_DOC_PREVIEW_CHARS = 1200;
 const DIRECT_FALLBACK_OPENROUTER_MODEL = "anthropic/claude-3.5-haiku";
 const DIRECT_FALLBACK_ANTHROPIC_MODEL = "claude-3-5-haiku-20241022";
 const DIRECT_FALLBACK_PERPLEXITY_MODEL = "sonar";
+const ALLOWED_ORIGINS = [
+  "http://localhost:3000",
+  "https://blitzscaleos.com",
+  "https://www.blitzscaleos.com",
+  "https://blitzscaleos.vercel.app",
+];
+
+function isAllowedOrigin(origin: string | null): origin is string {
+  return Boolean(origin && ALLOWED_ORIGINS.includes(origin));
+}
+
+function withCORS(response: Response, origin: string | null): Response {
+  if (!isAllowedOrigin(origin)) return response;
+  response.headers.set("Access-Control-Allow-Origin", origin);
+  response.headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  response.headers.set("Access-Control-Allow-Credentials", "true");
+  response.headers.set("Vary", "Origin");
+  return response;
+}
+
+export async function OPTIONS(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  if (isAllowedOrigin(origin)) {
+    return withCORS(new Response(null, { status: 204 }), origin);
+  }
+  return new Response(null, { status: 204 });
+}
 
 function isRecoverableOpenClawAuthError(error: unknown): boolean {
   const message = String((error as any)?.message || "").toLowerCase();
@@ -248,12 +276,17 @@ async function runDirectModelFallback({
  * }
  */
 export async function POST(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  const jsonWithOrigin = (body: any, init?: ResponseInit) =>
+    withCORS(Response.json(body, init), origin);
+  const withOrigin = (response: Response) => withCORS(response, origin);
+
   const rl = limiter.check(rateLimitKey(req));
-  if (!rl.allowed) return rateLimitResponse(rl.resetIn);
+  if (!rl.allowed) return withOrigin(rateLimitResponse(rl.resetIn));
 
   const auth = await authenticateUser();
   if (!auth) {
-    return Response.json({ error: "Authentication required" }, { status: 401 });
+    return jsonWithOrigin({ error: "Authentication required" }, { status: 401 });
   }
 
   const body = await req.json();
@@ -267,7 +300,7 @@ export async function POST(req: NextRequest) {
   } = body;
 
   if (!message || !companyId) {
-    return Response.json(
+    return jsonWithOrigin(
       { error: "Message and companyId are required" },
       { status: 400 }
     );
@@ -275,7 +308,7 @@ export async function POST(req: NextRequest) {
 
   const accessResult = await requireCompanyAccess(companyId);
   if (accessResult.error) {
-    return accessResult.error;
+    return withOrigin(accessResult.error);
   }
 
   const admin = getAdmin();
@@ -311,7 +344,7 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (!company || company.container_status !== "running" || !company.container_url) {
-      return Response.json({
+      return jsonWithOrigin({
         error: "Agent container is not running. Please provision it first.",
         code: "CONTAINER_NOT_RUNNING"
       }, { status: 400 });
@@ -327,13 +360,13 @@ export async function POST(req: NextRequest) {
     if (!agent) {
       // Auto-provision main agent if missing
       if (sessionType === 'main') {
-        return Response.json({
+        return jsonWithOrigin({
           error: "Agent not provisioned",
           code: "AGENT_NOT_PROVISIONED",
           provisionUrl: `/api/companies/${companyId}/agents/provision`
         }, { status: 400 });
       }
-      return Response.json({
+      return jsonWithOrigin({
         error: `No ${sessionType} agent found for this company`,
         code: "AGENT_NOT_FOUND"
       }, { status: 404 });
@@ -395,13 +428,13 @@ export async function POST(req: NextRequest) {
         agentType: (sessionType as AgentType),
       });
 
-      return new Response(streamResponse, {
+      return withOrigin(new Response(streamResponse, {
         headers: {
           "Content-Type": "text/event-stream",
           "Cache-Control": "no-cache",
           "Connection": "keep-alive"
         }
-      });
+      }));
     } else {
       // Non-streaming (fallback)
       const response = await blockingChatCompletion({
@@ -422,7 +455,7 @@ export async function POST(req: NextRequest) {
         agentType: (sessionType as AgentType),
       });
 
-      return Response.json(response);
+      return jsonWithOrigin(response);
     }
 
   } catch (error: any) {
@@ -466,16 +499,16 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          return new Response(streamBody, {
+          return withOrigin(new Response(streamBody, {
             headers: {
               "Content-Type": "text/event-stream",
               "Cache-Control": "no-cache",
               Connection: "keep-alive",
             },
-          });
+          }));
         }
 
-        return Response.json({
+        return jsonWithOrigin({
           response: fallback.content,
           toolCalls: [],
           sessionId: fallbackContext.sessionId,
@@ -488,7 +521,7 @@ export async function POST(req: NextRequest) {
       }
     }
     console.error("[Chat API] Error:", error);
-    return Response.json(
+    return jsonWithOrigin(
       { error: error.message || "Chat failed", fallback: true },
       { status: 500 }
     );
@@ -1534,16 +1567,20 @@ async function blockingChatCompletion({
  * Get session messages or check status
  */
 export async function GET(req: NextRequest) {
+  const origin = req.headers.get("origin");
+  const jsonWithOrigin = (body: any, init?: ResponseInit) =>
+    withCORS(Response.json(body, init), origin);
+
   const { searchParams } = new URL(req.url);
   const sessionId = searchParams.get("sessionId");
 
   const auth = await authenticateUser();
   if (!auth) {
-    return Response.json({ error: "Authentication required" }, { status: 401 });
+    return jsonWithOrigin({ error: "Authentication required" }, { status: 401 });
   }
 
   if (!sessionId) {
-    return Response.json({
+    return jsonWithOrigin({
       status: "ok",
       openclaw: envConfig.openclaw.url()
     });
@@ -1557,19 +1594,19 @@ export async function GET(req: NextRequest) {
     .maybeSingle();
 
   if (!session) {
-    return Response.json({ error: "Session not found" }, { status: 404 });
+    return jsonWithOrigin({ error: "Session not found" }, { status: 404 });
   }
   if (session.user_id && session.user_id !== auth.userId) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return jsonWithOrigin({ error: "Forbidden" }, { status: 403 });
   }
   const access = await verifyCompanyAccess(auth.userId, session.company_id);
   if (!access) {
-    return Response.json({ error: "Forbidden" }, { status: 403 });
+    return jsonWithOrigin({ error: "Forbidden" }, { status: 403 });
   }
 
   const history = await getConversationHistory(admin, sessionId, 50);
 
-  return Response.json({
+  return jsonWithOrigin({
     sessionId,
     messages: history
   });
