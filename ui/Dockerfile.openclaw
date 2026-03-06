@@ -4,7 +4,7 @@
 # Build: docker build -f Dockerfile.openclaw -t blitzscale-openclaw .
 # Run:   docker run -p 18789:18789 --env-file .env blitzscale-openclaw
 
-FROM ghcr.io/openclaw/openclaw:v2026.3.2
+FROM ghcr.io/openclaw/openclaw:2026.3.2
 
 # Copy gateway configuration
 COPY openclaw/openclaw.json /app/openclaw.json
