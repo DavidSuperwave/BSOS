@@ -159,6 +159,14 @@ export async function PATCH(
 
     if (updateError) throw updateError;
 
+    if (model) {
+      await admin
+        .from("company_agents")
+        .update({ model })
+        .eq("company_id", id)
+        .eq("agent_type", "main");
+    }
+
     // Push changes to OpenClaw
     let openclawUpdated = false;
     try {

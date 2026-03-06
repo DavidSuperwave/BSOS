@@ -1,49 +1,61 @@
 {
   "gateway": {
+    "mode": "local",
+    "port": 18789,
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "${OPENCLAW_GATEWAY_TOKEN}"
+    },
     "http": {
-      "port": 18789,
       "endpoints": {
         "chatCompletions": {
           "enabled": true
         }
       }
     },
-    "auth": {
-      "mode": "token",
-      "token": "${OPENCLAW_GATEWAY_TOKEN}"
-    },
-    "models": {
-      "providers": [
-        {
-          "id": "openrouter",
-          "name": "OpenRouter",
-          "baseUrl": "https://openrouter.ai/api/v1",
-          "apiKey": "${OPENROUTER_API_KEY}",
-          "models": [
-            {
-              "id": "minimax/MiniMax-M2.1",
-              "name": "MiniMax M2.1"
-            },
-            {
-              "id": "anthropic/claude-sonnet-4-20250514",
-              "name": "Claude Sonnet 4"
-            }
-          ]
-        }
-      ]
-    },
-    "agents": {
-      "main": {
-        "model": "minimax/MiniMax-M2.1",
-        "systemPrompt": "You are Julian, a helpful GTM AI assistant.",
-        "skills": ["/data/skills/gtm-engine"]
-      }
-    },
-    "plugins": {
-      "supermemory": {
-        "enabled": true,
-        "apiKey": "${SUPERMEMORY_API_KEY}"
+    "controlUi": {
+      "enabled": false
+    }
+  },
+  "hooks": {
+    "enabled": true,
+    "token": "${OPENCLAW_GATEWAY_TOKEN}",
+    "path": "/hooks"
+  },
+  "models": {
+    "providers": {
+      "openrouter": {
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "apiKey": "${OPENROUTER_API_KEY}",
+        "models": []
+      },
+      "anthropic": {
+        "baseUrl": "${ANTHROPIC_BASE_URL}",
+        "apiKey": "${ANTHROPIC_API_KEY}",
+        "models": []
       }
     }
+  },
+  "agents": {
+    "defaults": {
+      "workspace": "/data/agents/main",
+      "model": {
+        "primary": "openrouter/kimi-coding/k2p5",
+        "fallbacks": [
+          "anthropic/claude-opus-4-5"
+        ]
+      }
+    },
+    "list": [
+      {
+        "id": "main",
+        "default": true,
+        "workspace": "/data/agents/main",
+        "skills": [
+          "/app/blitzscale-skills/gtm-engine"
+        ]
+      }
+    ]
   }
 }

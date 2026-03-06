@@ -4,21 +4,22 @@
 # Build: docker build -f Dockerfile.openclaw -t blitzscale-openclaw .
 # Run:   docker run -p 18789:18789 --env-file .env blitzscale-openclaw
 
-FROM ghcr.io/openclaw/openclaw:latest
+FROM ghcr.io/openclaw/openclaw:v2026.3.2
 
 # Copy gateway configuration
 COPY openclaw/openclaw.json /app/openclaw.json
 
-# Copy GTM Engine skill into the workspace
-COPY openclaw/skills/gtm-engine/ /data/skills/gtm-engine/
+# Copy GTM Engine skill into a non-volume path
+COPY openclaw/skills/gtm-engine/ /app/blitzscale-skills/gtm-engine/
 
 # Environment defaults (overridden per-company at runtime)
-ENV OPENCLAW_CONFIG=/app/openclaw.json
+ENV OPENCLAW_CONFIG_PATH=/app/openclaw.json
+ENV OPENCLAW_STATE_DIR=/data
 ENV NODE_ENV=production
 
 # Gateway port
 EXPOSE 18789
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD nc -z 127.0.0.1 18789 || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

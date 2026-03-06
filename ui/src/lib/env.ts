@@ -39,7 +39,7 @@ export const envConfig = {
   provisioner: {
     dropletIp: () => env("DROPLET_IP"),
     sshKey: () => env("PROVISIONER_SSH_KEY"),
-    ghcrImage: () => env("GHCR_IMAGE") || "ghcr.io/openclaw/openclaw:latest",
+    ghcrImage: () => env("GHCR_IMAGE") || "ghcr.io/openclaw/openclaw:v2026.3.2",
     portRangeStart: () => parseInt(env("PORT_RANGE_START") || "18790", 10),
     portRangeEnd: () => parseInt(env("PORT_RANGE_END") || "18850", 10),
   },

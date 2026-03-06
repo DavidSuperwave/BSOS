@@ -200,7 +200,7 @@ export function generateAgentConfig(company: CompanyData) {
   const containerTag = companyContainerTag(company.slug);
 
   return {
-    model: "claude-sonnet-4-20250514",
+    model: "openrouter/kimi-coding/k2p5",
     maxTokens: 4096,
     temperature: 0.7,
     tools: {

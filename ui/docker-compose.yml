@@ -25,6 +25,8 @@ services:
       - OPENCLAW_URL=http://openclaw:18789
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
     depends_on:
       - openclaw
     networks:
@@ -39,7 +41,11 @@ services:
       - openclaw-data:/data
     environment:
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - OPENCLAW_CONFIG_PATH=/app/openclaw.json
+      - OPENCLAW_STATE_DIR=/data
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
       - SUPERMEMORY_API_KEY=${SUPERMEMORY_API_KEY}
     networks:
       - blitzscale
