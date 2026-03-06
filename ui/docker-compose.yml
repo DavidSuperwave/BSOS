@@ -24,6 +24,7 @@ services:
       - CLOSE_API_KEY=${CLOSE_API_KEY}
       - OPENCLAW_URL=http://openclaw:18789
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - OPENCLAW_HOOK_TOKEN=${OPENCLAW_HOOK_TOKEN:-local-openclaw-hooks-token}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL}
@@ -41,6 +42,7 @@ services:
       - openclaw-data:/data
     environment:
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN}
+      - OPENCLAW_HOOK_TOKEN=${OPENCLAW_HOOK_TOKEN:-local-openclaw-hooks-token}
       - OPENCLAW_CONFIG_PATH=/app/openclaw.json
       - OPENCLAW_STATE_DIR=/data
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}

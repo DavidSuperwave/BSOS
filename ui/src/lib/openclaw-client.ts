@@ -142,7 +142,7 @@ export async function sendMessage(
   model?: string;
 } | null> {
   const baseUrl = envConfig.openclaw.url();
-  const token = GATEWAY_TOKEN();
+  const token = envConfig.openclaw.hookToken() || GATEWAY_TOKEN();
 
   try {
     const res = await fetch(`${baseUrl}/hooks/agent`, {
@@ -189,7 +189,7 @@ export async function wakeAgent(
   agentId?: string
 ): Promise<boolean> {
   const baseUrl = envConfig.openclaw.url();
-  const token = GATEWAY_TOKEN();
+  const token = envConfig.openclaw.hookToken() || GATEWAY_TOKEN();
 
   try {
     const res = await fetch(`${baseUrl}/hooks/wake`, {

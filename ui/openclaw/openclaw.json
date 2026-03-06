@@ -20,7 +20,7 @@
   },
   "hooks": {
     "enabled": true,
-    "token": "${OPENCLAW_GATEWAY_TOKEN}",
+    "token": "${OPENCLAW_HOOK_TOKEN}",
     "path": "/hooks"
   },
   "models": {

@@ -83,6 +83,7 @@ function generateDockerCompose(
 
   const envVars = [
     `OPENCLAW_GATEWAY_TOKEN=${company.id}`,
+    `OPENCLAW_HOOK_TOKEN=${company.id}-hooks`,
     `OPENCLAW_CONFIG_PATH=/app/openclaw.json`,
     `OPENCLAW_STATE_DIR=/data`,
     openrouterKey ? `OPENROUTER_API_KEY=${openrouterKey}` : null,
@@ -188,7 +189,7 @@ function generateOpenclawJson(): string {
       },
       hooks: {
         enabled: true,
-        token: "${OPENCLAW_GATEWAY_TOKEN}",
+        token: "${OPENCLAW_HOOK_TOKEN}",
         path: "/hooks",
       },
       models: {
