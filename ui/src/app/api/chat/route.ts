@@ -33,6 +33,195 @@ const limiter = createRateLimiter({ limit: 30, window: 60 });
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 const MAX_REFERENCED_DOCS = 5;
 const MAX_REFERENCED_DOC_PREVIEW_CHARS = 1200;
+const DIRECT_FALLBACK_OPENROUTER_MODEL = "anthropic/claude-3.5-haiku";
+const DIRECT_FALLBACK_ANTHROPIC_MODEL = "claude-3-5-haiku-20241022";
+const DIRECT_FALLBACK_PERPLEXITY_MODEL = "sonar";
+
+function isRecoverableOpenClawAuthError(error: unknown): boolean {
+  const message = String((error as any)?.message || "").toLowerCase();
+  return (
+    message.includes("pairing required") ||
+    message.includes("not_paired") ||
+    message.includes("device token mismatch") ||
+    message.includes("device identity mismatch") ||
+    message.includes("device identity required") ||
+    message.includes("missing scope") ||
+    message.includes("gateway token mismatch")
+  );
+}
+
+function normalizeHistoryForLlm(history: Array<{ role: string; content: string }>): Array<{ role: "user" | "assistant"; content: string }> {
+  return (history || [])
+    .filter((entry) => entry?.role === "user" || entry?.role === "assistant")
+    .map((entry) => ({
+      role: entry.role as "user" | "assistant",
+      content: String(entry.content || "").slice(0, 6000),
+    }))
+    .filter((entry) => entry.content.length > 0)
+    .slice(-16);
+}
+
+function buildAlternatingFallbackMessages(
+  llmHistory: Array<{ role: "user" | "assistant"; content: string }>,
+  safeMessage: string
+): Array<{ role: "user" | "assistant"; content: string }> {
+  const seed = [...llmHistory];
+  const last = seed[seed.length - 1];
+  if (!(last?.role === "user" && last?.content === safeMessage)) {
+    seed.push({ role: "user", content: safeMessage });
+  }
+
+  while (seed.length > 0 && seed[0].role !== "user") {
+    seed.shift();
+  }
+
+  const merged: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const entry of seed) {
+    const content = String(entry.content || "").trim();
+    if (!content) continue;
+    const prev = merged[merged.length - 1];
+    if (prev && prev.role === entry.role) {
+      prev.content = `${prev.content}\n\n${content}`.slice(-12000);
+    } else {
+      merged.push({ role: entry.role, content });
+    }
+  }
+
+  if (merged.length === 0 || merged[merged.length - 1].role !== "user") {
+    merged.push({ role: "user", content: safeMessage });
+  }
+
+  return merged.slice(-18);
+}
+
+async function runDirectModelFallback({
+  systemPrompt,
+  history,
+  message,
+  companyId,
+}: {
+  systemPrompt: string;
+  history: Array<{ role: string; content: string }>;
+  message: string;
+  companyId: string;
+}): Promise<{ content: string; model: string; provider: "openrouter" | "anthropic" | "perplexity" }> {
+  const llmHistory = normalizeHistoryForLlm(history);
+  const safeMessage = String(message || "").slice(0, 10000);
+  const safeSystemPrompt = String(systemPrompt || "").slice(0, 14000);
+  const fallbackMessages = buildAlternatingFallbackMessages(llmHistory, safeMessage);
+
+  const openrouterKey = envConfig.openrouter.apiKey();
+  if (openrouterKey) {
+    const payload = {
+      model: DIRECT_FALLBACK_OPENROUTER_MODEL,
+      messages: [
+        { role: "system", content: safeSystemPrompt },
+        ...fallbackMessages,
+      ],
+      temperature: 0.2,
+      max_tokens: 1200,
+      stream: false,
+    };
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${openrouterKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = String(data?.choices?.[0]?.message?.content || "").trim();
+      if (content) {
+        return {
+          content,
+          model: String(data?.model || DIRECT_FALLBACK_OPENROUTER_MODEL),
+          provider: "openrouter",
+        };
+      }
+    }
+  }
+
+  const anthropicKey = envConfig.anthropic.apiKey();
+  if (anthropicKey) {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: DIRECT_FALLBACK_ANTHROPIC_MODEL,
+        max_tokens: 1200,
+        system: safeSystemPrompt,
+        messages: [
+          ...fallbackMessages.map((entry) => ({
+            role: entry.role,
+            content: entry.content,
+          })),
+        ],
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content =
+        data?.content?.find?.((part: any) => part?.type === "text")?.text || "";
+      const finalContent = String(content || "").trim();
+      if (finalContent) {
+        return {
+          content: finalContent,
+          model: DIRECT_FALLBACK_ANTHROPIC_MODEL,
+          provider: "anthropic",
+        };
+      }
+    }
+  }
+
+  const perplexityKey = envConfig.perplexity.apiKey();
+  if (perplexityKey) {
+    const response = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${perplexityKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: DIRECT_FALLBACK_PERPLEXITY_MODEL,
+        messages: [
+          { role: "system", content: safeSystemPrompt },
+          ...fallbackMessages.map((entry) => ({
+            role: entry.role,
+            content: entry.content,
+          })),
+        ],
+        temperature: 0.2,
+        max_tokens: 1200,
+        stream: false,
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      const content = String(data?.choices?.[0]?.message?.content || "").trim();
+      if (content) {
+        return {
+          content,
+          model: String(data?.model || DIRECT_FALLBACK_PERPLEXITY_MODEL),
+          provider: "perplexity",
+        };
+      }
+    }
+  }
+
+  throw new Error("No direct-model fallback provider available");
+}
 
 /**
  * POST /api/chat
@@ -90,6 +279,17 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = getAdmin();
+  let fallbackContext:
+    | {
+        admin: any;
+        sessionId: string;
+        companyId: string;
+        message: string;
+        history: any[];
+        systemPrompt: string;
+        stream: boolean;
+      }
+    | null = null;
 
   try {
     // 1. Get or create chat session
@@ -106,7 +306,7 @@ export async function POST(req: NextRequest) {
     // 2. Get company details for container URL
     const { data: company } = await admin
       .from("companies")
-      .select("container_url, container_status, name, slug, integration_credentials")
+      .select("container_url, container_status, name, slug, integration_credentials, agent_config")
       .eq("id", companyId)
       .single();
 
@@ -166,6 +366,16 @@ export async function POST(req: NextRequest) {
     const containerUrl = company.container_url;
     const gatewayToken = companyId;
 
+    fallbackContext = {
+      admin,
+      sessionId: session.id,
+      companyId,
+      message,
+      history,
+      systemPrompt,
+      stream: Boolean(stream),
+    };
+
     if (stream) {
       const streamResponse = await streamChatCompletion({
         agentId: agent.agent_id,
@@ -216,6 +426,67 @@ export async function POST(req: NextRequest) {
     }
 
   } catch (error: any) {
+    if (fallbackContext && isRecoverableOpenClawAuthError(error)) {
+      try {
+        const fallback = await runDirectModelFallback({
+          systemPrompt: fallbackContext.systemPrompt,
+          history: fallbackContext.history,
+          message: fallbackContext.message,
+          companyId: fallbackContext.companyId,
+        });
+
+        if (fallback.content) {
+          await saveMessage({
+            admin: fallbackContext.admin,
+            sessionId: fallbackContext.sessionId,
+            role: "assistant",
+            content: fallback.content,
+            model: fallback.model,
+          });
+        }
+
+        if (fallbackContext.stream) {
+          const encoder = new TextEncoder();
+          const streamBody = new ReadableStream({
+            start(controller) {
+              if (fallback.content) {
+                controller.enqueue(
+                  encoder.encode(
+                    `data: ${JSON.stringify({ type: "content", delta: fallback.content })}\n\n`
+                  )
+                );
+              }
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: "done", sessionId: fallbackContext?.sessionId || null })}\n\n`
+                )
+              );
+              controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+              controller.close();
+            },
+          });
+
+          return new Response(streamBody, {
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache",
+              Connection: "keep-alive",
+            },
+          });
+        }
+
+        return Response.json({
+          response: fallback.content,
+          toolCalls: [],
+          sessionId: fallbackContext.sessionId,
+          tokensUsed: null,
+          model: fallback.model,
+          fallback: true,
+        });
+      } catch {
+        // Fall through to generic 500 handling below.
+      }
+    }
     console.error("[Chat API] Error:", error);
     return Response.json(
       { error: error.message || "Chat failed", fallback: true },
@@ -955,16 +1226,69 @@ async function streamChatCompletion({
   gatewayToken: string;
   agentType: AgentType;
 }) {
-  // Get the raw stream from OpenClaw via SSH tunnel
-  const openclawStream = await chatSendStream({
-    containerUrl,
-    token: gatewayToken,
-    message,
-    agentId,
-    sessionKey: openclawSessionKey,
-    history,
-    systemPrompt,
-  });
+  let openclawStream: ReadableStream;
+  try {
+    // Get the raw stream from OpenClaw via WS RPC
+    openclawStream = await chatSendStream({
+      containerUrl,
+      token: gatewayToken,
+      message,
+      agentId,
+      sessionKey: openclawSessionKey,
+      history,
+      systemPrompt,
+    });
+  } catch (error: any) {
+    if (!isRecoverableOpenClawAuthError(error)) {
+      throw error;
+    }
+
+    const fallback = await runDirectModelFallback({
+      systemPrompt,
+      history,
+      message,
+      companyId,
+    });
+    const content = fallback.content;
+
+    if (content) {
+      await saveMessage({
+        admin,
+        sessionId,
+        role: "assistant",
+        content,
+        model: fallback.model,
+      });
+      try {
+        await admin.rpc("increment_session_message_count", {
+          session_uuid: sessionId,
+          token_count: 0,
+        });
+      } catch {
+        // Non-critical
+      }
+    }
+
+    const fallbackEncoder = new TextEncoder();
+    return new ReadableStream({
+      start(controller) {
+        if (content) {
+          controller.enqueue(
+            fallbackEncoder.encode(
+              `data: ${JSON.stringify({ type: "content", delta: content })}\n\n`
+            )
+          );
+        }
+        controller.enqueue(
+          fallbackEncoder.encode(
+            `data: ${JSON.stringify({ type: "done", sessionId })}\n\n`
+          )
+        );
+        controller.enqueue(fallbackEncoder.encode("data: [DONE]\n\n"));
+        controller.close();
+      },
+    });
+  }
 
   // Wrap it to save messages to DB on completion
   const reader = openclawStream.getReader();
