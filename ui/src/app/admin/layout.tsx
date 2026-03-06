@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { href: "/admin/campaigns", label: "Campaigns", icon: Activity },
   { href: "/admin/domain-inventory", label: "Domain Inventory", icon: Globe },
   { href: "/admin/domain-assignments", label: "Domain Assignments", icon: Link2 },
+  { href: "/admin/inboxing-domains", label: "Inboxing Domains", icon: Globe },
   { href: "/admin/health", label: "System Health", icon: BarChart3 },
   { href: "/admin/approvals", label: "Approvals", icon: Bell },
   { href: "/admin/supermemory-keys", label: "Supermemory Keys", icon: Key },
