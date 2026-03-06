@@ -360,6 +360,83 @@ export async function getAgentFile(
 // SSH-TUNNELED WEBSOCKET (for remote containers)
 // ============================================
 
+type ContainerWsConnection = {
+  ws: InstanceType<typeof import("ws").default>;
+  cleanup: () => void;
+  localPort?: number;
+  transport: "ssh" | "direct";
+};
+
+function getContainerTransportMode(): "auto" | "ssh" | "direct" {
+  const raw = String(process.env.OPENCLAW_CONTAINER_TRANSPORT || "auto").toLowerCase();
+  if (raw === "ssh" || raw === "direct") return raw;
+  return "auto";
+}
+
+function toWebSocketUrl(containerUrl: string): string {
+  if (containerUrl.startsWith("ws://") || containerUrl.startsWith("wss://")) {
+    return containerUrl;
+  }
+  if (containerUrl.startsWith("http://")) {
+    return containerUrl.replace(/^http:\/\//, "ws://");
+  }
+  if (containerUrl.startsWith("https://")) {
+    return containerUrl.replace(/^https:\/\//, "wss://");
+  }
+  throw new Error(`Unsupported container URL protocol: ${containerUrl}`);
+}
+
+function attachEarlyMessageBuffer(ws: any): void {
+  // Buffer early frames that may arrive before handshake listeners attach.
+  const earlyMessages: Buffer[] = [];
+  const earlyMessageHandler = (raw: Buffer | string) => {
+    const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
+    earlyMessages.push(buf);
+    if (earlyMessages.length > 32) earlyMessages.shift();
+  };
+  ws.on("message", earlyMessageHandler);
+  ws.__earlyMessages = earlyMessages;
+  ws.__removeEarlyMessageHandler = () => {
+    try {
+      ws.removeListener("message", earlyMessageHandler);
+    } catch {
+      // Best-effort cleanup
+    }
+  };
+}
+
+async function createDirectWs(containerUrl: string): Promise<ContainerWsConnection> {
+  const { default: WebSocket } = await import("ws");
+  const wsUrl = toWebSocketUrl(containerUrl);
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl);
+    attachEarlyMessageBuffer(ws);
+    let settled = false;
+
+    const cleanup = () => {
+      try {
+        ws.close();
+      } catch {
+        // Best-effort cleanup
+      }
+    };
+
+    ws.on("open", () => {
+      if (settled) return;
+      settled = true;
+      resolve({ ws, cleanup, transport: "direct" });
+    });
+
+    ws.on("error", (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error(`Direct WebSocket error (${wsUrl}): ${err.message}`));
+    });
+  });
+}
+
 /**
  * Create an SSH-tunneled WebSocket connection to an OpenClaw container.
  *
@@ -371,11 +448,7 @@ export async function getAgentFile(
  */
 async function createTunneledWs(
   containerUrl: string
-): Promise<{
-  ws: InstanceType<typeof import("ws").default>;
-  cleanup: () => void;
-  localPort: number;
-}> {
+): Promise<ContainerWsConnection> {
   const { default: WebSocket } = await import("ws");
   const { Client } = await import("ssh2");
   const net = await import("net");
@@ -386,7 +459,9 @@ async function createTunneledWs(
 
   const dropletIp = envConfig.provisioner.dropletIp();
   const sshKey = envConfig.provisioner.sshKey();
-  if (!sshKey) throw new Error("PROVISIONER_SSH_KEY not configured");
+  if (!dropletIp || !sshKey) {
+    throw new Error("SSH tunnel requires both DROPLET_IP and PROVISIONER_SSH_KEY");
+  }
   const cleanKey = sshKey.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
   return new Promise((resolve, reject) => {
@@ -418,22 +493,7 @@ async function createTunneledWs(
         const localPort = (server.address() as any).port;
 
         const ws = new WebSocket(`ws://127.0.0.1:${localPort}`);
-        // Buffer early frames that may arrive before handshake listeners attach.
-        const earlyMessages: Buffer[] = [];
-        const earlyMessageHandler = (raw: Buffer | string) => {
-          const buf = Buffer.isBuffer(raw) ? raw : Buffer.from(String(raw));
-          earlyMessages.push(buf);
-          if (earlyMessages.length > 32) earlyMessages.shift();
-        };
-        ws.on("message", earlyMessageHandler);
-        (ws as any).__earlyMessages = earlyMessages;
-        (ws as any).__removeEarlyMessageHandler = () => {
-          try {
-            ws.removeListener("message", earlyMessageHandler);
-          } catch {
-            // Best-effort cleanup
-          }
-        };
+        attachEarlyMessageBuffer(ws);
 
         const cleanup = () => {
           try { ws.close(); } catch {}
@@ -442,7 +502,7 @@ async function createTunneledWs(
         };
 
         ws.on("open", () => {
-          resolve({ ws, cleanup, localPort });
+          resolve({ ws, cleanup, localPort, transport: "ssh" });
         });
 
         ws.on("error", (err: Error) => {
@@ -465,6 +525,43 @@ async function createTunneledWs(
       readyTimeout: 15000,
     });
   });
+}
+
+async function createContainerWs(containerUrl: string): Promise<ContainerWsConnection> {
+  const mode = getContainerTransportMode();
+  const hasSshConfig = Boolean(
+    envConfig.provisioner.dropletIp() && envConfig.provisioner.sshKey()
+  );
+
+  if (mode === "direct") {
+    return createDirectWs(containerUrl);
+  }
+
+  if (mode === "ssh") {
+    return createTunneledWs(containerUrl);
+  }
+
+  if (hasSshConfig) {
+    try {
+      return await createTunneledWs(containerUrl);
+    } catch (sshErr: any) {
+      try {
+        return await createDirectWs(containerUrl);
+      } catch (directErr: any) {
+        throw new Error(
+          `SSH tunnel failed (${sshErr?.message || "unknown"}); direct fallback failed (${directErr?.message || "unknown"})`
+        );
+      }
+    }
+  }
+
+  try {
+    return await createDirectWs(containerUrl);
+  } catch (directErr: any) {
+    throw new Error(
+      `Direct container WebSocket failed (${directErr?.message || "unknown"}). Configure PROVISIONER_SSH_KEY and DROPLET_IP for SSH transport, or set OPENCLAW_CONTAINER_TRANSPORT=direct when container URLs are publicly reachable.`
+    );
+  }
 }
 
 /**
@@ -617,14 +714,14 @@ function buildContextualMessage(params: ChatSendParams): string {
 }
 
 /**
- * Send a chat message to an OpenClaw container via SSH-tunneled WebSocket RPC.
+ * Send a chat message to an OpenClaw container via WebSocket RPC.
  * Uses the `chat.send` method. Non-streaming — waits for full response.
  */
 export async function chatSend(params: ChatSendParams): Promise<ChatSendResult> {
   const { containerUrl, token, sessionKey } = params;
   const contextualMessage = buildContextualMessage(params);
 
-  const { ws, cleanup } = await createTunneledWs(containerUrl);
+  const { ws, cleanup } = await createContainerWs(containerUrl);
 
   try {
     await performHandshake(ws, token);
@@ -685,15 +782,15 @@ export async function chatSend(params: ChatSendParams): Promise<ChatSendResult> 
 
 /**
  * Send a chat message and stream responses via SSE.
- * Opens SSH tunnel → WS → handshake → chat.send → stream events.
+ * Opens container WS transport → handshake → chat.send → stream events.
  */
 export async function chatSendStream(params: ChatSendParams): Promise<ReadableStream> {
   const { containerUrl, token, sessionKey } = params;
   const contextualMessage = buildContextualMessage(params);
   const encoder = new TextEncoder();
 
-  // Create tunnel and perform handshake before returning the stream
-  const { ws, cleanup } = await createTunneledWs(containerUrl);
+  // Create WS transport and perform handshake before returning the stream
+  const { ws, cleanup } = await createContainerWs(containerUrl);
   await performHandshake(ws, token);
 
   const reqId = nextReqId();

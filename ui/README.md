@@ -189,6 +189,9 @@ npm run build
 | `SUPERMEMORY_API_KEY` | Yes | Supermemory API key |
 | `PERPLEXITY_API_KEY` | Yes | Perplexity API key |
 | `TELEGRAM_BOT_TOKEN` | No | Telegram notifications |
+| `DROPLET_IP` | Required for SSH transport | Provisioner droplet public IP |
+| `PROVISIONER_SSH_KEY` | Required for SSH transport | Ed25519 private key used for SSH tunneling |
+| `OPENCLAW_CONTAINER_TRANSPORT` | No (`auto`) | `auto`, `ssh`, or `direct` for container chat transport |
 
 ### Supabase Auth URL Configuration (production)
 
@@ -201,6 +204,8 @@ Set these in Supabase **Auth → URL Configuration**:
   - `https://*-<your-vercel-team-slug>.vercel.app/api/auth/callback**`
 
 Set `NEXT_PUBLIC_APP_URL=https://blitzscaleos.com` in Vercel so signup and reset-password emails always use your main domain.
+
+When deploying on Vercel, ensure required variables are added for every active environment (Production, Preview, and Development). If you run containers behind SSH tunnel, include both `DROPLET_IP` and `PROVISIONER_SSH_KEY`; if containers are publicly reachable, set `OPENCLAW_CONTAINER_TRANSPORT=direct`.
 
 For branded sender emails (for example `no-reply@blitzscaleos.com`), configure custom SMTP in Supabase **Auth → SMTP Settings**.
 
