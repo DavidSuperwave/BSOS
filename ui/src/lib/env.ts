@@ -15,6 +15,7 @@ export const envConfig = {
   },
   openclaw: {
     url: () => env("OPENCLAW_URL") || "http://localhost:18789",
+    hookToken: () => env("OPENCLAW_HOOK_TOKEN") || env("OPENCLAW_GATEWAY_TOKEN"),
   },
   plusvibe: {
     apiKey: () => env("PLUSVIBE_API_KEY"),
@@ -39,7 +40,7 @@ export const envConfig = {
   provisioner: {
     dropletIp: () => env("DROPLET_IP"),
     sshKey: () => env("PROVISIONER_SSH_KEY"),
-    ghcrImage: () => env("GHCR_IMAGE") || "ghcr.io/openclaw/openclaw:latest",
+    ghcrImage: () => env("GHCR_IMAGE") || "ghcr.io/openclaw/openclaw:2026.3.2",
     portRangeStart: () => parseInt(env("PORT_RANGE_START") || "18790", 10),
     portRangeEnd: () => parseInt(env("PORT_RANGE_END") || "18850", 10),
   },

@@ -191,7 +191,7 @@ async function createCompanyAgent({
     await createAgent({
       name: agentId,
       workspace: workspacePath,
-      model: "kimi-coding/k2p5",
+      model: "openrouter/moonshotai/kimi-k2.5",
       emoji: getAgentEmoji(agentType)
     });
   } catch (err: any) {
@@ -233,7 +233,7 @@ async function createCompanyAgent({
       agent_id: agentId,
       agent_type: agentType,
       agent_name: `${company.name} ${capitalize(agentType)} Agent`,
-      model: "kimi-coding/k2p5",
+      model: "openrouter/moonshotai/kimi-k2.5",
       workspace_path: workspacePath,
       available_tools: availableTools,
       allowed_contexts: allowedContexts,

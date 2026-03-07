@@ -83,6 +83,9 @@ function generateDockerCompose(
 
   const envVars = [
     `OPENCLAW_GATEWAY_TOKEN=${company.id}`,
+    `OPENCLAW_HOOK_TOKEN=${company.id}-hooks`,
+    `OPENCLAW_CONFIG_PATH=/app/openclaw.json`,
+    `OPENCLAW_STATE_DIR=/data`,
     openrouterKey ? `OPENROUTER_API_KEY=${openrouterKey}` : null,
     anthropicKey ? `ANTHROPIC_API_KEY=${anthropicKey}` : null,
     anthropicBaseUrl ? `ANTHROPIC_BASE_URL=${anthropicBaseUrl}` : null,
@@ -165,69 +168,61 @@ WantedBy=multi-user.target
 function generateOpenclawJson(): string {
   return JSON.stringify(
     {
+      gateway: {
+        mode: "local",
+        port: 18789,
+        bind: "loopback",
+        auth: {
+          mode: "token",
+          token: "${OPENCLAW_GATEWAY_TOKEN}",
+        },
+        http: {
+          endpoints: {
+            chatCompletions: {
+              enabled: true,
+            },
+          },
+        },
+        controlUi: {
+          enabled: false,
+        },
+      },
+      hooks: {
+        enabled: true,
+        token: "${OPENCLAW_HOOK_TOKEN}",
+        path: "/hooks",
+      },
       models: {
         providers: {
           openrouter: {
             baseUrl: "https://openrouter.ai/api/v1",
+            apiKey: "${OPENROUTER_API_KEY}",
             models: [],
           },
-        },
-      },
-      auth: {
-        profiles: {
-          "openrouter:default": {
-            provider: "openrouter",
-            mode: "api_key",
-          },
-          "anthropic:default": {
-            provider: "anthropic",
-            mode: "api_key",
+          anthropic: {
+            baseUrl: "${ANTHROPIC_BASE_URL}",
+            apiKey: "${ANTHROPIC_API_KEY}",
+            models: [],
           },
         },
       },
       agents: {
         defaults: {
+          workspace: "/data/agents/main",
           model: {
-            primary: "openrouter/kimi-coding/k2p5",
-            fallbacks: ["anthropic/claude-opus-4-5"]
-          }
-        }
-      }
-    },
-    null,
-    2
-  );
-}
-
-/**
- * Generate auth-profiles.json — OpenRouter API key for the "openrouter:default" profile.
- * Written via docker exec AFTER container starts (ephemeral path inside container).
- */
-function generateAuthProfiles(): string {
-  const openrouterKey = envConfig.openrouter.apiKey() || "";
-  const directAnthropicKey = envConfig.anthropic.apiKey() || "";
-  const anthropicBaseUrl = envConfig.anthropic.baseUrl() || "";
-
-  const profiles: Record<string, Record<string, string>> = {};
-
-  if (openrouterKey) {
-    profiles["openrouter:default"] = { apiKey: openrouterKey };
-  }
-
-  if (directAnthropicKey) {
-    profiles["anthropic:default"] = anthropicBaseUrl
-      ? { apiKey: directAnthropicKey, baseUrl: anthropicBaseUrl }
-      : { apiKey: directAnthropicKey };
-  } else if (openrouterKey) {
-    profiles["anthropic:default"] = {
-      apiKey: openrouterKey,
-      baseUrl: "https://openrouter.ai/api/v1",
-    };
-  }
-
-  return JSON.stringify(
-    {
-      profiles,
+            primary: "openrouter/moonshotai/kimi-k2.5",
+            fallbacks: ["openrouter/anthropic/claude-opus-4-5"],
+          },
+        },
+        list: [
+          {
+            id: "main",
+            default: true,
+            workspace: "/data/agents/main",
+            skills: ["/app/blitzscale-skills/gtm-engine"],
+          },
+        ],
+      },
     },
     null,
     2
@@ -318,14 +313,12 @@ export async function POST(
     const dockerCompose = generateDockerCompose(company, port, image);
     const agentsMd = generateAgentsMd(company);
     const openclawJson = generateOpenclawJson();
-    const authProfiles = generateAuthProfiles();
     const socatService = generateSocatService(containerName, port);
 
     // Base64-encode files to avoid heredoc shell escaping issues
     const dcB64 = Buffer.from(dockerCompose).toString("base64");
     const agentsB64 = Buffer.from(agentsMd).toString("base64");
     const openclawB64 = Buffer.from(openclawJson).toString("base64");
-    const authProfilesB64 = Buffer.from(authProfiles).toString("base64");
     const socatB64 = Buffer.from(socatService).toString("base64");
     const socatSvcName = `socat-${containerName}`;
 
@@ -356,16 +349,6 @@ export async function POST(
       `docker compose up -d`,
     ]);
 
-    // Write auth-profiles.json inside the running container via docker exec.
-    // This file lives at /home/node/.openclaw/auth-profiles.json
-    // It must be written post-start since the container creates the node user.
-    await new Promise((r) => setTimeout(r, 3000)); // Wait for container to initialize
-    await sshExec([
-      `docker exec ${containerName} sh -c "mkdir -p /home/node/.openclaw"`,
-      `docker exec ${containerName} sh -c "echo '${authProfilesB64}' | base64 -d > /home/node/.openclaw/auth-profiles.json"`,
-      `docker exec ${containerName} sh -c "chmod 600 /home/node/.openclaw/auth-profiles.json"`,
-    ]);
-
     // Set up socat relay as a systemd service
     // This bridges host 0.0.0.0:PORT \u2192 container's 127.0.0.1:18789
     // using nsenter to enter the container's network namespace
@@ -377,16 +360,16 @@ export async function POST(
     ]);
 
     // Health check loop (5 retries, 5s delay)
-    // Check via SSH if container is running
+    // Verify the gateway serves healthz from inside the container.
     let healthy = false;
     for (let i = 0; i < 5; i++) {
       await new Promise((r) => setTimeout(r, 5000));
 
       try {
         const result = await sshExec([
-          `docker inspect --format='{{.State.Running}}' ${containerName}`,
+          `docker exec ${containerName} node -e "fetch('http://127.0.0.1:18789/healthz').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"`,
         ]);
-        if (result.stdout.trim() === "true") {
+        if (result.code === 0) {
           healthy = true;
           break;
         }
