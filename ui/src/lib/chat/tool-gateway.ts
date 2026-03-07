@@ -35,9 +35,22 @@ const TOOL_POLICIES: Record<AgentType, string[]> = {
     "create_knowledge_doc",
     "update_knowledge_doc",
     "delete_knowledge_doc",
+    "list_reports",
+    "create_report",
+    "create_markdown_document",
+    "create_report_automation",
+    "list_report_automations",
     "research_topic",
   ],
-  campaigns: ["list_campaigns", "get_campaign_details", "research_topic"],
+  campaigns: [
+    "list_campaigns",
+    "get_campaign_details",
+    "list_reports",
+    "create_report",
+    "create_report_automation",
+    "list_report_automations",
+    "research_topic",
+  ],
   crm: ["research_topic", "list_knowledge_docs", "get_knowledge_doc"],
   inbox: ["search_documents", "get_document", "research_topic"],
   research: [
@@ -47,6 +60,7 @@ const TOOL_POLICIES: Record<AgentType, string[]> = {
     "list_tags",
     "list_knowledge_docs",
     "get_knowledge_doc",
+    "list_reports",
   ],
   knowledge: [
     "create_document",
@@ -60,6 +74,10 @@ const TOOL_POLICIES: Record<AgentType, string[]> = {
     "create_knowledge_doc",
     "update_knowledge_doc",
     "delete_knowledge_doc",
+    "list_reports",
+    "create_report",
+    "create_markdown_document",
+    "list_report_automations",
   ],
 };
 

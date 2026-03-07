@@ -13,7 +13,7 @@ import {
   companyContainerTag,
 } from "@/lib/supermemory-client";
 import { parseAgentDirectives, getDirectivePromptInstructions } from "@/lib/chat/agent-protocol";
-import { executeGatewayTool, type AgentType } from "@/lib/chat/tool-gateway";
+import { executeGatewayTool, getAllowedTools, type AgentType } from "@/lib/chat/tool-gateway";
 import { createTask, updateTask, appendTaskStep } from "@/lib/chat/task-runner";
 import { getChatFeatureFlags } from "@/lib/chat/feature-flags";
 import { getPresetFlowContract, getPresetFlowPromptInstructions } from "@/lib/chat/preset-flows";
@@ -429,6 +429,13 @@ async function buildSystemPrompt({
 
   let prompt = await buildAgentSystemPrompt({ agent, session, componentContext, company });
   const sessionType = String(session?.session_type || "main").toLowerCase();
+  const allowedActionTools = getAllowedTools(sessionType as AgentType);
+
+  if (allowedActionTools.length > 0) {
+    prompt += `\n\n## AVAILABLE ACTION TOOLS\n${allowedActionTools
+      .map((toolName) => `- ${toolName}`)
+      .join("\n")}`;
+  }
 
   // Ensure main chat agents always see actionable knowledge tool definitions.
   if (sessionType === "main" || sessionType === "knowledge") {
