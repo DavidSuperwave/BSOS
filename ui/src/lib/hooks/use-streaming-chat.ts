@@ -34,6 +34,7 @@ interface ChatMessageRow {
 }
 
 interface ToolCallView {
+  toolCallId?: string;
   name: string;
   action: string;
   status: "pending" | "running" | "complete" | "error";
@@ -74,6 +75,11 @@ function normalizeToolStatus(value: unknown): ToolCallView["status"] {
 function normalizeToolCalls(input: unknown): ToolCallView[] {
   const tools = Array.isArray(input) ? input : input ? [input] : [];
   return tools.map((tool: any, index) => ({
+    toolCallId:
+      tool?.toolCallId ||
+      tool?.tool_call_id ||
+      tool?.id ||
+      undefined,
     name:
       tool?.name ||
       tool?.tool ||
@@ -93,6 +99,33 @@ function normalizeToolCalls(input: unknown): ToolCallView[] {
             ? String(tool.error)
             : undefined,
   }));
+}
+
+function toTextPayload(value: unknown): string | undefined {
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return undefined;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function upsertToolCall(list: ToolCallView[], next: ToolCallView): ToolCallView[] {
+  const byIdIndex =
+    next.toolCallId
+      ? list.findIndex((item) => item.toolCallId && item.toolCallId === next.toolCallId)
+      : -1;
+  if (byIdIndex >= 0) {
+    const updated = [...list];
+    updated[byIdIndex] = {
+      ...updated[byIdIndex],
+      ...next,
+      result: next.result ?? updated[byIdIndex].result,
+    };
+    return updated;
+  }
+  return [...list, next];
 }
 
 export function useStreamingChat({
@@ -208,8 +241,12 @@ export function useStreamingChat({
           try {
             const parsed = JSON.parse(data);
 
-            if (parsed.type === "content" && parsed.delta) {
-              fullContent += parsed.delta;
+            const contentDelta =
+              parsed.type === "content" || parsed.type === "text-delta"
+                ? parsed.delta
+                : undefined;
+            if (typeof contentDelta === "string" && contentDelta.length > 0) {
+              fullContent += contentDelta;
               setMessages(prev =>
                 prev.map(m =>
                   m.id === assistantMessage.id
@@ -220,7 +257,10 @@ export function useStreamingChat({
             }
 
             if (parsed.type === "tool" && parsed.tool) {
-              toolCalls = [...toolCalls, ...normalizeToolCalls(parsed.tool)];
+              const nextCalls = normalizeToolCalls(parsed.tool);
+              for (const call of nextCalls) {
+                toolCalls = upsertToolCall(toolCalls, call);
+              }
               setMessages(prev =>
                 prev.map(m =>
                   m.id === assistantMessage.id
@@ -230,22 +270,63 @@ export function useStreamingChat({
               );
             }
 
-            if (parsed.type === "tool.succeeded" || parsed.type === "tool.failed") {
-              const status = parsed.type === "tool.succeeded" ? "complete" : "error";
-              toolCalls = [
-                ...toolCalls,
-                {
-                  name: parsed.tool || "Tool",
-                  action: status === "complete" ? "Executed" : "Failed",
-                  status,
-                  result:
-                    typeof parsed.data === "string"
-                      ? parsed.data
-                      : parsed.error
-                        ? String(parsed.error)
-                        : JSON.stringify(parsed.data || {}),
-                },
-              ];
+            if (
+              parsed.type === "tool-input-start" ||
+              parsed.type === "tool.started" ||
+              parsed.type === "tool-input-available"
+            ) {
+              toolCalls = upsertToolCall(toolCalls, {
+                toolCallId: parsed.toolCallId || parsed.tool_call_id || parsed.id || undefined,
+                name: parsed.toolName || parsed.tool || "Tool",
+                action: "Running",
+                status: "running",
+              });
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantMessage.id
+                    ? { ...m, toolCalls }
+                    : m
+                )
+              );
+            }
+
+            if (
+              parsed.type === "tool-output-available" ||
+              parsed.type === "tool.succeeded"
+            ) {
+              toolCalls = upsertToolCall(toolCalls, {
+                toolCallId: parsed.toolCallId || parsed.tool_call_id || parsed.id || undefined,
+                name: parsed.toolName || parsed.tool || "Tool",
+                action: "Executed",
+                status: "complete",
+                result:
+                  toTextPayload(parsed.output) ||
+                  toTextPayload(parsed.data) ||
+                  toTextPayload(parsed.result),
+              });
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantMessage.id
+                    ? { ...m, toolCalls }
+                    : m
+                )
+              );
+            }
+
+            if (
+              parsed.type === "tool-output-error" ||
+              parsed.type === "tool.failed"
+            ) {
+              toolCalls = upsertToolCall(toolCalls, {
+                toolCallId: parsed.toolCallId || parsed.tool_call_id || parsed.id || undefined,
+                name: parsed.toolName || parsed.tool || "Tool",
+                action: "Failed",
+                status: "error",
+                result:
+                  toTextPayload(parsed.errorText) ||
+                  toTextPayload(parsed.error) ||
+                  toTextPayload(parsed.data),
+              });
               setMessages(prev =>
                 prev.map(m =>
                   m.id === assistantMessage.id
@@ -432,6 +513,13 @@ export function useStreamingChat({
                     ? Date.now() - reasoningStartAt
                     : undefined;
               reasoningDuration = streamDuration;
+              setMessages(prev =>
+                prev.map(m =>
+                  m.id === assistantMessage.id
+                    ? { ...m, reasoning, reasoningDuration }
+                    : m
+                )
+              );
             }
 
             if (parsed.type === "content_parts" && Array.isArray(parsed.parts)) {
