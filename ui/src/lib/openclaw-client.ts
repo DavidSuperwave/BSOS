@@ -815,13 +815,31 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
       let lastReasoningText = "";
       let sawChatEvent = false;
       let reasoningOpen = false;
+      let contentSource: "chat" | "agent" | null = null;
+
+      const shouldEmitContentFrom = (source: "chat" | "agent") => {
+        // If chat events are present, do not also append assistant deltas from agent events.
+        if (
+          source === "agent" &&
+          contentSource === null &&
+          sawChatEvent
+        ) {
+          return false;
+        }
+        if (!contentSource) {
+          contentSource = source;
+          return true;
+        }
+        return contentSource === source;
+      };
 
       const emitEvent = (event: Record<string, any>) => {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
 
-      const emitContentDelta = (delta: string) => {
+      const emitContentDelta = (delta: string, source: "chat" | "agent") => {
         if (!delta) return;
+        if (!shouldEmitContentFrom(source)) return;
         fullContent += delta;
         emitEvent({ type: "content", delta });
       };
@@ -904,7 +922,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
             }
 
             if (p?.type === "text-delta" && typeof p?.delta === "string") {
-              emitContentDelta(p.delta);
+              emitContentDelta(p.delta, "chat");
             }
 
             if (p?.type === "tool-input-start") {
@@ -946,7 +964,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
             // Keep content emission mutually exclusive so one payload cannot append twice.
             // Order preserved for compatibility: legacy type delta -> state delta -> state final.
             if (p?.type === "delta" && p?.delta) {
-              emitContentDelta(p.delta);
+              emitContentDelta(p.delta, "chat");
               lastChatText = fullContent;
             } else if (p?.state === "delta") {
               // Newer OpenClaw payload shape:
@@ -959,7 +977,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
                 delta = chunkText.slice(lastChatText.length);
               }
               if (delta) {
-                emitContentDelta(delta);
+                emitContentDelta(delta, "chat");
               }
               if (chunkText) lastChatText = chunkText;
             } else if (p?.state === "final") {
@@ -972,7 +990,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
                   delta = finalText.slice(lastChatText.length);
                 }
                 if (delta) {
-                  emitContentDelta(delta);
+                  emitContentDelta(delta, "chat");
                 }
                 lastChatText = finalText;
               }
@@ -1007,7 +1025,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
               }
 
               if (delta) {
-                emitContentDelta(delta);
+                emitContentDelta(delta, "agent");
               }
 
               if (textFromPayload) {
@@ -1120,7 +1138,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
             }
 
             if (content && !fullContent) {
-              emitContentDelta(content);
+              emitContentDelta(content, "chat");
             }
             emitDone(p?.sessionId || p?.sessionKey || null);
           }
