@@ -67,6 +67,26 @@ function hasCompletePrivateKey(value: string): boolean {
   );
 }
 
+function decodeSshKeyFromBase64(rawValue: string): string | null {
+  let value = String(rawValue || "").trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+  value = value.replace(/^base64:/i, "").replace(/\s+/g, "");
+  if (!value) return null;
+
+  try {
+    const decoded = Buffer.from(value, "base64").toString("utf8");
+    const normalized = normalizeSshPrivateKey(decoded);
+    return hasCompletePrivateKey(normalized) ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
 function readMultilineEnvValue(
   dotenvPath: string,
   key: string
@@ -105,6 +125,14 @@ function resolveProvisionerSshKey(): string | null {
     return cachedProvisionerSshKey;
   }
 
+  const fromEnvB64 = decodeSshKeyFromBase64(
+    envConfig.provisioner.sshKeyB64() || ""
+  );
+  if (fromEnvB64) {
+    cachedProvisionerSshKey = fromEnvB64;
+    return cachedProvisionerSshKey;
+  }
+
   const fromEnv = normalizeSshPrivateKey(envConfig.provisioner.sshKey() || "");
   if (hasCompletePrivateKey(fromEnv)) {
     cachedProvisionerSshKey = fromEnv;
@@ -114,6 +142,14 @@ function resolveProvisionerSshKey(): string | null {
   // Next.js dotenv parsing truncates multiline quoted values in some local setups.
   // Fall back to parsing `.env.local` manually so local SSH tunnel auth remains reliable.
   const dotenvPath = path.join(process.cwd(), ".env.local");
+  const fromDotenvB64 = decodeSshKeyFromBase64(
+    readMultilineEnvValue(dotenvPath, "PROVISIONER_SSH_KEY_B64") || ""
+  );
+  if (fromDotenvB64) {
+    cachedProvisionerSshKey = fromDotenvB64;
+    return cachedProvisionerSshKey;
+  }
+
   const fallback = normalizeSshPrivateKey(
     readMultilineEnvValue(dotenvPath, "PROVISIONER_SSH_KEY") || ""
   );
