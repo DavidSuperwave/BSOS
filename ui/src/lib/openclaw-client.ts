@@ -1,5 +1,7 @@
 import { envConfig } from "./env";
 import crypto from "crypto";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 
 const GATEWAY_TOKEN = () => process.env.OPENCLAW_GATEWAY_TOKEN || "";
 const PROTOCOL_VERSION = 3;
@@ -16,6 +18,143 @@ const OPERATOR_SCOPES = ["operator.admin"];
 
 function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function normalizeSshPrivateKey(rawKey: string): string {
+  let key = String(rawKey || "").trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1);
+  }
+
+  key = key
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+
+  const beginMatch = key.match(/-----BEGIN [A-Z ]+PRIVATE KEY-----/);
+  const endMatch = key.match(/-----END [A-Z ]+PRIVATE KEY-----/);
+  if (!beginMatch || !endMatch) {
+    return key;
+  }
+
+  const begin = beginMatch[0];
+  const end = endMatch[0];
+  const bodyStart = key.indexOf(begin) + begin.length;
+  const bodyEnd = key.lastIndexOf(end);
+  if (bodyStart < begin.length || bodyEnd <= bodyStart) {
+    return key;
+  }
+
+  const body = key
+    .slice(bodyStart, bodyEnd)
+    .split("\n")
+    .map((line) => line.trim().replace(/\s+/g, ""))
+    .filter(Boolean)
+    .join("\n");
+
+  return `${begin}\n${body}\n${end}`;
+}
+
+function hasCompletePrivateKey(value: string): boolean {
+  return (
+    value.includes("-----BEGIN") &&
+    value.includes("PRIVATE KEY-----") &&
+    value.includes("-----END") &&
+    value.length > 200
+  );
+}
+
+function decodeSshKeyFromBase64(rawValue: string): string | null {
+  let value = String(rawValue || "").trim();
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    value = value.slice(1, -1);
+  }
+  value = value.replace(/^base64:/i, "").replace(/\s+/g, "");
+  if (!value) return null;
+
+  try {
+    const decoded = Buffer.from(value, "base64").toString("utf8");
+    const normalized = normalizeSshPrivateKey(decoded);
+    return hasCompletePrivateKey(normalized) ? normalized : null;
+  } catch {
+    return null;
+  }
+}
+
+function readMultilineEnvValue(
+  dotenvPath: string,
+  key: string
+): string | null {
+  if (!existsSync(dotenvPath)) return null;
+  const content = readFileSync(dotenvPath, "utf8");
+  const marker = `${key}=`;
+  const startIndex = content.indexOf(marker);
+  if (startIndex < 0) return null;
+
+  let cursor = startIndex + marker.length;
+  const quote = content[cursor];
+  if (quote !== '"' && quote !== "'") {
+    const lineEnd = content.indexOf("\n", cursor);
+    return content
+      .slice(cursor, lineEnd === -1 ? content.length : lineEnd)
+      .trim();
+  }
+
+  cursor += 1;
+  let value = "";
+  while (cursor < content.length) {
+    const char = content[cursor];
+    if (char === quote) return value;
+    value += char;
+    cursor += 1;
+  }
+
+  return value || null;
+}
+
+let cachedProvisionerSshKey: string | null | undefined;
+
+function resolveProvisionerSshKey(): string | null {
+  if (cachedProvisionerSshKey !== undefined) {
+    return cachedProvisionerSshKey;
+  }
+
+  const fromEnvB64 = decodeSshKeyFromBase64(
+    envConfig.provisioner.sshKeyB64() || ""
+  );
+  if (fromEnvB64) {
+    cachedProvisionerSshKey = fromEnvB64;
+    return cachedProvisionerSshKey;
+  }
+
+  const fromEnv = normalizeSshPrivateKey(envConfig.provisioner.sshKey() || "");
+  if (hasCompletePrivateKey(fromEnv)) {
+    cachedProvisionerSshKey = fromEnv;
+    return cachedProvisionerSshKey;
+  }
+
+  // Next.js dotenv parsing truncates multiline quoted values in some local setups.
+  // Fall back to parsing `.env.local` manually so local SSH tunnel auth remains reliable.
+  const dotenvPath = path.join(process.cwd(), ".env.local");
+  const fromDotenvB64 = decodeSshKeyFromBase64(
+    readMultilineEnvValue(dotenvPath, "PROVISIONER_SSH_KEY_B64") || ""
+  );
+  if (fromDotenvB64) {
+    cachedProvisionerSshKey = fromDotenvB64;
+    return cachedProvisionerSshKey;
+  }
+
+  const fallback = normalizeSshPrivateKey(
+    readMultilineEnvValue(dotenvPath, "PROVISIONER_SSH_KEY") || ""
+  );
+  cachedProvisionerSshKey = hasCompletePrivateKey(fallback) ? fallback : null;
+  return cachedProvisionerSshKey;
 }
 
 /**
@@ -476,9 +615,9 @@ async function createTunneledWs(
   if (!remotePort) throw new Error(`Invalid container URL: ${containerUrl}`);
 
   const dropletIp = envConfig.provisioner.dropletIp();
-  const sshKey = envConfig.provisioner.sshKey();
+  const sshKey = resolveProvisionerSshKey();
   if (!sshKey) throw new Error("PROVISIONER_SSH_KEY not configured");
-  const cleanKey = sshKey.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const cleanKey = normalizeSshPrivateKey(sshKey);
 
   return new Promise((resolve, reject) => {
     const sshConn = new Client();
@@ -785,17 +924,59 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
       let fullContent = "";
       let lastChatText = "";
       let lastAgentText = "";
+      let lastReasoningText = "";
       let sawChatEvent = false;
+      let reasoningOpen = false;
+      let contentSource: "chat" | "agent" | null = null;
+
+      const shouldEmitContentFrom = (source: "chat" | "agent") => {
+        // If chat events are present, do not also append assistant deltas from agent events.
+        if (
+          source === "agent" &&
+          contentSource === null &&
+          sawChatEvent
+        ) {
+          return false;
+        }
+        if (!contentSource) {
+          contentSource = source;
+          return true;
+        }
+        return contentSource === source;
+      };
+
+      const emitEvent = (event: Record<string, any>) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      };
+
+      const emitContentDelta = (delta: string, source: "chat" | "agent") => {
+        if (!delta) return;
+        if (!shouldEmitContentFrom(source)) return;
+        fullContent += delta;
+        emitEvent({ type: "content", delta });
+      };
+
+      const emitReasoningStart = () => {
+        if (reasoningOpen) return;
+        reasoningOpen = true;
+        emitEvent({ type: "reasoning-start" });
+      };
+
+      const emitReasoningDelta = (delta: string) => {
+        if (!delta) return;
+        emitReasoningStart();
+        emitEvent({ type: "reasoning-delta", delta });
+      };
+
+      const emitReasoningEnd = () => {
+        if (!reasoningOpen) return;
+        reasoningOpen = false;
+        emitEvent({ type: "reasoning-end" });
+      };
 
       const timer = setTimeout(() => {
         if (!settled) {
-          settled = true;
-          cleanup();
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ type: "error", error: "Timeout" })}\n\n`)
-          );
-          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-          controller.close();
+          emitError("Timeout");
         }
       }, 120000);
 
@@ -809,9 +990,8 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
 
       const emitDone = (sessionId: string | null = null) => {
         if (settled) return;
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "done", sessionId })}\n\n`)
-        );
+        emitReasoningEnd();
+        emitEvent({ type: "done", sessionId });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         finish();
         controller.close();
@@ -819,9 +999,8 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
 
       const emitError = (error: string) => {
         if (settled) return;
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: "error", error })}\n\n`)
-        );
+        emitReasoningEnd();
+        emitEvent({ type: "error", error });
         controller.enqueue(encoder.encode("data: [DONE]\n\n"));
         finish();
         controller.close();
@@ -837,22 +1016,68 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
             sawChatEvent = true;
             const p = msg.payload;
 
+            if (p?.type === "reasoning-start") {
+              emitReasoningStart();
+            }
+            if (p?.type === "reasoning-delta" && typeof p?.delta === "string") {
+              emitReasoningDelta(p.delta);
+            }
+            if (p?.type === "reasoning-end") {
+              const tail =
+                typeof p?.delta === "string"
+                  ? p.delta
+                  : typeof p?.content === "string"
+                    ? p.content
+                    : "";
+              if (tail) emitReasoningDelta(tail);
+              emitReasoningEnd();
+            }
+
+            if (p?.type === "text-delta" && typeof p?.delta === "string") {
+              emitContentDelta(p.delta, "chat");
+            }
+
+            if (p?.type === "tool-input-start") {
+              emitEvent({
+                type: "tool-input-start",
+                toolCallId: p?.toolCallId || p?.tool_call_id || p?.id || undefined,
+                toolName: p?.toolName || p?.tool || p?.name || "Tool",
+              });
+            }
+            if (p?.type === "tool-input-available") {
+              emitEvent({
+                type: "tool-input-available",
+                toolCallId: p?.toolCallId || p?.tool_call_id || p?.id || undefined,
+                toolName: p?.toolName || p?.tool || p?.name || "Tool",
+                input: p?.input,
+              });
+            }
+            if (p?.type === "tool-output-available") {
+              emitEvent({
+                type: "tool-output-available",
+                toolCallId: p?.toolCallId || p?.tool_call_id || p?.id || undefined,
+                toolName: p?.toolName || p?.tool || p?.name || "Tool",
+                output: p?.output,
+              });
+            }
+            if (p?.type === "tool-output-error") {
+              emitEvent({
+                type: "tool-output-error",
+                toolCallId: p?.toolCallId || p?.tool_call_id || p?.id || undefined,
+                toolName: p?.toolName || p?.tool || p?.name || "Tool",
+                errorText: p?.errorText || p?.error || "Tool failed",
+              });
+            }
+
             if (p?.type === "tool_call" || p?.type === "tool") {
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ type: "tool", tool: [p] })}\n\n`)
-              );
+              emitEvent({ type: "tool", tool: [p] });
             }
 
             // Keep content emission mutually exclusive so one payload cannot append twice.
             // Order preserved for compatibility: legacy type delta -> state delta -> state final.
             if (p?.type === "delta" && p?.delta) {
-              fullContent += p.delta;
+              emitContentDelta(p.delta, "chat");
               lastChatText = fullContent;
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "content", delta: p.delta })}\n\n`
-                )
-              );
             } else if (p?.state === "delta") {
               // Newer OpenClaw payload shape:
               // { state: "delta" | "final" | "error", message: { content: [{ type: "text", text }] } }
@@ -864,10 +1089,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
                 delta = chunkText.slice(lastChatText.length);
               }
               if (delta) {
-                fullContent += delta;
-                controller.enqueue(
-                  encoder.encode(`data: ${JSON.stringify({ type: "content", delta })}\n\n`)
-                );
+                emitContentDelta(delta, "chat");
               }
               if (chunkText) lastChatText = chunkText;
             } else if (p?.state === "final") {
@@ -880,12 +1102,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
                   delta = finalText.slice(lastChatText.length);
                 }
                 if (delta) {
-                  fullContent += delta;
-                  controller.enqueue(
-                    encoder.encode(
-                      `data: ${JSON.stringify({ type: "content", delta })}\n\n`
-                    )
-                  );
+                  emitContentDelta(delta, "chat");
                 }
                 lastChatText = finalText;
               }
@@ -920,16 +1137,86 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
               }
 
               if (delta) {
-                fullContent += delta;
-                controller.enqueue(
-                  encoder.encode(
-                    `data: ${JSON.stringify({ type: "content", delta })}\n\n`
-                  )
-                );
+                emitContentDelta(delta, "agent");
               }
 
               if (textFromPayload) {
                 lastAgentText = textFromPayload;
+              }
+            }
+
+            if (p?.stream === "thinking" || p?.stream === "reasoning") {
+              const phase = p?.data?.phase;
+              const deltaFromPayload =
+                typeof p?.data?.delta === "string" ? p.data.delta : "";
+              const textFromPayload =
+                typeof p?.data?.text === "string"
+                  ? p.data.text
+                  : typeof p?.data?.content === "string"
+                    ? p.data.content
+                    : "";
+              let delta = deltaFromPayload;
+
+              if (!delta && textFromPayload) {
+                delta =
+                  lastReasoningText && textFromPayload.startsWith(lastReasoningText)
+                    ? textFromPayload.slice(lastReasoningText.length)
+                    : textFromPayload;
+              }
+              if (delta) {
+                emitReasoningDelta(delta);
+              }
+              if (textFromPayload) {
+                lastReasoningText = textFromPayload;
+              }
+              if (phase === "end" || phase === "final") {
+                emitReasoningEnd();
+              }
+            }
+
+            if (p?.stream === "tool") {
+              const phase = p?.data?.phase;
+              const toolCallId =
+                p?.data?.toolCallId || p?.data?.tool_call_id || p?.data?.id || undefined;
+              const toolName = p?.data?.name || p?.data?.tool || "Tool";
+              if (phase === "start") {
+                emitEvent({
+                  type: "tool-input-start",
+                  toolCallId,
+                  toolName,
+                });
+              } else if (phase === "update") {
+                emitEvent({
+                  type: "tool-input-available",
+                  toolCallId,
+                  toolName,
+                  input: p?.data?.args || p?.data?.input || {},
+                });
+                emitEvent({
+                  type: "tool.started",
+                  toolCallId,
+                  tool: toolName,
+                });
+              } else if (phase === "result") {
+                const isError = Boolean(p?.data?.isError);
+                if (isError) {
+                  emitEvent({
+                    type: "tool-output-error",
+                    toolCallId,
+                    toolName,
+                    errorText:
+                      p?.data?.error ||
+                      p?.data?.errorText ||
+                      "Tool execution failed",
+                  });
+                } else {
+                  emitEvent({
+                    type: "tool-output-available",
+                    toolCallId,
+                    toolName,
+                    output: p?.data?.result || p?.data?.output || {},
+                  });
+                }
               }
             }
 
@@ -963,12 +1250,7 @@ export async function chatSendStream(params: ChatSendParams): Promise<ReadableSt
             }
 
             if (content && !fullContent) {
-              fullContent += content;
-              controller.enqueue(
-                encoder.encode(
-                  `data: ${JSON.stringify({ type: "content", delta: content })}\n\n`
-                )
-              );
+              emitContentDelta(content, "chat");
             }
             emitDone(p?.sessionId || p?.sessionKey || null);
           }
