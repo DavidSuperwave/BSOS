@@ -1,5 +1,9 @@
 import { Client } from "ssh2";
-import { envConfig } from "@/lib/env";
+import {
+  normalizeSshPrivateKey,
+  resolveProvisionerDropletIp,
+  resolveProvisionerSshKey,
+} from "@/lib/provisioner-env";
 
 /**
  * Execute SSH command(s) on the provisioner droplet using the ssh2 library.
@@ -8,15 +12,17 @@ import { envConfig } from "@/lib/env";
 export async function sshExec(
   commands: string[]
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const dropletIp = envConfig.provisioner.dropletIp();
-  const sshKey = envConfig.provisioner.sshKey();
+  const dropletIp = resolveProvisionerDropletIp();
+  const sshKey = resolveProvisionerSshKey();
 
+  if (!dropletIp) {
+    throw new Error("DROPLET_IP not configured");
+  }
   if (!sshKey) {
     throw new Error("PROVISIONER_SSH_KEY not configured");
   }
 
-  // Ensure Unix line endings for the key
-  const cleanKey = sshKey.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const cleanKey = normalizeSshPrivateKey(sshKey);
   const combined = commands.join(" && ");
 
   return new Promise((resolve, reject) => {

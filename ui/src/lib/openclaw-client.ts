@@ -1,7 +1,10 @@
 import { envConfig } from "./env";
 import crypto from "crypto";
-import { existsSync, readFileSync } from "fs";
-import path from "path";
+import {
+  normalizeSshPrivateKey,
+  resolveProvisionerDropletIp,
+  resolveProvisionerSshKey,
+} from "./provisioner-env";
 
 const GATEWAY_TOKEN = () => process.env.OPENCLAW_GATEWAY_TOKEN || "";
 const PROTOCOL_VERSION = 3;
@@ -18,143 +21,6 @@ const OPERATOR_SCOPES = ["operator.admin"];
 
 function b64url(buf: Buffer): string {
   return buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function normalizeSshPrivateKey(rawKey: string): string {
-  let key = String(rawKey || "").trim();
-  if (
-    (key.startsWith('"') && key.endsWith('"')) ||
-    (key.startsWith("'") && key.endsWith("'"))
-  ) {
-    key = key.slice(1, -1);
-  }
-
-  key = key
-    .replace(/\\n/g, "\n")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
-
-  const beginMatch = key.match(/-----BEGIN [A-Z ]+PRIVATE KEY-----/);
-  const endMatch = key.match(/-----END [A-Z ]+PRIVATE KEY-----/);
-  if (!beginMatch || !endMatch) {
-    return key;
-  }
-
-  const begin = beginMatch[0];
-  const end = endMatch[0];
-  const bodyStart = key.indexOf(begin) + begin.length;
-  const bodyEnd = key.lastIndexOf(end);
-  if (bodyStart < begin.length || bodyEnd <= bodyStart) {
-    return key;
-  }
-
-  const body = key
-    .slice(bodyStart, bodyEnd)
-    .split("\n")
-    .map((line) => line.trim().replace(/\s+/g, ""))
-    .filter(Boolean)
-    .join("\n");
-
-  return `${begin}\n${body}\n${end}`;
-}
-
-function hasCompletePrivateKey(value: string): boolean {
-  return (
-    value.includes("-----BEGIN") &&
-    value.includes("PRIVATE KEY-----") &&
-    value.includes("-----END") &&
-    value.length > 200
-  );
-}
-
-function decodeSshKeyFromBase64(rawValue: string): string | null {
-  let value = String(rawValue || "").trim();
-  if (
-    (value.startsWith('"') && value.endsWith('"')) ||
-    (value.startsWith("'") && value.endsWith("'"))
-  ) {
-    value = value.slice(1, -1);
-  }
-  value = value.replace(/^base64:/i, "").replace(/\s+/g, "");
-  if (!value) return null;
-
-  try {
-    const decoded = Buffer.from(value, "base64").toString("utf8");
-    const normalized = normalizeSshPrivateKey(decoded);
-    return hasCompletePrivateKey(normalized) ? normalized : null;
-  } catch {
-    return null;
-  }
-}
-
-function readMultilineEnvValue(
-  dotenvPath: string,
-  key: string
-): string | null {
-  if (!existsSync(dotenvPath)) return null;
-  const content = readFileSync(dotenvPath, "utf8");
-  const marker = `${key}=`;
-  const startIndex = content.indexOf(marker);
-  if (startIndex < 0) return null;
-
-  let cursor = startIndex + marker.length;
-  const quote = content[cursor];
-  if (quote !== '"' && quote !== "'") {
-    const lineEnd = content.indexOf("\n", cursor);
-    return content
-      .slice(cursor, lineEnd === -1 ? content.length : lineEnd)
-      .trim();
-  }
-
-  cursor += 1;
-  let value = "";
-  while (cursor < content.length) {
-    const char = content[cursor];
-    if (char === quote) return value;
-    value += char;
-    cursor += 1;
-  }
-
-  return value || null;
-}
-
-let cachedProvisionerSshKey: string | null | undefined;
-
-function resolveProvisionerSshKey(): string | null {
-  if (cachedProvisionerSshKey !== undefined) {
-    return cachedProvisionerSshKey;
-  }
-
-  const fromEnvB64 = decodeSshKeyFromBase64(
-    envConfig.provisioner.sshKeyB64() || ""
-  );
-  if (fromEnvB64) {
-    cachedProvisionerSshKey = fromEnvB64;
-    return cachedProvisionerSshKey;
-  }
-
-  const fromEnv = normalizeSshPrivateKey(envConfig.provisioner.sshKey() || "");
-  if (hasCompletePrivateKey(fromEnv)) {
-    cachedProvisionerSshKey = fromEnv;
-    return cachedProvisionerSshKey;
-  }
-
-  // Next.js dotenv parsing truncates multiline quoted values in some local setups.
-  // Fall back to parsing `.env.local` manually so local SSH tunnel auth remains reliable.
-  const dotenvPath = path.join(process.cwd(), ".env.local");
-  const fromDotenvB64 = decodeSshKeyFromBase64(
-    readMultilineEnvValue(dotenvPath, "PROVISIONER_SSH_KEY_B64") || ""
-  );
-  if (fromDotenvB64) {
-    cachedProvisionerSshKey = fromDotenvB64;
-    return cachedProvisionerSshKey;
-  }
-
-  const fallback = normalizeSshPrivateKey(
-    readMultilineEnvValue(dotenvPath, "PROVISIONER_SSH_KEY") || ""
-  );
-  cachedProvisionerSshKey = hasCompletePrivateKey(fallback) ? fallback : null;
-  return cachedProvisionerSshKey;
 }
 
 /**
@@ -614,8 +480,9 @@ async function createTunneledWs(
   const remotePort = parseInt(urlObj.port, 10);
   if (!remotePort) throw new Error(`Invalid container URL: ${containerUrl}`);
 
-  const dropletIp = envConfig.provisioner.dropletIp();
+  const dropletIp = resolveProvisionerDropletIp();
   const sshKey = resolveProvisionerSshKey();
+  if (!dropletIp) throw new Error("DROPLET_IP not configured");
   if (!sshKey) throw new Error("PROVISIONER_SSH_KEY not configured");
   const cleanKey = normalizeSshPrivateKey(sshKey);
 
