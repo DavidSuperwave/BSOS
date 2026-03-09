@@ -14,6 +14,7 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   experimental: {
+    instrumentationHook: true,
     serverComponentsExternalPackages: ["ssh2", "ws"],
   },
   webpack: (config, { isServer }) => {
