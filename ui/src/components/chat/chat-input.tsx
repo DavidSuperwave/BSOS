@@ -6,11 +6,13 @@ import {
   Send,
   Loader2,
   Search,
+  Lightbulb,
   FileText,
   PenLine,
   FolderOpen,
   Globe,
   Tag,
+  Paperclip,
   Plus,
   SlidersHorizontal,
   ChevronDown,
@@ -112,7 +114,9 @@ interface ChatInputProps {
   ) => void;
   isProcessing: boolean;
   showSuggestions?: boolean;
-  variant?: "default" | "perplexity";
+  variant?: "default" | "modern";
+  compact?: boolean;
+  placeholder?: string;
   mentionChips?: string[];
   optionsLabel?: string;
   modeLabel?: "Chat" | "Research";
@@ -126,6 +130,8 @@ export function ChatInput({
   isProcessing,
   showSuggestions = true,
   variant = "default",
+  compact = false,
+  placeholder = "Ask anything. Type @ for mentions.",
   mentionChips = ["Mention 1", "Mention 2"],
   optionsLabel = "Options",
   modeLabel = "Chat",
@@ -262,7 +268,7 @@ export function ChatInput({
 
     let message = input.trim();
 
-    if (variant === "perplexity" && activeMode.toLowerCase() !== "chat") {
+    if (variant === "modern" && activeMode.toLowerCase() !== "chat") {
       message = `[${activeMode}] ${message}`;
     }
 
@@ -386,8 +392,74 @@ export function ChatInput({
     }
   };
 
-  const renderPerplexityInput = () => (
-    <div className="rounded-[2rem] border border-[#e3e5eb] bg-white p-4 shadow-[0_8px_30px_rgba(16,24,40,0.04)]">
+  const renderModernCompactInput = () => (
+    <div className="w-full rounded-[1.15rem] border border-[#e3e5eb] bg-white p-2.5 shadow-[0_8px_30px_rgba(16,24,40,0.04)]">
+      <textarea
+        ref={textareaRef}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={placeholder}
+        disabled={isProcessing}
+        rows={1}
+        className="max-h-24 min-h-[34px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-6 text-[#232a39] placeholder:text-[#737b8c] focus:outline-none disabled:opacity-50"
+      />
+      <div className="mt-1.5 flex items-center justify-between gap-3">
+        <div className="inline-flex items-center gap-1 rounded-full border border-[#dfe4ee] bg-[#fafbfe] p-1">
+          <button
+            type="button"
+            onClick={() => appendInput("@")}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#52607a] hover:bg-[#eef2fa]"
+            aria-label="Search mode"
+          >
+            <Search className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => appendInput("@web")}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#52607a] hover:bg-[#eef2fa]"
+            aria-label="Web mode"
+          >
+            <Globe className="h-3.5 w-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => appendInput("idea:")}
+            className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#52607a] hover:bg-[#eef2fa]"
+            aria-label="Thinking mode"
+          >
+            <Lightbulb className="h-3.5 w-3.5" />
+          </button>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => applyAddAction("attach")}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#52607a] hover:bg-[#eef2fa]"
+            aria-label="Attach files"
+          >
+            <Paperclip className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isProcessing || !input.trim()}
+            className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[#0e1320] text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-45"
+            aria-label="Send message"
+          >
+            {isProcessing ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Send className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderModernInput = () => (
+    <div className="w-full rounded-[2rem] border border-[#e3e5eb] bg-white p-4 shadow-[0_8px_30px_rgba(16,24,40,0.04)]">
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -435,7 +507,7 @@ export function ChatInput({
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Plan, search, or enrich your data..."
+        placeholder={placeholder}
         disabled={isProcessing}
         rows={2}
         className="min-h-[88px] w-full resize-none bg-transparent px-2 py-1 text-[15px] leading-7 text-[#232a39] placeholder:text-[#737b8c] focus:outline-none disabled:opacity-50"
@@ -690,8 +762,8 @@ export function ChatInput({
       )}
 
       {/* Input */}
-      {variant === "perplexity" ? (
-        renderPerplexityInput()
+      {variant === "modern" ? (
+        compact ? renderModernCompactInput() : renderModernInput()
       ) : (
         <div className="flex gap-2 items-end">
           <textarea

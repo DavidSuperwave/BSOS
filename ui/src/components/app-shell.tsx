@@ -166,21 +166,6 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      {/* Status */}
-      <div className="p-4">
-        <div className="rounded-xl border border-border bg-muted/50 p-4">
-          <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-primary pulse-live" />
-            <span className="text-sm font-medium text-foreground">
-              System Active
-            </span>
-          </div>
-          <p className="mt-1 text-xs text-muted-foreground">
-            OpenClaw + PlusVibe
-          </p>
-        </div>
-      </div>
-
       <Separator className="bg-border" />
 
       {/* User */}

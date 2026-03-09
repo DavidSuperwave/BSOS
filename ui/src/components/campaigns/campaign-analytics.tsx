@@ -58,23 +58,23 @@ interface StatCardProps {
 
 function StatCard({ icon, label, value, subValue, subLabel, className }: StatCardProps) {
   return (
-    <Card className={cn("bg-slate-50/50 border-slate-100", className)}>
+    <Card className={cn("rounded-xl border-border/80 bg-card", className)}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-white rounded-lg shadow-sm text-slate-500">
+            <div className="rounded-lg bg-muted/60 p-1.5 text-muted-foreground">
               {icon}
             </div>
-            <span className="text-xs text-slate-500 font-medium">{label}</span>
-            <Info className="h-3 w-3 text-slate-300" />
+            <span className="text-xs font-medium text-muted-foreground">{label}</span>
+            <Info className="h-3 w-3 text-muted-foreground/50" />
           </div>
         </div>
         <div className="mt-3">
-          <span className="text-2xl font-semibold text-indigo-600">{value}</span>
+          <span className="text-2xl font-semibold text-foreground">{value}</span>
           {subValue !== undefined && (
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-lg font-medium text-slate-400">{subValue}</span>
-              {subLabel && <span className="text-xs text-slate-400">{subLabel}</span>}
+              <span className="text-lg font-medium text-muted-foreground">{subValue}</span>
+              {subLabel && <span className="text-xs text-muted-foreground">{subLabel}</span>}
             </div>
           )}
         </div>
@@ -85,15 +85,15 @@ function StatCard({ icon, label, value, subValue, subLabel, className }: StatCar
 
 function SmallStatCard({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
-    <Card className="bg-slate-50/50 border-slate-100">
+    <Card className="rounded-xl border-border/80 bg-card">
       <CardContent className="p-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="p-1 bg-white rounded-md shadow-sm text-slate-400">
+          <div className="rounded-md bg-muted/60 p-1 text-muted-foreground">
             {icon}
           </div>
-          <span className="text-xs text-slate-500">{label}</span>
+          <span className="text-xs text-muted-foreground">{label}</span>
         </div>
-        <span className="text-lg font-semibold text-slate-600">{value}</span>
+        <span className="text-lg font-semibold text-foreground">{value}</span>
       </CardContent>
     </Card>
   );
@@ -140,14 +140,14 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
       />
       
       {/* Side Panel */}
-      <div className="relative w-full max-w-4xl bg-white shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col">
+      <div className="relative w-full max-w-4xl bg-card shadow-2xl animate-in slide-in-from-right duration-300 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+        <div className="flex items-center justify-between border-b border-border px-6 py-4">
           <div className="flex items-center gap-3">
-            <button className="p-1 hover:bg-slate-100 rounded-full transition-colors">
-              <ChevronDown className="h-5 w-5 rotate-90 text-slate-400" />
+            <button className="p-1 hover:bg-muted rounded-full transition-colors">
+              <ChevronDown className="h-5 w-5 rotate-90 text-muted-foreground" />
             </button>
-            <h2 className="text-base font-medium text-slate-700">
+            <h2 className="text-base font-medium text-foreground">
               {campaign?.name || 'Campaign Analytics'}
             </h2>
           </div>
@@ -163,7 +163,7 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                 Edit Campaign
               </Button>
             )}
-            <Button variant="ghost" size="icon" onClick={onClose} className="text-slate-400">
+            <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground">
               <X className="h-5 w-5" />
             </Button>
           </div>
@@ -171,17 +171,17 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
 
         {/* Tabs */}
         <Tabs defaultValue="analytics" className="flex-1 flex flex-col overflow-hidden">
-          <div className="px-6 pt-4 border-b border-slate-100">
+          <div className="px-6 pt-4 border-b border-border">
             <TabsList className="bg-transparent p-0 h-auto gap-6">
               <TabsTrigger 
                 value="analytics" 
-                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-600 rounded-none px-0 pb-3 text-sm font-medium text-slate-500"
+                className="rounded-none px-0 pb-3 text-sm font-medium text-muted-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
               >
                 Analytics
               </TabsTrigger>
               <TabsTrigger 
                 value="steps"
-                className="data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-indigo-600 data-[state=active]:text-indigo-600 rounded-none px-0 pb-3 text-sm font-medium text-slate-500"
+                className="rounded-none px-0 pb-3 text-sm font-medium text-muted-foreground data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:text-primary data-[state=active]:shadow-none"
               >
                 Steps & variations
               </TabsTrigger>
@@ -197,14 +197,14 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
               <>
                 {/* Filters */}
                 <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white">
-                    <Calendar className="h-4 w-4 text-slate-400" />
-                    <span className="text-sm text-slate-600">{dateRange}</span>
-                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-foreground">{dateRange}</span>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <div className="flex items-center gap-2 px-3 py-2 border border-slate-200 rounded-lg bg-white">
-                    <span className="text-sm text-slate-600">{provider}</span>
-                    <ChevronDown className="h-4 w-4 text-slate-400" />
+                  <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2">
+                    <span className="text-sm text-foreground">{provider}</span>
+                    <ChevronDown className="h-4 w-4 text-muted-foreground" />
                   </div>
                 </div>
 
@@ -277,29 +277,29 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                 </div>
 
                 {/* Daily Email Sent Chart */}
-                <Card className="border-slate-100">
+                <Card className="rounded-2xl border-border/80 bg-card">
                   <CardContent className="p-6">
-                    <h3 className="text-sm font-medium text-slate-700 mb-6">Daily Email Sent</h3>
+                    <h3 className="mb-6 text-sm font-medium text-foreground">Daily Email Sent</h3>
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={dailyEmailData} barGap={8}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                           <XAxis 
                             dataKey="date" 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{ fill: '#64748b', fontSize: 12 }}
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                             dy={10}
                           />
                           <YAxis 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{ fill: '#64748b', fontSize: 12 }}
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                           />
                           <Tooltip 
                             contentStyle={{ 
-                              backgroundColor: 'white', 
-                              border: '1px solid #e2e8f0',
+                              backgroundColor: 'hsl(var(--card))', 
+                              border: '1px solid hsl(var(--border))',
                               borderRadius: '8px',
                               boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                             }}
@@ -313,14 +313,14 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                           <Bar 
                             dataKey="newLead" 
                             name="New Lead" 
-                            fill="#38bdf8" 
+                            fill="hsl(var(--primary))" 
                             radius={[4, 4, 0, 0]}
                             maxBarSize={40}
                           />
                           <Bar 
                             dataKey="followUp" 
                             name="Follow-up" 
-                            fill="#6366f1" 
+                            fill="#38bdf8" 
                             radius={[4, 4, 0, 0]}
                             maxBarSize={40}
                           />
@@ -331,17 +331,17 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                 </Card>
 
                 {/* Daily Metrics Chart */}
-                <Card className="border-slate-100">
+                <Card className="rounded-2xl border-border/80 bg-card">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between mb-6">
-                      <h3 className="text-sm font-medium text-slate-700">Daily Metrics</h3>
-                      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+                      <h3 className="text-sm font-medium text-foreground">Daily Metrics</h3>
+                      <div className="flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1">
                         <button 
                           className={cn(
                             "px-3 py-1 text-xs font-medium rounded-md transition-colors",
                             metricsView === "count" 
-                              ? "bg-white text-slate-700 shadow-sm" 
-                              : "text-slate-500 hover:text-slate-700"
+                              ? "bg-background text-foreground shadow-sm" 
+                              : "text-muted-foreground hover:text-foreground"
                           )}
                           onClick={() => setMetricsView("count")}
                         >
@@ -351,8 +351,8 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                           className={cn(
                             "px-3 py-1 text-xs font-medium rounded-md transition-colors",
                             metricsView === "percent" 
-                              ? "bg-white text-slate-700 shadow-sm" 
-                              : "text-slate-500 hover:text-slate-700"
+                              ? "bg-background text-foreground shadow-sm" 
+                              : "text-muted-foreground hover:text-foreground"
                           )}
                           onClick={() => setMetricsView("percent")}
                         >
@@ -363,23 +363,23 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                     <div className="h-64">
                       <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={dailyMetricsData}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
                           <XAxis 
                             dataKey="date" 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{ fill: '#64748b', fontSize: 12 }}
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                             dy={10}
                           />
                           <YAxis 
                             axisLine={false} 
                             tickLine={false} 
-                            tick={{ fill: '#64748b', fontSize: 12 }}
+                            tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }}
                           />
                           <Tooltip 
                             contentStyle={{ 
-                              backgroundColor: 'white', 
-                              border: '1px solid #e2e8f0',
+                              backgroundColor: 'hsl(var(--card))', 
+                              border: '1px solid hsl(var(--border))',
                               borderRadius: '8px',
                               boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                             }}
@@ -394,36 +394,36 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                             type="monotone" 
                             dataKey="replyWithOOO" 
                             name="Reply Count (with OOO)" 
-                            stroke="#8b5cf6" 
+                            stroke="hsl(var(--primary))" 
                             strokeWidth={2}
-                            dot={{ fill: '#8b5cf6', strokeWidth: 0, r: 4 }}
+                            dot={{ fill: 'hsl(var(--primary))', strokeWidth: 0, r: 4 }}
                             activeDot={{ r: 6 }}
                           />
                           <Line 
                             type="monotone" 
                             dataKey="reply" 
                             name="Reply Count" 
-                            stroke="#6366f1" 
+                            stroke="#38bdf8" 
                             strokeWidth={2}
-                            dot={{ fill: '#6366f1', strokeWidth: 0, r: 4 }}
+                            dot={{ fill: '#38bdf8', strokeWidth: 0, r: 4 }}
                             activeDot={{ r: 6 }}
                           />
                           <Line 
                             type="monotone" 
                             dataKey="positive" 
                             name="Positive Reply Count" 
-                            stroke="#ef4444" 
+                            stroke="#10b981" 
                             strokeWidth={2}
-                            dot={{ fill: '#ef4444', strokeWidth: 0, r: 4 }}
+                            dot={{ fill: '#10b981', strokeWidth: 0, r: 4 }}
                             activeDot={{ r: 6 }}
                           />
                           <Line 
                             type="monotone" 
                             dataKey="bounce" 
                             name="Bounce Count" 
-                            stroke="#eab308" 
+                            stroke="#ef4444" 
                             strokeWidth={2}
-                            dot={{ fill: '#eab308', strokeWidth: 0, r: 4 }}
+                            dot={{ fill: '#ef4444', strokeWidth: 0, r: 4 }}
                             activeDot={{ r: 6 }}
                           />
                         </LineChart>
@@ -438,12 +438,12 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
           <TabsContent value="steps" className="flex-1 overflow-y-auto p-6 mt-0">
             <div className="space-y-4">
               {sequenceStepData.map((step) => (
-                <Card key={step.id} className="border-slate-100">
+                <Card key={step.id} className="rounded-xl border-border/80 bg-card">
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-sm font-medium text-slate-700">{step.title}</p>
-                        <p className="text-xs text-slate-500 mt-1">
+                        <p className="text-sm font-medium text-foreground">{step.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
                           Sent {step.sent} • Replied {step.replied} • Positive {step.positive}
                         </p>
                       </div>
@@ -458,7 +458,7 @@ export function CampaignAnalytics({ campaignId, onClose, onEdit }: CampaignAnaly
                   </CardContent>
                 </Card>
               ))}
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-muted-foreground">
                 Variation-level analytics can be expanded as PlusVibe step data endpoints are wired.
               </p>
             </div>

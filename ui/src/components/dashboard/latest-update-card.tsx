@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Mail,
   CalendarCheck2,
@@ -35,6 +35,7 @@ import {
 
 type RangeValue = "today" | "yesterday" | "week";
 type SortValue = "date_desc" | "date_asc";
+const ITEMS_PER_PAGE = 4;
 
 function iconForActivity(type: DashboardActivity["event_type"]) {
   if (type === "email_reply") return <Mail className="h-4 w-4 text-primary" />;
@@ -71,6 +72,7 @@ export function LatestUpdateCard() {
   const [range, setRange] = useState<RangeValue>("today");
   const [sort, setSort] = useState<SortValue>("date_desc");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
   const [feedSettings, setFeedSettings] = useState<ActivityFeedSettings>(
     DEFAULT_ACTIVITY_FEED_SETTINGS
   );
@@ -104,6 +106,21 @@ export function LatestUpdateCard() {
 
   const shouldUseMock = feedSettings.useMockData || apiActivities.length === 0;
   const activities = shouldUseMock ? mockActivities : apiActivities;
+  const totalPages = Math.max(1, Math.ceil(activities.length / ITEMS_PER_PAGE));
+  const pageStart = (page - 1) * ITEMS_PER_PAGE;
+  const pageEnd = pageStart + ITEMS_PER_PAGE;
+  const paginatedMockActivities = mockActivities.slice(pageStart, pageEnd);
+  const paginatedApiActivities = apiActivities.slice(pageStart, pageEnd);
+
+  useEffect(() => {
+    setPage(1);
+  }, [range, sort, search, feedSettings]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   return (
     <Card className="h-full flex flex-col rounded-2xl border-border/80">
@@ -293,60 +310,86 @@ export function LatestUpdateCard() {
             No outbound activity yet for this range.
           </p>
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-1">
-            {shouldUseMock
-              ? mockActivities.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="flex items-start gap-2.5 rounded-xl border border-border/70 bg-background px-3 py-2.5 hover:bg-muted/30 transition-colors"
-                  >
-                    <div className="mt-0.5">{iconForMockActivity(activity.kind)}</div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <p className="truncate text-[12px] font-semibold text-foreground">
-                          {activity.title}
-                        </p>
-                        <Badge variant="outline" className="text-[10px] capitalize">
-                          {activity.source}
-                        </Badge>
-                      </div>
-                      <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
-                        {activity.description}
-                      </p>
-                      <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                        <Route className="h-3 w-3" />
-                        <span className="truncate">
-                          Route: {feedSettings.apiRoutes[activity.source]}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-[10px] text-muted-foreground">
-                      {formatTimestamp(activity.createdAt)}
-                    </div>
-                  </div>
-                ))
-              : apiActivities.map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="flex items-start gap-2.5 rounded-xl border border-border/70 bg-background px-3 py-2.5 hover:bg-muted/30 transition-colors"
-                  >
-                    <div className="mt-0.5">{iconForActivity(activity.event_type)}</div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[12px] font-semibold text-foreground">
-                        {activity.title}
-                      </p>
-                      {activity.description ? (
+          <>
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-1">
+              {shouldUseMock
+                ? paginatedMockActivities.map((activity) => (
+                    <div
+                      key={activity.id}
+                      className="flex items-start gap-2.5 rounded-xl border border-border/70 bg-background px-3 py-2.5 hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="mt-0.5">{iconForMockActivity(activity.kind)}</div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-[12px] font-semibold text-foreground">
+                            {activity.title}
+                          </p>
+                          <Badge variant="outline" className="text-[10px] capitalize">
+                            {activity.source}
+                          </Badge>
+                        </div>
                         <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
                           {activity.description}
                         </p>
-                      ) : null}
+                        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                          <Route className="h-3 w-3" />
+                          <span className="truncate">
+                            Route: {feedSettings.apiRoutes[activity.source]}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="shrink-0 text-[10px] text-muted-foreground">
+                        {formatTimestamp(activity.createdAt)}
+                      </div>
                     </div>
-                    <div className="shrink-0 text-[10px] text-muted-foreground">
-                      {formatTimestamp(activity.created_at)}
+                  ))
+                : paginatedApiActivities.map((activity) => (
+                    <div
+                      key={activity.id}
+                      className="flex items-start gap-2.5 rounded-xl border border-border/70 bg-background px-3 py-2.5 hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="mt-0.5">{iconForActivity(activity.event_type)}</div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[12px] font-semibold text-foreground">
+                          {activity.title}
+                        </p>
+                        {activity.description ? (
+                          <p className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+                            {activity.description}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 text-[10px] text-muted-foreground">
+                        {formatTimestamp(activity.created_at)}
+                      </div>
                     </div>
-                  </div>
-                ))}
-          </div>
+                  ))}
+            </div>
+
+            {totalPages > 1 ? (
+              <div className="flex items-center justify-between pt-3 px-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((prev) => prev - 1)}
+                >
+                  Previous
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((prev) => prev + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            ) : null}
+          </>
         )}
       </CardContent>
     </Card>

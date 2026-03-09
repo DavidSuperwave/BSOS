@@ -9,18 +9,18 @@ import { EventsCardEmbedded } from "@/components/dashboard/events-card";
 import { LatestUpdateCard } from "@/components/dashboard/latest-update-card";
 import { DailySendChart } from "@/components/dashboard/daily-send-chart";
 import { SLAMonitoringTable } from "@/components/dashboard/sla-monitoring-table";
-import { SkillsHealthPanel } from "@/components/skills/skills-health-panel";
 import { useDashboardMetrics } from "@/lib/hooks";
 import { useCompany } from "@/contexts/company-context";
 import { useAuth } from "@/contexts/auth-context";
 import {
+  Activity,
+  CalendarCheck,
   Mail,
-  Target,
   Plus,
-  MessageSquare,
   ThumbsUp,
 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 
 function DashboardStatsSkeleton() {
   return (
@@ -36,43 +36,48 @@ function DashboardStatsSkeleton() {
 }
 
 export default function Dashboard() {
+  const [range, setRange] = useState<"24h" | "7d" | "30d">("7d");
   const { user } = useAuth();
   const { selectedCompany } = useCompany();
-  const { data, error, isLoading } = useDashboardMetrics(selectedCompany?.id);
+  const { data, error, isLoading } = useDashboardMetrics(selectedCompany?.id, range);
   const userName =
     user?.user_metadata?.name || user?.email?.split("@")[0] || "there";
   const companyName = selectedCompany?.name || "your account";
 
   const metrics = [
     {
-      title: "Total Leads",
-      value: data?.plusvibeStats?.totalLeads?.toLocaleString() || data?.totalLeads?.toLocaleString() || "0",
-      trend: { value: 0, label: "from PlusVibe", direction: "up" as const },
-      icon: <Target className="h-5 w-5 text-blue-500" />,
-    },
-    {
-      title: "Contacted",
+      title: "Contacted Today",
       value: data?.plusvibeStats?.contacted?.toLocaleString() || "0",
-      trend: { value: 0, label: "emails sent", direction: "up" as const },
+      trend: { value: 0, label: "from PlusVibe", direction: "up" as const },
       icon: <Mail className="h-5 w-5 text-emerald-500" />,
     },
     {
-      title: "Replied",
-      value: data?.plusvibeStats?.replied?.toLocaleString() || data?.totalReplies?.toLocaleString() || "0",
-      trend: { value: data?.plusvibeStats?.replied && data?.plusvibeStats?.contacted 
-        ? Math.round((data.plusvibeStats.replied / data.plusvibeStats.contacted) * 100) 
-        : 0, 
-        label: "reply rate", direction: "up" as const },
-      icon: <MessageSquare className="h-5 w-5 text-violet-500" />,
+      title: "Positive Reply",
+      value:
+        data?.plusvibeStats?.positive?.toLocaleString() ||
+        data?.positiveReplies?.toLocaleString() ||
+        "0",
+      trend: {
+        value:
+          data?.plusvibeStats?.positive && data?.plusvibeStats?.replied
+            ? Math.round((data.plusvibeStats.positive / data.plusvibeStats.replied) * 100)
+            : 0,
+        label: "of replies",
+        direction: "up" as const,
+      },
+      icon: <ThumbsUp className="h-5 w-5 text-amber-500" />,
     },
     {
-      title: "Positive",
-      value: data?.plusvibeStats?.positive?.toLocaleString() || data?.positiveReplies?.toLocaleString() || "0",
-      trend: { value: data?.plusvibeStats?.positive && data?.plusvibeStats?.replied
-        ? Math.round((data.plusvibeStats.positive / data.plusvibeStats.replied) * 100)
-        : 0,
-        label: "of replies", direction: "up" as const },
-      icon: <ThumbsUp className="h-5 w-5 text-amber-500" />,
+      title: "Calls Booked",
+      value: data?.meetingsBooked?.toLocaleString() || "0",
+      trend: { value: 0, label: "from Calendly", direction: "up" as const },
+      icon: <CalendarCheck className="h-5 w-5 text-blue-500" />,
+    },
+    {
+      title: "Domain Health",
+      value: "—",
+      trend: { value: 0, label: "coming soon", direction: "neutral" as const },
+      icon: <Activity className="h-5 w-5 text-violet-500" />,
     },
   ];
 
@@ -101,26 +106,36 @@ export default function Dashboard() {
         )}
 
         {/* Stats Grid */}
-        {isLoading ? (
-          <DashboardStatsSkeleton />
-        ) : (
-          <StatsGrid>
-            {metrics.map((metric) => (
-              <StatsCard
-                key={metric.title}
-                title={metric.title}
-                value={metric.value}
-                trend={metric.trend}
-                icon={metric.icon}
-              />
-            ))}
-          </StatsGrid>
-        )}
+        <div
+          key={`stats-${range}-${isLoading ? "loading" : "loaded"}`}
+          className="animate-fade-in transition-opacity duration-300"
+        >
+          {isLoading ? (
+            <DashboardStatsSkeleton />
+          ) : (
+            <StatsGrid>
+              {metrics.map((metric) => (
+                <StatsCard
+                  key={metric.title}
+                  title={metric.title}
+                  value={metric.value}
+                  trend={metric.trend}
+                  icon={metric.icon}
+                />
+              ))}
+            </StatsGrid>
+          )}
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px] gap-4 items-start">
           <div>
             <Card className="overflow-hidden rounded-2xl border-border/80">
-              <DailySendChart embedded />
+              <DailySendChart
+                key={`chart-${range}`}
+                embedded
+                range={range}
+                onRangeChange={setRange}
+              />
               <div className="mx-6 border-t border-border" />
               <EventsCardEmbedded />
             </Card>
@@ -134,8 +149,6 @@ export default function Dashboard() {
           campaigns={data?.activeCampaigns || []}
           isLoading={isLoading}
         />
-
-        <SkillsHealthPanel />
       </div>
     </AppShell>
   );

@@ -85,17 +85,17 @@ export default function LoginPage() {
 
   return (
     <div className="w-full min-h-screen">
-      <div className="grid min-h-screen bg-[#080808] md:grid-cols-2">
-        <div className="relative hidden min-h-screen border-r border-[#171717] bg-[#050505] md:block">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,_rgba(99,102,241,0.22),_transparent_40%),radial-gradient(circle_at_85%_100%,_rgba(59,130,246,0.12),_transparent_50%),linear-gradient(145deg,_#0b0b0d_0%,_#050505_100%)]" />
-          <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_32%,rgba(255,255,255,0.03)_100%)]" />
-          <div className="relative flex h-full flex-col justify-between p-12 text-white">
+      <div className="grid min-h-screen bg-white md:grid-cols-2">
+        <div className="relative hidden min-h-screen border-r border-[#e5e7eb] bg-white md:block">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,_rgba(255,0,0,0.5),_transparent_42%),radial-gradient(circle_at_85%_100%,_rgba(255,69,0,0.55),_transparent_50%),linear-gradient(145deg,_#ffffff_0%,_#ffffff_100%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(135deg,transparent_30%,rgba(0,0,0,0.03)_100%)]" />
+          <div className="relative flex h-full flex-col justify-between p-12 text-[#111111]">
             <p className="text-xl font-semibold tracking-tight">Blitzscale OS</p>
             <div className="space-y-2">
               <p className="text-[34px] font-semibold leading-[1.1] tracking-[-0.02em]">
                 Build your pipeline faster.
               </p>
-              <p className="max-w-[300px] text-sm text-[#9ca3af]">
+              <p className="max-w-[300px] text-sm text-[#4b5563]">
                 Bring campaigns, leads, and inboxing workflows into one focused workspace.
               </p>
             </div>
@@ -103,11 +103,11 @@ export default function LoginPage() {
         </div>
 
         <div className="relative flex min-h-screen items-center justify-center px-6 py-10 md:px-12">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.06),_transparent_55%)]" />
-          <div className="relative w-full max-w-[500px] space-y-6">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_85%,_rgba(255,0,0,0.22),_transparent_42%),radial-gradient(circle_at_85%_0%,_rgba(255,69,0,0.25),_transparent_50%),linear-gradient(145deg,_#ffffff_0%,_#ffffff_100%)]" />
+          <div className="relative w-full max-w-[500px] space-y-6 rounded-[28px] border border-white/35 bg-white/25 p-8 shadow-[0_12px_32px_rgba(0,0,0,0.08)] backdrop-blur-[18px]">
             <div className="space-y-2 text-center">
               <p className="text-sm font-medium text-[#6b7280]">Welcome back</p>
-              <h1 className="text-[38px] font-semibold leading-[1.1] tracking-[-0.02em] text-white">
+              <h1 className="text-[38px] font-semibold leading-[1.1] tracking-[-0.02em] text-[#111111]">
                 Log in to Blitzscale OS
               </h1>
             </div>
@@ -117,7 +117,7 @@ export default function LoginPage() {
               onClick={handleGoogleLogin}
               disabled={loading || googleLoading}
               variant="outline"
-              className="h-[50px] w-full rounded-xl border border-[#262626] bg-[#111] text-sm font-semibold text-[#e5e7eb] hover:bg-[#171717]"
+              className="h-[50px] w-full rounded-xl border border-[#d4d4d8] bg-white/80 text-sm font-semibold text-[#111111] hover:bg-white"
             >
               {googleLoading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -134,10 +134,10 @@ export default function LoginPage() {
               )}
             </Button>
 
-            <div className="flex items-center gap-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#404040]">
-              <div className="h-px flex-1 bg-[#262626]" />
+            <div className="flex items-center gap-4 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b7280]">
+              <div className="h-px flex-1 bg-[#d4d4d8]" />
               <span>or</span>
-              <div className="h-px flex-1 bg-[#262626]" />
+              <div className="h-px flex-1 bg-[#d4d4d8]" />
             </div>
 
             <form onSubmit={handleLogin} className="space-y-4">
@@ -150,7 +150,7 @@ export default function LoginPage() {
                 required
                 autoFocus
                 disabled={googleLoading || loading}
-                className="h-[50px] rounded-xl border-[#262626] bg-[#111] px-4 text-sm text-white placeholder:text-[#9ca3af] focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-0"
+                className="h-[50px] rounded-xl border-[#d4d4d8] bg-white/85 px-4 text-sm text-[#111111] placeholder:text-[#9ca3af] focus-visible:ring-2 focus-visible:ring-[#ff4500]/30 focus-visible:ring-offset-0"
               />
 
               <div className="space-y-2">
@@ -163,12 +163,12 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     disabled={googleLoading || loading}
-                    className="h-[50px] rounded-xl border-[#262626] bg-[#111] px-4 pr-12 text-sm text-white placeholder:text-[#9ca3af] focus-visible:ring-2 focus-visible:ring-white/25 focus-visible:ring-offset-0"
+                    className="h-[50px] rounded-xl border-[#d4d4d8] bg-white/85 px-4 pr-12 text-sm text-[#111111] placeholder:text-[#9ca3af] focus-visible:ring-2 focus-visible:ring-[#ff4500]/30 focus-visible:ring-offset-0"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword((prev) => !prev)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6b7280] transition-colors hover:text-[#d4d4d8]"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-[#6b7280] transition-colors hover:text-[#111111]"
                     aria-label={showPassword ? "Hide password" : "Show password"}
                   >
                     {showPassword ? (
@@ -181,7 +181,7 @@ export default function LoginPage() {
                 <div className="flex justify-end">
                   <Link
                     href="/forgot-password"
-                    className="text-xs text-[#6b7280] transition-colors hover:text-white"
+                    className="text-xs text-[#6b7280] transition-colors hover:text-[#111111]"
                   >
                     Forgot password?
                   </Link>
@@ -207,12 +207,12 @@ export default function LoginPage() {
 
             <p className="text-center text-sm text-[#6b7280]">
               Don&apos;t have an account?{" "}
-              <Link href="/signup" className="font-medium text-white">
+              <Link href="/signup" className="font-medium text-[#111111]">
                 Sign up
               </Link>
             </p>
 
-            <p className="text-center text-xs text-[#404040]">
+            <p className="text-center text-xs text-[#6b7280]">
               By continuing, you agree to our Terms and Privacy Policy
             </p>
           </div>

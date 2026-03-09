@@ -60,12 +60,12 @@ export interface ChatMessageData {
 interface ChatMessageProps {
   message: ChatMessageData;
   onSaveToKnowledge?: (content: string) => void;
-  variant?: "default" | "perplexity";
+  variant?: "default" | "modern";
 }
 
 export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }: ChatMessageProps) {
   const isUser = message.role === "user";
-  const isPerplexity = variant === "perplexity";
+  const isModern = variant === "modern";
   const normalizedToolCalls = (message.toolCalls || []).map((tool, index) => ({
     key: `${tool.name || "tool"}-${index}`,
     name: tool.name || "Tool",
@@ -134,10 +134,10 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
       className={cn(
         "flex gap-3 animate-fade-in",
         isUser ? "flex-row-reverse" : "",
-        isPerplexity && "gap-0"
+        isModern && "gap-0"
       )}
     >
-      {!isPerplexity ? (
+      {!isModern ? (
         <Avatar
           className={cn(
             "h-8 w-8 shrink-0",
@@ -160,7 +160,12 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
         </Avatar>
       ) : null}
 
-      <div className={cn(isPerplexity ? "w-full max-w-none" : "max-w-[80%]", isUser ? "items-end" : "items-start")}>
+      <div
+        className={cn(
+          isModern ? "flex w-full max-w-none flex-col" : "max-w-[80%]",
+          isUser ? "items-end" : "items-start"
+        )}
+      >
         {message.isThinking ? (
           <AIMessage isThinking>
             <div className="flex items-center gap-2">
@@ -172,9 +177,9 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
           <div
             className={cn(
               "rounded-2xl p-4",
-              isPerplexity
+              isModern
                 ? isUser
-                  ? "max-w-fit border border-[#e5e8ef] bg-white text-[#1f2430] shadow-sm"
+                  ? "max-w-fit rounded-2xl bg-[#2c3345] text-white shadow-sm"
                   : "rounded-none bg-transparent p-0 text-[#20263a]"
                 : isUser
                   ? "bg-primary text-primary-foreground"
@@ -189,7 +194,7 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
               <div
                 className={cn(
                   "prose prose-sm max-w-none prose-pre:rounded-lg prose-code:before:content-none prose-code:after:content-none",
-                  isPerplexity
+                  isModern
                     ? "prose-headings:text-[#1f2430] prose-p:text-[#2c3345] prose-strong:text-[#111827] prose-li:text-[#2c3345] prose-pre:bg-[#f4f6fb]"
                     : "dark:prose-invert prose-pre:bg-background"
                 )}
@@ -344,9 +349,11 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
           </div>
         )}
 
-        <span className="text-xs text-muted-foreground mt-1 block">
-          {format(message.timestamp, "h:mm a")}
-        </span>
+        {!isModern ? (
+          <span className="text-xs text-muted-foreground mt-1 block">
+            {format(message.timestamp, "h:mm a")}
+          </span>
+        ) : null}
       </div>
     </div>
   );

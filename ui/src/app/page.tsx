@@ -6,13 +6,11 @@ import { useCompany } from "@/contexts/company-context";
 import { useStreamingChat } from "@/lib/hooks/use-streaming-chat";
 import { useDashboardMetrics, useCampaigns, useChatSessions, useSupermemoryDocuments } from "@/lib/hooks";
 import { ChatInput } from "@/components/chat/chat-input";
-import { ChatMessage, type ChatMessageData } from "@/components/chat/chat-message";
+import { ChatMessage } from "@/components/chat/chat-message";
 import { SessionSidebar } from "@/components/chat/session-sidebar";
 import { Sparkles } from "lucide-react";
-import { AgentActivityPanel, type AgentActivityItem } from "@/components/chat/agent-activity-panel";
 
 export default function ChatPage() {
-  const ENABLE_AGENT_ACTIVITY_PANEL = true;
   const { selectedCompany } = useCompany();
   const companyId = selectedCompany?.id;
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -148,39 +146,6 @@ export default function ChatPage() {
     return labels.slice(0, 2);
   }, [campaigns, metrics?.meetingsBooked, metrics?.positiveReplies, metrics?.totalReplies]);
 
-  const activityTasks = useMemo<AgentActivityItem[]>(() => {
-    const taskMap = new Map<string, AgentActivityItem>();
-
-    messages.forEach((message: ChatMessageData, messageIndex) => {
-      const tasks = message.tasks || [];
-      tasks.forEach((task, taskIndex) => {
-        const rawStatus = task.status || "pending";
-        const status: AgentActivityItem["status"] =
-          rawStatus === "pending" || rawStatus === "running" || rawStatus === "complete" || rawStatus === "error"
-            ? rawStatus
-            : "pending";
-        const id = task.id || `message-${messageIndex}-task-${taskIndex}`;
-        const label = task.step || task.objective || "Agent action in progress";
-        taskMap.set(id, {
-          id,
-          label,
-          status,
-          progress: typeof task.progress === "number" ? task.progress : undefined,
-        });
-      });
-    });
-
-    const rank = (status: AgentActivityItem["status"]) => {
-      if (status === "running") return 0;
-      if (status === "pending") return 1;
-      if (status === "complete") return 2;
-      return 3;
-    };
-
-    return Array.from(taskMap.values())
-      .sort((a, b) => rank(a.status) - rank(b.status))
-      .slice(0, 5);
-  }, [messages]);
 
   const handleDeleteSession = useCallback(
     async (sessionId: string) => {
@@ -222,20 +187,6 @@ export default function ChatPage() {
   }
 
   const hasMessages = messages.length > 0;
-  const hasActivityTasks = activityTasks.length > 0;
-  const fallbackActivityTasks: AgentActivityItem[] = [
-    { id: "setup-research", label: "Setting up research", status: "running", progress: 40 },
-    { id: "setup-tools", label: "Setting up tools", status: "pending" },
-    { id: "review-responses", label: "Responses reviewed", status: "pending" },
-  ];
-  const visibleActivityTasks =
-    ENABLE_AGENT_ACTIVITY_PANEL
-      ? hasActivityTasks
-        ? activityTasks
-        : isStreaming
-          ? fallbackActivityTasks
-          : []
-      : [];
 
   return (
     <AppShell
@@ -259,14 +210,11 @@ export default function ChatPage() {
                     Ask about campaigns, inbox, CRM, or your vault documents.
                   </p>
                 </div>
-                {visibleActivityTasks.length > 0 ? (
-                  <AgentActivityPanel tasks={visibleActivityTasks} className="mx-auto mb-4 max-w-3xl" />
-                ) : null}
                 <ChatInput
                   onSend={(message, options) => void handleSend(message, options)}
                   isProcessing={isStreaming}
                   showSuggestions={false}
-                  variant="perplexity"
+                  variant="modern"
                   mentionChips={mentionChips}
                   modeLabel={chatMode}
                   onModeChange={setChatMode}
@@ -277,12 +225,12 @@ export default function ChatPage() {
             </div>
           ) : (
             <>
-              <div className="min-h-0 flex-1 overflow-y-auto p-6">
+              <div className="hide-scrollbar min-h-0 flex-1 overflow-y-auto p-6">
                 <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
                   {messages.map((message) => (
                     <ChatMessage
                       key={message.id}
-                      variant="perplexity"
+                      variant="modern"
                       message={{
                         id: message.id,
                         role: message.role,
@@ -299,16 +247,15 @@ export default function ChatPage() {
                   <div ref={messagesEndRef} />
                 </div>
               </div>
-              <div className="border-t border-[#e0e5ef] bg-[#f7f9fd] p-4">
-                <div className="mx-auto w-full max-w-4xl">
-                  {visibleActivityTasks.length > 0 ? (
-                    <AgentActivityPanel tasks={visibleActivityTasks} className="mb-3" />
-                  ) : null}
+              <div className="bg-transparent px-4 pb-4 pt-2">
+                <div className="mx-auto w-full max-w-2xl">
                   <ChatInput
                     onSend={(message, options) => void handleSend(message, options)}
                     isProcessing={isStreaming}
                     showSuggestions={false}
-                    variant="perplexity"
+                    variant="modern"
+                    compact
+                    placeholder="Ask a follow-up"
                     mentionChips={mentionChips}
                     modeLabel={chatMode}
                     onModeChange={setChatMode}

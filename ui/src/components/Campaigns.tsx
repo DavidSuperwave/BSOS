@@ -44,6 +44,9 @@ import {
   ThumbsUp,
   Ban,
   MoreHorizontal,
+  TrendingUp,
+  Brain,
+  Zap,
 } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -127,7 +130,7 @@ function CampaignRow({
     <div
       ref={rowRef}
       className={cn(
-        'grid grid-cols-12 gap-4 items-center px-4 py-3 border-b border-border hover:bg-muted/30 transition-colors',
+        'grid grid-cols-12 items-center gap-4 border-b border-border px-4 py-3.5 transition-colors hover:bg-muted/30',
         isSelected && 'bg-primary/5'
       )}
     >
@@ -283,6 +286,7 @@ export default function Campaigns() {
   const [analyticsCampaignId, setAnalyticsCampaignId] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createCampaignName, setCreateCampaignName] = useState('');
+  const [createCampaignType, setCreateCampaignType] = useState<'learning' | 'basic'>('learning');
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -356,6 +360,12 @@ export default function Campaigns() {
   const startIndex = (currentPage - 1) * CAMPAIGNS_PER_PAGE;
   const endIndex = startIndex + CAMPAIGNS_PER_PAGE;
   const visibleCampaigns = filteredCampaigns.slice(startIndex, endIndex);
+  const isAllVisibleSelected =
+    visibleCampaigns.length > 0 &&
+    visibleCampaigns.every((campaign) => selectedCampaigns.has(campaign.id));
+  const selectedVisibleCount = visibleCampaigns.filter((campaign) =>
+    selectedCampaigns.has(campaign.id)
+  ).length;
 
   useEffect(() => {
     setCurrentPage(1);
@@ -473,7 +483,26 @@ export default function Campaigns() {
         const payload = await response.json().catch(() => ({ error: 'Failed to create campaign' }));
         throw new Error(payload.error || payload.details || 'Failed to create campaign');
       }
+      const createData = await response.json();
+      const campaignId = createData?._id ?? createData?.id ?? createData?.campaign_id;
+      if (campaignId && selectedCompany?.id) {
+        try {
+          await fetch('/api/bsos/optimization', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              company_id: selectedCompany.id,
+              campaign_id: campaignId,
+              action: 'set_mode',
+              mode: createCampaignType === 'learning' ? 'suggest' : 'manual',
+            }),
+          });
+        } catch (optErr) {
+          console.warn('Failed to set optimization mode; campaign created. You can set it later in campaign settings.', optErr);
+        }
+      }
       setCreateCampaignName('');
+      setCreateCampaignType('learning');
       setIsCreateDialogOpen(false);
       mutate();
     } catch (err) {
@@ -658,25 +687,33 @@ export default function Campaigns() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Header with Search and Create */}
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <input
-            type="checkbox"
-            className="rounded border-border"
-            checked={selectedCampaigns.size === visibleCampaigns.length && visibleCampaigns.length > 0}
-            onChange={(e) => {
-              if (e.target.checked) {
-                setSelectedCampaigns(new Set(visibleCampaigns.map(c => c.id)));
-              } else {
-                setSelectedCampaigns(new Set());
-              }
-            }}
-          />
           <span className="text-sm text-muted-foreground">
             Your campaigns ({campaigns.length})
           </span>
+          <label className="ml-2 inline-flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1.5 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              className="rounded border-border"
+              checked={isAllVisibleSelected}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSelectedCampaigns(new Set(visibleCampaigns.map((campaign) => campaign.id)));
+                } else {
+                  setSelectedCampaigns(new Set());
+                }
+              }}
+            />
+            <span>Select all campaigns</span>
+            {selectedVisibleCount > 0 ? (
+              <span className="rounded bg-muted px-1.5 py-0.5 text-[11px] font-medium text-foreground">
+                {selectedVisibleCount}
+              </span>
+            ) : null}
+          </label>
         </div>
 
         <div className="flex items-center gap-3">
@@ -708,119 +745,110 @@ export default function Campaigns() {
 
       {/* Overview Stats Cards */}
       {!isLoading && campaigns.length > 0 && (
-        <div className="grid grid-cols-6 gap-4 mb-2">
-          <Card className="bg-slate-50/50 border-slate-100">
-            <CardContent className="p-4">
+        <div className="mb-5 grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+          <Card className="h-full rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <CardContent className="flex h-full min-h-[132px] flex-col justify-between p-5">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-white rounded-lg shadow-sm text-slate-500">
-                    <Users className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-slate-500">Total Leads</span>
+                <p className="text-[13px] font-medium text-slate-500">Total Leads</p>
+                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-slate-500">
+                  <Users className="h-3.5 w-3.5" />
                 </div>
               </div>
-              <p className="text-2xl font-semibold text-indigo-600 mt-2">
+              <p className="mt-2 text-[28px] font-bold leading-none tracking-tight text-slate-900">
                 {overviewStats.totalLeads.toLocaleString()}
               </p>
+              <div className="mt-2 flex items-center gap-1.5 text-slate-500">
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span className="text-xs">Across all campaigns</span>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-50/50 border-slate-100">
-            <CardContent className="p-4">
+          <Card className="h-full rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <CardContent className="flex h-full min-h-[132px] flex-col justify-between p-5">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-white rounded-lg shadow-sm text-slate-500">
-                    <Mail className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-slate-500">Total Contacted</span>
+                <p className="text-[13px] font-medium text-slate-500">Total Contacted</p>
+                <div className="flex h-6 w-6 items-center justify-center rounded-md bg-slate-100 text-slate-500">
+                  <Mail className="h-3.5 w-3.5" />
                 </div>
               </div>
-              <p className="text-2xl font-semibold text-indigo-600 mt-2">
+              <p className="mt-2 text-[28px] font-bold leading-none tracking-tight text-slate-900">
                 {overviewStats.totalContacted.toLocaleString()}
               </p>
+              <div className="mt-2 flex items-center gap-1.5 text-slate-500">
+                <TrendingUp className="h-3.5 w-3.5" />
+                <span className="text-xs">Emails sent to leads</span>
+              </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-50/50 border-slate-100">
-            <CardContent className="p-4">
+          <Card className="h-full rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <CardContent className="flex h-full min-h-[132px] flex-col justify-between p-5">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-white rounded-lg shadow-sm text-slate-500">
-                    <CheckCircle className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-slate-500">Finished</span>
-                </div>
-              </div>
-              <div className="mt-2">
-                <span className="text-2xl font-semibold text-indigo-600">
+                <p className="text-[13px] font-medium text-slate-500">Finished</p>
+                <div className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600">
+                  <TrendingUp className="h-3 w-3" />
                   {overviewStats.finishedRate}%
-                </span>
-                <span className="text-sm text-slate-400 ml-2">
-                  {overviewStats.totalCompleted.toLocaleString()}
-                </span>
+                </div>
+              </div>
+              <p className="mt-2 text-[28px] font-bold leading-none tracking-tight text-slate-900">
+                {overviewStats.totalCompleted.toLocaleString()}
+              </p>
+              <div className="mt-2 flex items-center gap-1.5 text-slate-500">
+                <span className="text-xs">Sequence completed</span>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-50/50 border-slate-100">
-            <CardContent className="p-4">
+          <Card className="h-full rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <CardContent className="flex h-full min-h-[132px] flex-col justify-between p-5">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-white rounded-lg shadow-sm text-slate-500">
-                    <Reply className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-slate-500">Replied</span>
-                </div>
-              </div>
-              <div className="mt-2">
-                <span className="text-2xl font-semibold text-indigo-600">
+                <p className="text-[13px] font-medium text-slate-500">Replied</p>
+                <div className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600">
+                  <TrendingUp className="h-3 w-3" />
                   {overviewStats.replyRate}%
-                </span>
-                <span className="text-sm text-slate-400 ml-2">
-                  {overviewStats.totalReplies.toLocaleString()}
-                </span>
+                </div>
+              </div>
+              <p className="mt-2 text-[28px] font-bold leading-none tracking-tight text-slate-900">
+                {overviewStats.totalReplies.toLocaleString()}
+              </p>
+              <div className="mt-2 flex items-center gap-1.5 text-slate-500">
+                <span className="text-xs">Of contacted</span>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-50/50 border-slate-100">
-            <CardContent className="p-4">
+          <Card className="h-full rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <CardContent className="flex h-full min-h-[132px] flex-col justify-between p-5">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-white rounded-lg shadow-sm text-slate-500">
-                    <ThumbsUp className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-slate-500">Positive Reply</span>
-                </div>
-              </div>
-              <div className="mt-2">
-                <span className="text-2xl font-semibold text-indigo-600">
+                <p className="text-[13px] font-medium text-slate-500">Positive Reply</p>
+                <div className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-emerald-600">
+                  <TrendingUp className="h-3 w-3" />
                   {overviewStats.positiveRate}%
-                </span>
-                <span className="text-sm text-slate-400 ml-2">
-                  {overviewStats.totalPositive.toLocaleString()}
-                </span>
+                </div>
+              </div>
+              <p className="mt-2 text-[28px] font-bold leading-none tracking-tight text-slate-900">
+                {overviewStats.totalPositive.toLocaleString()}
+              </p>
+              <div className="mt-2 flex items-center gap-1.5 text-slate-500">
+                <span className="text-xs">Of replies</span>
               </div>
             </CardContent>
           </Card>
 
-          <Card className="bg-slate-50/50 border-slate-100">
-            <CardContent className="p-4">
+          <Card className="h-full rounded-xl border border-slate-200/80 bg-white shadow-sm">
+            <CardContent className="flex h-full min-h-[132px] flex-col justify-between p-5">
               <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-1.5 bg-white rounded-lg shadow-sm text-slate-500">
-                    <Ban className="h-4 w-4" />
-                  </div>
-                  <span className="text-xs text-slate-500">Bounced</span>
+                <p className="text-[13px] font-medium text-slate-500">Bounced</p>
+                <div className="inline-flex items-center gap-1 rounded-md bg-red-500/10 px-1.5 py-0.5 text-[11px] font-semibold text-red-600">
+                  {overviewStats.bounceRate}%
                 </div>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-semibold text-indigo-600">
-                  {overviewStats.bounceRate}%
-                </span>
-                <span className="text-sm text-slate-400 ml-2">
-                  {overviewStats.totalBounced.toLocaleString()}
-                </span>
+              <p className="mt-2 text-[28px] font-bold leading-none tracking-tight text-slate-900">
+                {overviewStats.totalBounced.toLocaleString()}
+              </p>
+              <div className="mt-2 flex items-center gap-1.5 text-slate-500">
+                <span className="text-xs">Of sent</span>
               </div>
             </CardContent>
           </Card>
@@ -866,9 +894,9 @@ export default function Campaigns() {
 
       {/* Campaigns Table */}
       {!isLoading && filteredCampaigns.length > 0 && (
-        <Card className="overflow-hidden">
+        <Card className="mt-1 overflow-hidden">
           {/* Table Header */}
-          <div className="grid grid-cols-12 gap-4 px-4 py-2 bg-muted/50 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          <div className="grid grid-cols-12 items-center gap-4 border-b border-border bg-muted/50 px-4 py-3.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <div className="col-span-1"></div>
             <div className="col-span-3">Campaign Name</div>
             <div className="col-span-2">Status</div>
@@ -930,17 +958,66 @@ export default function Campaigns() {
         </div>
       )}
 
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="max-w-md">
+      <Dialog
+        open={isCreateDialogOpen}
+        onOpenChange={(open) => {
+          setIsCreateDialogOpen(open);
+          if (!open) setCreateCampaignType('learning');
+        }}
+      >
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Add Campaign</DialogTitle>
             <DialogDescription>Enter a campaign name to create a new draft campaign.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-foreground" htmlFor="campaign-name">
-              Campaign name
-            </label>
-            <Input
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setCreateCampaignType('learning')}
+                className={cn(
+                  'flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-all',
+                  createCampaignType === 'learning'
+                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                    : 'border-border bg-card hover:border-border/80 hover:bg-muted/30'
+                )}
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Brain className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">Learning Campaign</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Uses our learning to optimize the campaign and suggest adjustments daily. Julian analyzes replies, learns from patterns, and surfaces recommendations.
+                  </p>
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCreateCampaignType('basic')}
+                className={cn(
+                  'flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-all',
+                  createCampaignType === 'basic'
+                    ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
+                    : 'border-border bg-card hover:border-border/80 hover:bg-muted/30'
+                )}
+              >
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                  <Zap className="h-4 w-4" />
+                </div>
+                <div>
+                  <p className="font-semibold text-foreground">Basic Campaign</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    No learning. Runs exactly as configured—no AI suggestions or optimization.
+                  </p>
+                </div>
+              </button>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground" htmlFor="campaign-name">
+                Campaign name
+              </label>
+              <Input
               id="campaign-name"
               placeholder="Campaign name"
               value={createCampaignName}
@@ -953,6 +1030,7 @@ export default function Campaigns() {
               }}
             />
             {actionError ? <p className="text-xs text-destructive">{actionError}</p> : null}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsCreateDialogOpen(false)} disabled={createSubmitting}>

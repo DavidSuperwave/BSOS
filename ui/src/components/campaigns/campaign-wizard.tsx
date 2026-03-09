@@ -235,6 +235,14 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const selectedSequenceIndex = selectedSequenceStep
     ? sequenceSteps.findIndex((step) => step.id === selectedSequenceStep.id)
     : -1;
+  const sequenceVariables = [
+    "{{first_name}}",
+    "{{last_name}}",
+    "{{company}}",
+    "{{title}}",
+    "{{industry}}",
+    "{{website}}",
+  ];
   const {
     messages: sequenceAgentMessages,
     isStreaming: isSequenceAgentStreaming,
@@ -539,113 +547,52 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 border-b border-border bg-muted/10 p-3">
-              <div className="flex min-h-[280px] flex-col rounded-md border border-border bg-card">
-                <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Bot className="h-4 w-4 text-primary" />
-                    Sequence Agent
-                  </div>
-                  <Badge variant="outline" className="text-[11px]">
-                    {isSequenceAgentStreaming ? "Thinking..." : "Ready"}
-                  </Badge>
-                </div>
-
-                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                  {!companyId ? (
-                    <p className="text-sm text-muted-foreground">Select a company to activate the Sequence agent.</p>
-                  ) : sequenceAgentMessages.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Ask the agent to rewrite this step, suggest variants, or adjust timing for your selected leads.
-                    </p>
-                  ) : (
-                    sequenceAgentMessages.map((message) => (
-                      <ChatMessage
-                        key={message.id}
-                        message={{
-                          id: message.id,
-                          role: message.role,
-                          content: message.content,
-                          timestamp: message.timestamp,
-                          isThinking: message.isStreaming,
-                          toolCalls: message.toolCalls,
-                          tasks: message.tasks as any,
-                          reasoning: message.reasoning,
-                          reasoningDuration: message.reasoningDuration,
-                        }}
-                      />
-                    ))
-                  )}
-                  <div ref={sequenceAgentEndRef} />
-                </div>
-
-                {sequenceAgentError ? (
-                  <p className="border-t border-border px-3 py-2 text-xs text-destructive">{sequenceAgentError}</p>
-                ) : null}
-
-                <div className="border-t border-border p-3">
-                  <div className="flex items-end gap-2">
-                    <textarea
-                      value={sequenceAgentInput}
-                      onChange={(event) => setSequenceAgentInput(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" && !event.shiftKey) {
-                          event.preventDefault();
-                          void handleSequenceAgentSend();
-                        }
-                      }}
-                      placeholder="Ask Sequence Agent..."
-                      rows={2}
-                      className="min-h-[70px] flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
-                    />
-                    <Button
-                      type="button"
-                      size="icon"
-                      onClick={() => void handleSequenceAgentSend()}
-                      disabled={!companyId || !sequenceAgentInput.trim() || isSequenceAgentStreaming}
-                    >
-                      {isSequenceAgentStreaming ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4" />
-                      )}
-                    </Button>
+            <div className="grid grid-cols-1 gap-3 bg-muted/10 p-3 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
+              <aside className="space-y-3 rounded-md border border-border bg-card p-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sequences</p>
+                  <div className="mt-2 space-y-2">
+                    {sequenceSteps.map((step, index) => {
+                      const isSelected = step.id === selectedSequenceStep?.id;
+                      return (
+                        <button
+                          key={step.id}
+                          type="button"
+                          onClick={() => setSelectedSequenceStepId(step.id)}
+                          className={`w-full rounded-md border p-3 text-left transition-colors ${
+                            isSelected
+                              ? "border-primary/40 bg-primary/10"
+                              : "border-border bg-card hover:bg-muted/40"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-semibold text-foreground">Step {index + 1}</p>
+                            <span className="text-[11px] text-muted-foreground">{step.sent} sent</span>
+                          </div>
+                          <p className="mt-1 truncate text-xs text-muted-foreground">{step.subject}</p>
+                          <p className="mt-2 text-[11px] text-muted-foreground">
+                            {index === 0 ? "Initial email" : `Wait ${step.waitDays} days`} · 1 variation
+                          </p>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-[280px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)]">
-              <aside className="border-b border-border bg-muted/20 p-3 lg:border-b-0 lg:border-r">
-                <div className="space-y-2">
-                  {sequenceSteps.map((step, index) => {
-                    const isSelected = step.id === selectedSequenceStep?.id;
-                    return (
-                      <button
-                        key={step.id}
-                        type="button"
-                        onClick={() => setSelectedSequenceStepId(step.id)}
-                        className={`w-full rounded-md border p-3 text-left transition-colors ${
-                          isSelected
-                            ? "border-primary/40 bg-primary/10"
-                            : "border-border bg-card hover:bg-muted/40"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <p className="text-sm font-semibold text-foreground">Step {index + 1}</p>
-                          <span className="text-[11px] text-muted-foreground">{step.sent} sent</span>
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">{step.subject}</p>
-                        <p className="mt-2 text-[11px] text-muted-foreground">
-                          {index === 0 ? "Initial email" : `Wait ${step.waitDays} days`} · 1 variation
-                        </p>
-                      </button>
-                    );
-                  })}
+                <div className="border-t border-border pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Variables
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {sequenceVariables.map((variable) => (
+                      <Badge key={variable} variant="outline" className="text-[11px]">
+                        {variable}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               </aside>
 
-              <div className="space-y-4 p-4">
+              <div className="space-y-4 rounded-md border border-border bg-card p-4">
                 {selectedSequenceStep ? (
                   <>
                     <div className="rounded-md border border-border bg-background">
@@ -736,6 +683,80 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                 ) : (
                   <p className="text-sm text-muted-foreground">No steps yet. Add a step to start building.</p>
                 )}
+              </div>
+
+              <div className="flex min-h-[560px] flex-col rounded-md border border-border bg-card">
+                <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                    <Bot className="h-4 w-4 text-primary" />
+                    Sequence Agent
+                  </div>
+                  <Badge variant="outline" className="text-[11px]">
+                    {isSequenceAgentStreaming ? "Thinking..." : "Ready"}
+                  </Badge>
+                </div>
+
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+                  {!companyId ? (
+                    <p className="text-sm text-muted-foreground">Select a company to activate the Sequence agent.</p>
+                  ) : sequenceAgentMessages.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Ask the agent to rewrite this step, suggest variants, or adjust timing for your selected leads.
+                    </p>
+                  ) : (
+                    sequenceAgentMessages.map((message) => (
+                      <ChatMessage
+                        key={message.id}
+                        message={{
+                          id: message.id,
+                          role: message.role,
+                          content: message.content,
+                          timestamp: message.timestamp,
+                          isThinking: message.isStreaming,
+                          toolCalls: message.toolCalls,
+                          tasks: message.tasks as any,
+                          reasoning: message.reasoning,
+                          reasoningDuration: message.reasoningDuration,
+                        }}
+                      />
+                    ))
+                  )}
+                  <div ref={sequenceAgentEndRef} />
+                </div>
+
+                {sequenceAgentError ? (
+                  <p className="border-t border-border px-3 py-2 text-xs text-destructive">{sequenceAgentError}</p>
+                ) : null}
+
+                <div className="border-t border-border p-3">
+                  <div className="flex items-end gap-2">
+                    <textarea
+                      value={sequenceAgentInput}
+                      onChange={(event) => setSequenceAgentInput(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          void handleSequenceAgentSend();
+                        }
+                      }}
+                      placeholder="Ask Sequence Agent..."
+                      rows={2}
+                      className="min-h-[70px] flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                    />
+                    <Button
+                      type="button"
+                      size="icon"
+                      onClick={() => void handleSequenceAgentSend()}
+                      disabled={!companyId || !sequenceAgentInput.trim() || isSequenceAgentStreaming}
+                    >
+                      {isSequenceAgentStreaming ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

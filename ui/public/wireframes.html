@@ -1,0 +1,1140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blitzscale OS — UI Wireframes</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0f0f17;
+    font-family: 'Inter', system-ui, sans-serif;
+    color: #cdd6f4;
+    min-height: 100vh;
+  }
+
+  /* ── TOP NAV ── */
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 48px;
+    background: #181825;
+    border-bottom: 1px solid #2a2a3d;
+    display: flex; align-items: center; gap: 0;
+    z-index: 1000;
+    padding: 0 12px;
+  }
+  .topbar-logo {
+    font-size: 13px; font-weight: 700; color: #89b4fa;
+    padding: 0 16px 0 4px;
+    border-right: 1px solid #2a2a3d;
+    margin-right: 8px;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+  .topbar-pages {
+    display: flex; gap: 2px; overflow-x: auto; flex: 1;
+  }
+  .topbar-pages::-webkit-scrollbar { display: none; }
+  .page-btn {
+    padding: 5px 12px; border-radius: 4px; font-size: 12px;
+    font-weight: 500; cursor: pointer; white-space: nowrap;
+    border: none; background: transparent; color: #6c7086;
+    transition: all .15s;
+  }
+  .page-btn:hover { background: #1e1e2e; color: #cdd6f4; }
+  .page-btn.active { background: #1e3a5f; color: #89b4fa; font-weight: 600; }
+  .topbar-right {
+    margin-left: auto; padding-left: 16px;
+    border-left: 1px solid #2a2a3d;
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  }
+  .badge {
+    background: #1e1e2e; padding: 3px 8px; border-radius: 4px;
+    font-size: 11px; color: #6c7086; font-family: monospace;
+  }
+  .hint { font-size: 11px; color: #45475a; }
+
+  /* ── CANVAS ── */
+  .canvas { padding: 68px 48px 80px; }
+
+  /* ── SECTION ── */
+  .section {
+    display: none;
+    margin-bottom: 72px;
+  }
+  .section.visible { display: block; }
+
+  .section-header {
+    display: flex; align-items: baseline; gap: 12px;
+    margin-bottom: 24px; padding-bottom: 16px;
+    border-bottom: 1px solid #1e1e2e;
+  }
+  .section-num {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.5px; color: #313244;
+    background: #1e1e2e; padding: 3px 8px; border-radius: 3px;
+  }
+  .section-name {
+    font-size: 18px; font-weight: 700; color: #cdd6f4;
+  }
+  .section-route {
+    font-size: 12px; color: #313244; font-family: monospace;
+    background: #1e1e2e; padding: 2px 8px; border-radius: 3px;
+  }
+  .section-count {
+    font-size: 11px; color: #45475a; margin-left: auto;
+  }
+
+  /* ── FRAMES ROW ── */
+  .frames-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 40px 36px;
+    align-items: flex-start;
+  }
+
+  /* ── SINGLE FRAME ── */
+  .frame-wrap {
+    display: flex; flex-direction: column; align-items: flex-start;
+    flex-shrink: 0;
+  }
+  .frame-tag {
+    font-size: 10px; font-weight: 600; color: #45475a;
+    margin-bottom: 6px; letter-spacing: 0.8px;
+    text-transform: uppercase; font-family: monospace;
+  }
+  .frame-sublabel {
+    font-size: 13px; font-weight: 600; color: #a6adc8;
+    margin-bottom: 8px;
+  }
+
+  /* ── PLACEHOLDER FRAME (no eager iframe!) ── */
+  .frame-box {
+    position: relative;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 0 0 1px #1e1e2e, 0 6px 24px rgba(0,0,0,.5);
+    cursor: pointer;
+    transition: box-shadow .2s, transform .15s;
+    background: #050817;
+    display: flex; flex-direction: column;
+  }
+  .frame-box:hover {
+    box-shadow: 0 0 0 2px #89b4fa, 0 12px 40px rgba(137,180,250,.15);
+    transform: translateY(-2px);
+  }
+
+  /* Browser chrome bar */
+  .frame-chrome {
+    background: #12121f;
+    border-bottom: 1px solid #1e1e2e;
+    height: 28px;
+    display: flex; align-items: center;
+    padding: 0 10px;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .chrome-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .chrome-dot.r { background: #f38ba8; opacity: .6; }
+  .chrome-dot.y { background: #f9e2af; opacity: .6; }
+  .chrome-dot.g { background: #a6e3a1; opacity: .6; }
+  .chrome-url {
+    flex: 1; text-align: center;
+    font-size: 10px; font-family: monospace; color: #45475a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* Preview area */
+  .frame-preview {
+    flex: 1;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Dot grid background */
+  .frame-preview::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image: radial-gradient(circle, #1e1e2e 1px, transparent 1px);
+    background-size: 20px 20px;
+    opacity: .6;
+  }
+
+  /* Screen name in center */
+  .preview-icon {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: #1e3a5f;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; position: relative; z-index: 1;
+  }
+  .preview-name {
+    font-size: 13px; font-weight: 600; color: #6c7086;
+    position: relative; z-index: 1; text-align: center;
+  }
+  .preview-hint {
+    font-size: 10px; color: #313244; position: relative; z-index: 1;
+    display: flex; align-items: center; gap: 5px;
+  }
+  .preview-badge {
+    background: #1e3a5f; border: 1px solid #2a4a7f;
+    color: #89b4fa; font-size: 10px; font-weight: 600;
+    padding: 3px 10px; border-radius: 12px;
+    position: relative; z-index: 1;
+    display: none;
+  }
+  .frame-box:hover .preview-badge { display: block; }
+  .frame-box:hover .preview-hint { display: none; }
+  .frame-box:hover .frame-preview::before { opacity: .3; }
+
+  .frame-dims {
+    font-size: 10px; color: #313244; margin-top: 6px;
+    font-family: monospace;
+  }
+
+  /* ── ANNOTATIONS ── */
+  .annotations {
+    margin-top: 10px;
+    max-width: 100%;
+  }
+  .ann-item {
+    display: flex; align-items: flex-start; gap: 7px;
+    font-size: 11px; color: #45475a; margin-bottom: 4px;
+    line-height: 1.4;
+  }
+  .ann-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    flex-shrink: 0; margin-top: 4px;
+  }
+  .ann-dot.b { background: #89b4fa; }
+  .ann-dot.g { background: #a6e3a1; }
+  .ann-dot.y { background: #f9e2af; }
+  .ann-dot.r { background: #f38ba8; }
+  .ann-dot.p { background: #cba6f7; }
+  .ann-dot.w { background: #6c7086; }
+
+  /* ── ZOOM OVERLAY ── */
+  #zoom-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: rgba(5,8,23,.92);
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 12px;
+  }
+  #zoom-overlay.open { display: flex; }
+
+  #zoom-topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 0 24px;
+    height: 44px;
+    width: 100%;
+    background: #181825;
+    border-bottom: 1px solid #1e1e2e;
+    position: fixed; top: 0; left: 0; right: 0;
+  }
+  #zoom-label {
+    font-size: 13px; font-weight: 600; color: #cdd6f4;
+    flex: 1;
+  }
+  #zoom-url {
+    font-size: 11px; font-family: monospace; color: #45475a;
+  }
+  #zoom-close {
+    font-size: 13px; color: #6c7086; cursor: pointer;
+    background: #1e1e2e; border: 1px solid #313244;
+    padding: 5px 12px; border-radius: 4px;
+    font-family: inherit;
+    transition: all .15s;
+  }
+  #zoom-close:hover { background: #313244; color: #cdd6f4; }
+
+  #zoom-iframe-wrap {
+    margin-top: 44px;
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    width: 100%;
+    overflow: hidden;
+  }
+  #zoom-iframe {
+    border: none; border-radius: 4px;
+    box-shadow: 0 0 0 1px #1e1e2e, 0 24px 80px rgba(0,0,0,.8);
+    display: block;
+  }
+  #zoom-hint {
+    font-size: 11px; color: #313244;
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+  }
+
+  /* Loading state for iframe */
+  #zoom-loading {
+    position: absolute;
+    color: #45475a; font-size: 13px;
+    display: none;
+  }
+  #zoom-loading.visible { display: block; }
+</style>
+</head>
+<body>
+
+<!-- TOP NAV -->
+<div class="topbar">
+  <div class="topbar-logo">⚡ Blitzscale OS — Wireframes</div>
+  <div class="topbar-pages" id="pageNav">
+    <button class="page-btn active"     onclick="showPage('all')">All</button>
+    <button class="page-btn" onclick="showPage('chat')">01 · Julian</button>
+    <button class="page-btn" onclick="showPage('dashboard')">02 · Dashboard</button>
+    <button class="page-btn" onclick="showPage('campaigns')">03 · Campaigns</button>
+    <button class="page-btn" onclick="showPage('inbox')">04 · Inbox</button>
+    <button class="page-btn" onclick="showPage('inboxes')">05 · Inboxes</button>
+    <button class="page-btn" onclick="showPage('knowledge')">06 · Knowledge</button>
+    <button class="page-btn" onclick="showPage('skills')">07 · Skills</button>
+    <button class="page-btn" onclick="showPage('settings')">08 · Settings</button>
+    <button class="page-btn" onclick="showPage('analytics')">09 · Analytics</button>
+  </div>
+  <div class="topbar-right">
+    <span class="badge">23 screens</span>
+    <span class="hint">Click any frame to open live preview →</span>
+  </div>
+</div>
+
+<!-- ZOOM OVERLAY (single lazy-loaded iframe) -->
+<div id="zoom-overlay">
+  <div id="zoom-topbar">
+    <span id="zoom-label"></span>
+    <span id="zoom-url"></span>
+    <button id="zoom-close" onclick="closeZoom()">✕ Close (Esc)</button>
+  </div>
+  <div id="zoom-iframe-wrap">
+    <iframe id="zoom-iframe" width="1440" height="760" scrolling="yes"></iframe>
+  </div>
+  <div id="zoom-hint">Scroll inside the frame to explore · Press Esc to close</div>
+</div>
+
+<div class="canvas" id="mainCanvas">
+
+<!-- ════════════════════════════════════════ -->
+<!-- 01  JULIAN AI CHAT                      -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="chat all">
+  <div class="section-header">
+    <span class="section-num">01</span>
+    <span class="section-name">Julian AI Chat</span>
+    <span class="section-route">localhost:3000/</span>
+    <span class="section-count">1 state</span>
+  </div>
+  <div class="frames-row">
+
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Default State</div>
+      <div class="frame-sublabel">Julian — New Session (empty)</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/', 'Julian AI Chat', 'localhost:3000/')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/ · Julian AI Chat</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">✦</div>
+          <div class="preview-name">Julian AI Chat — Default</div>
+          <div class="preview-hint">⊞ Chat input · Vault · Options · Chat/Research toggle</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Chat Input — type message + press Enter or click send arrow</div>
+        <div class="ann-item"><div class="ann-dot p"></div>@ Mention Button — opens chip picker (campaigns, docs, context)</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Vault Dropdown — attach vault documents as context</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Options Menu — Fact-check focus, mode switcher</div>
+        <div class="ann-item"><div class="ann-dot b"></div>Chat / Research Toggle — switches between chat and Perplexity research mode</div>
+        <div class="ann-item"><div class="ann-dot g"></div>+ New Session button — top of sidebar, creates a fresh conversation</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Session Sidebar (right) — list of past sessions, click to load, X to delete</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Mention Chips — pinned campaign / context chips above input</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section chat -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 02  DASHBOARD                           -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="dashboard all">
+  <div class="section-header">
+    <span class="section-num">02</span>
+    <span class="section-name">Dashboard</span>
+    <span class="section-route">localhost:3000/dashboard</span>
+    <span class="section-count">1 state</span>
+  </div>
+  <div class="frames-row">
+
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Main View</div>
+      <div class="frame-sublabel">Dashboard Overview</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/dashboard', 'Dashboard', 'localhost:3000/dashboard')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/dashboard · Dashboard</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">📊</div>
+          <div class="preview-name">Dashboard — Overview</div>
+          <div class="preview-hint">KPI cards · Pipeline funnel · Activity feed · Campaign status</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>KPI Cards row — Leads, Replies, Meetings, Revenue (click to drill down)</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Pipeline Funnel — visual stage breakdown, hover for counts</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Active Campaigns list — status badge, progress bar, quick actions</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Activity Feed — real-time events (new reply, meeting booked, etc.)</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Date Range Picker — filter all widgets by time window</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section dashboard -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 03  CAMPAIGNS                           -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="campaigns all">
+  <div class="section-header">
+    <span class="section-num">03</span>
+    <span class="section-name">Campaigns</span>
+    <span class="section-route">localhost:3000/campaigns</span>
+    <span class="section-count">6 states · Campaign List + 5 Builder Tabs</span>
+  </div>
+  <div class="frames-row">
+
+    <!-- 3A Campaign List -->
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Campaign List</div>
+      <div class="frame-sublabel">All Campaigns</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/campaigns', 'Campaigns — List View', 'localhost:3000/campaigns')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/campaigns · Campaign List</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">📣</div>
+          <div class="preview-name">Campaigns — List</div>
+          <div class="preview-hint">Campaign cards · Status badges · New Campaign button</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Campaign Cards — name, status badge (Active/Paused/Draft), lead count, open rate</div>
+        <div class="ann-item"><div class="ann-dot g"></div>+ New Campaign button — top right, opens Campaign Builder</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Search / Filter bar — filter by status, date range</div>
+        <div class="ann-item"><div class="ann-dot p"></div>✏ Edit icon on card — opens Campaign Builder for that campaign</div>
+        <div class="ann-item"><div class="ann-dot r"></div>⋯ Actions menu — Pause, Duplicate, Delete campaign</div>
+      </div>
+    </div>
+
+    <!-- 3B Leads Tab -->
+    <div class="frame-wrap">
+      <div class="frame-tag">B · Builder · Leads Tab</div>
+      <div class="frame-sublabel">Lead Management</div>
+      <div class="frame-box" style="width:560px;height:315px"
+           onclick="openZoom('http://localhost:3000/campaigns', 'Campaign Builder — Leads Tab', 'localhost:3000/campaigns → Edit → Leads')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">Campaign Builder · Leads</div>
+        </div>
+        <div class="frame-preview" style="height:287px">
+          <div class="preview-icon">👥</div>
+          <div class="preview-name">Builder — Leads Tab</div>
+          <div class="preview-hint">Upload CSV · filter leads · lead table</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">560 × 315 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Tab bar: Leads | Sequences | Schedule | Settings | Subsequences</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Upload CSV — drag & drop or click to upload lead list</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Lead Table — name, email, company, status; sortable columns</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Filter / Search — filter by lead status, field values</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Lead Count badge — shows total / active leads</div>
+      </div>
+    </div>
+
+    <!-- 3C Sequences Tab -->
+    <div class="frame-wrap">
+      <div class="frame-tag">C · Builder · Sequences Tab</div>
+      <div class="frame-sublabel">Email Sequence Editor</div>
+      <div class="frame-box" style="width:560px;height:315px"
+           onclick="openZoom('http://localhost:3000/campaigns', 'Campaign Builder — Sequences Tab', 'localhost:3000/campaigns → Edit → Sequences')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">Campaign Builder · Sequences</div>
+        </div>
+        <div class="frame-preview" style="height:287px">
+          <div class="preview-icon">📧</div>
+          <div class="preview-name">Builder — Sequences Tab</div>
+          <div class="preview-hint">Email steps · delay config · subject/body editor</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">560 × 315 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Step Cards (draggable) — each email step with subject preview, delay label</div>
+        <div class="ann-item"><div class="ann-dot g"></div>+ Add Step button — appends new email step to sequence</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Click step to edit — opens TipTap rich text editor for subject + body</div>
+        <div class="ann-item"><div class="ann-dot p"></div>{{variable}} placeholders — {{firstName}}, {{company}}, custom fields</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Delay Picker — "Wait X days" between steps</div>
+      </div>
+    </div>
+
+    <!-- 3D Schedule Tab -->
+    <div class="frame-wrap">
+      <div class="frame-tag">D · Builder · Schedule Tab</div>
+      <div class="frame-sublabel">Sending Schedule</div>
+      <div class="frame-box" style="width:560px;height:315px"
+           onclick="openZoom('http://localhost:3000/campaigns', 'Campaign Builder — Schedule Tab', 'localhost:3000/campaigns → Edit → Schedule')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">Campaign Builder · Schedule</div>
+        </div>
+        <div class="frame-preview" style="height:287px">
+          <div class="preview-icon">🗓</div>
+          <div class="preview-name">Builder — Schedule Tab</div>
+          <div class="preview-hint">Send window · days of week · timezone</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">560 × 315 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Days of Week toggles — Mon–Sun checkboxes for allowed send days</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Time Window — from / to time pickers (e.g. 09:00 – 17:00)</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Timezone Selector — dropdown, defaults to company timezone</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Daily Send Limit — max emails per day per inbox</div>
+      </div>
+    </div>
+
+    <!-- 3E Settings Tab -->
+    <div class="frame-wrap">
+      <div class="frame-tag">E · Builder · Settings Tab</div>
+      <div class="frame-sublabel">Campaign Settings</div>
+      <div class="frame-box" style="width:560px;height:315px"
+           onclick="openZoom('http://localhost:3000/campaigns', 'Campaign Builder — Settings Tab', 'localhost:3000/campaigns → Edit → Settings')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">Campaign Builder · Settings</div>
+        </div>
+        <div class="frame-preview" style="height:287px">
+          <div class="preview-icon">⚙</div>
+          <div class="preview-name">Builder — Settings Tab</div>
+          <div class="preview-hint">Campaign name · sender inbox · reply handling</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">560 × 315 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Campaign Name — editable text field</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Sender Inbox Selector — choose from connected inboxes</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Reply Handling — stop on reply toggle, mark as interested threshold</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Unsubscribe Link — toggle to include auto-unsubscribe footer</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Save / Launch button — bottom of panel, publishes campaign</div>
+      </div>
+    </div>
+
+    <!-- 3F Subsequences Tab -->
+    <div class="frame-wrap">
+      <div class="frame-tag">F · Builder · Subsequences Tab</div>
+      <div class="frame-sublabel">Conditional Sub-sequences</div>
+      <div class="frame-box" style="width:560px;height:315px"
+           onclick="openZoom('http://localhost:3000/campaigns', 'Campaign Builder — Subsequences Tab', 'localhost:3000/campaigns → Edit → Subsequences')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">Campaign Builder · Subsequences</div>
+        </div>
+        <div class="frame-preview" style="height:287px">
+          <div class="preview-icon">🔀</div>
+          <div class="preview-name">Builder — Subsequences Tab</div>
+          <div class="preview-hint">Trigger rules · branch sequences · conditional logic</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">560 × 315 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Trigger Rules — "If lead replies with X → branch to subsequence Y"</div>
+        <div class="ann-item"><div class="ann-dot g"></div>+ Add Subsequence — creates a new conditional branch</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Branch Editor — same sequence builder UI, scoped to this branch</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Condition Picker — "Replied", "Opened", "Clicked", "No response after N days"</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section campaigns -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 04  INBOX                               -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="inbox all">
+  <div class="section-header">
+    <span class="section-num">04</span>
+    <span class="section-name">Inbox</span>
+    <span class="section-route">localhost:3000/inbox</span>
+    <span class="section-count">2 states · List + Message Detail</span>
+  </div>
+  <div class="frames-row">
+
+    <!-- 4A List View -->
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Message List</div>
+      <div class="frame-sublabel">Inbox — No message selected</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/inbox', 'Inbox — Message List', 'localhost:3000/inbox')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/inbox · Inbox</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">📬</div>
+          <div class="preview-name">Inbox — List View</div>
+          <div class="preview-hint">Message thread list · filter tabs · unread badges</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Filter Tabs — All / Unread / Interested / Not Interested / Meetings</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Thread List — sender name, snippet, campaign tag, timestamp, unread dot</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Search Bar — search across all message threads</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Sort Dropdown — by date, by status, by campaign</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Click Thread — loads message detail in right panel</div>
+      </div>
+    </div>
+
+    <!-- 4B Message Detail -->
+    <div class="frame-wrap">
+      <div class="frame-tag">B · Message Detail</div>
+      <div class="frame-sublabel">Inbox — Message Open + Reply Composer</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/inbox', 'Inbox — Message Detail + Composer', 'localhost:3000/inbox → click thread')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/inbox · Message Detail</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">✉</div>
+          <div class="preview-name">Inbox — Message Detail</div>
+          <div class="preview-hint">Thread history · reply composer · AI draft · lead status</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Email Thread — full message history, collapsible quoted text</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Reply Composer — rich text, subject pre-filled, To pre-filled</div>
+        <div class="ann-item"><div class="ann-dot p"></div>✦ AI Draft — Julian suggests a reply based on context, click to accept/edit</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Lead Status Dropdown — mark as Interested / Not Interested / Meeting Booked</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Send / Schedule — immediate send or schedule for later</div>
+        <div class="ann-item"><div class="ann-dot b"></div>← Back — returns to list view (mobile) or collapses panel</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section inbox -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 05  INBOXES                             -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="inboxes all">
+  <div class="section-header">
+    <span class="section-num">05</span>
+    <span class="section-name">Inboxes</span>
+    <span class="section-route">localhost:3000/inboxes</span>
+    <span class="section-count">3 tabs · Domains · Platform Upload · Connections</span>
+  </div>
+  <div class="frames-row">
+
+    <!-- 5A Domains -->
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Domains Tab</div>
+      <div class="frame-sublabel">Domain Management</div>
+      <div class="frame-box" style="width:620px;height:349px"
+           onclick="openZoom('http://localhost:3000/inboxes', 'Inboxes — Domains Tab', 'localhost:3000/inboxes → Domains')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/inboxes · Domains</div>
+        </div>
+        <div class="frame-preview" style="height:321px">
+          <div class="preview-icon">🌐</div>
+          <div class="preview-name">Inboxes — Domains</div>
+          <div class="preview-hint">Domain list · DNS status · warm-up state</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">620 × 349 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Tab bar: Domains | Platform Upload | Platform Connections</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Domain rows — domain name, DNS status (✓ / ✗), warm-up status</div>
+        <div class="ann-item"><div class="ann-dot y"></div>+ Add Domain — opens dialog to add new sending domain</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Warm-up Toggle — enable/disable gradual volume increase</div>
+        <div class="ann-item"><div class="ann-dot p"></div>⋯ Actions — Remove domain, view DNS records</div>
+      </div>
+    </div>
+
+    <!-- 5B Platform Upload -->
+    <div class="frame-wrap">
+      <div class="frame-tag">B · Platform Upload Tab</div>
+      <div class="frame-sublabel">Upload inbox accounts</div>
+      <div class="frame-box" style="width:620px;height:349px"
+           onclick="openZoom('http://localhost:3000/inboxes', 'Inboxes — Platform Upload Tab', 'localhost:3000/inboxes → Platform Upload')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/inboxes · Platform Upload</div>
+        </div>
+        <div class="frame-preview" style="height:321px">
+          <div class="preview-icon">⬆</div>
+          <div class="preview-name">Inboxes — Platform Upload</div>
+          <div class="preview-hint">CSV upload · bulk inbox import · progress</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">620 × 349 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Drag & Drop Zone — upload CSV with inbox credentials</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Download Template — sample CSV with required columns</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Upload Progress — row-by-row validation and import status</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Error Rows — highlighted with reason (invalid format, duplicate)</div>
+      </div>
+    </div>
+
+    <!-- 5C Platform Connections -->
+    <div class="frame-wrap">
+      <div class="frame-tag">C · Platform Connections Tab</div>
+      <div class="frame-sublabel">OAuth-connected email accounts</div>
+      <div class="frame-box" style="width:620px;height:349px"
+           onclick="openZoom('http://localhost:3000/inboxes', 'Inboxes — Platform Connections Tab', 'localhost:3000/inboxes → Platform Connections')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/inboxes · Connections</div>
+        </div>
+        <div class="frame-preview" style="height:321px">
+          <div class="preview-icon">🔗</div>
+          <div class="preview-name">Inboxes — Connections</div>
+          <div class="preview-hint">Gmail / Outlook OAuth · connected accounts list</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">620 × 349 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Connect Gmail — OAuth flow button, opens Google consent screen</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Connect Outlook — Microsoft OAuth button</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Connected Accounts list — email, platform icon, connected date</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Disconnect — remove OAuth connection, requires confirmation</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Status badge — Active / Expired (re-authenticate prompt)</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section inboxes -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 06  KNOWLEDGE BASE                      -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="knowledge all">
+  <div class="section-header">
+    <span class="section-num">06</span>
+    <span class="section-name">Knowledge Base</span>
+    <span class="section-route">localhost:3000/knowledge</span>
+    <span class="section-count">2 states · Projects Grid + Project Workspace</span>
+  </div>
+  <div class="frames-row">
+
+    <!-- 6A Projects Grid -->
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Projects Grid</div>
+      <div class="frame-sublabel">Vault — All Projects</div>
+      <div class="frame-box" style="width:620px;height:349px"
+           onclick="openZoom('http://localhost:3000/knowledge', 'Knowledge Base — Projects Grid', 'localhost:3000/knowledge')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/knowledge · Projects</div>
+        </div>
+        <div class="frame-preview" style="height:321px">
+          <div class="preview-icon">📚</div>
+          <div class="preview-name">Knowledge Base — Projects</div>
+          <div class="preview-hint">Project cards grid · doc count · + New Project</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">620 × 349 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Project Cards — project name, doc count, last updated, color tag</div>
+        <div class="ann-item"><div class="ann-dot g"></div>+ New Project — opens create project dialog (name, description)</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Click Card → Project Workspace for that project</div>
+        <div class="ann-item"><div class="ann-dot r"></div>⋯ Actions — Rename, Delete, Export project</div>
+      </div>
+    </div>
+
+    <!-- 6B Project Workspace -->
+    <div class="frame-wrap">
+      <div class="frame-tag">B · Project Workspace</div>
+      <div class="frame-sublabel">Document Editor + Project-scoped Chat</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/knowledge', 'Knowledge — Project Workspace', 'localhost:3000/knowledge/p/[id]')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/knowledge/p/[id] · Project Workspace</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">📝</div>
+          <div class="preview-name">Knowledge — Project Workspace</div>
+          <div class="preview-hint">File tree · TipTap editor · project chat · upload docs</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>File Tree (left panel) — list of documents in project, click to open</div>
+        <div class="ann-item"><div class="ann-dot g"></div>TipTap Editor (center) — rich text document editor with slash commands</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Project Chat (right panel) — Julian chat scoped to this project's documents</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Upload Button — add PDF/DOCX/TXT to project, triggers ingestion</div>
+        <div class="ann-item"><div class="ann-dot r"></div>+ New Doc — creates blank document in this project</div>
+        <div class="ann-item"><div class="ann-dot b"></div>Breadcrumb — Knowledge > [Project Name] > [Doc Name]</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section knowledge -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 07  SKILLS STORE                        -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="skills all">
+  <div class="section-header">
+    <span class="section-num">07</span>
+    <span class="section-name">Skills Store</span>
+    <span class="section-route">localhost:3000/skills</span>
+    <span class="section-count">1 state</span>
+  </div>
+  <div class="frames-row">
+
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Your Skills</div>
+      <div class="frame-sublabel">Skills Store — Browse &amp; Manage</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/skills', 'Skills Store', 'localhost:3000/skills')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/skills · Skills Store</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">🧠</div>
+          <div class="preview-name">Skills Store</div>
+          <div class="preview-hint">Skill cards · install/uninstall · categories · search</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Skill Cards — name, description, category tag, install count, version</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Install / Uninstall toggle — one-click, updates agent capabilities immediately</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Category Filter — All / Sales / Research / Enrichment / CRM / Custom</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Search Skills — filter by keyword</div>
+        <div class="ann-item"><div class="ann-dot r"></div>My Skills tab — shows currently installed skills</div>
+        <div class="ann-item"><div class="ann-dot b"></div>Share Skill — generates shareable skill URL</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section skills -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 08  SETTINGS                            -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="settings all">
+  <div class="section-header">
+    <span class="section-num">08</span>
+    <span class="section-name">Settings</span>
+    <span class="section-route">localhost:3000/settings</span>
+    <span class="section-count">6 tabs · API Status · Integrations · Agent · Team · Notifications · Security</span>
+  </div>
+  <div class="frames-row">
+
+    <!-- 8A API Status -->
+    <div class="frame-wrap">
+      <div class="frame-tag">A · API Status</div>
+      <div class="frame-sublabel">Connection Health</div>
+      <div class="frame-box" style="width:500px;height:281px"
+           onclick="openZoom('http://localhost:3000/settings', 'Settings — API Status', 'localhost:3000/settings → API Status')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/settings · API Status</div>
+        </div>
+        <div class="frame-preview" style="height:253px">
+          <div class="preview-icon">📡</div>
+          <div class="preview-name">API Status</div>
+          <div class="preview-hint">Service health · connection indicators</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">500 × 281 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Settings Tab bar: API Status | Integrations | Agent | Team | Notifications | Security</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Service Status rows — OpenClaw, PlusVibe, Supermemory, Supabase — ● / ○ indicator</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Latency display — ms for each service ping</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Refresh — manual re-check of all connections</div>
+      </div>
+    </div>
+
+    <!-- 8B Integrations -->
+    <div class="frame-wrap">
+      <div class="frame-tag">B · Integrations</div>
+      <div class="frame-sublabel">API Keys &amp; Connected Services</div>
+      <div class="frame-box" style="width:500px;height:281px"
+           onclick="openZoom('http://localhost:3000/settings', 'Settings — Integrations', 'localhost:3000/settings → Integrations')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/settings · Integrations</div>
+        </div>
+        <div class="frame-preview" style="height:253px">
+          <div class="preview-icon">🔑</div>
+          <div class="preview-name">Settings — Integrations</div>
+          <div class="preview-hint">API key fields · PlusVibe · Close CRM · Perplexity</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">500 × 281 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>PlusVibe API Key — masked input, Test Connection button</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Close CRM API Key — masked input, optional integration</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Perplexity API Key — for Research mode in Julian chat</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Save — saves all API keys at once</div>
+      </div>
+    </div>
+
+    <!-- 8C Agent -->
+    <div class="frame-wrap">
+      <div class="frame-tag">C · Agent</div>
+      <div class="frame-sublabel">Julian Agent Configuration</div>
+      <div class="frame-box" style="width:500px;height:281px"
+           onclick="openZoom('http://localhost:3000/settings', 'Settings — Agent', 'localhost:3000/settings → Agent')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/settings · Agent</div>
+        </div>
+        <div class="frame-preview" style="height:253px">
+          <div class="preview-icon">🤖</div>
+          <div class="preview-name">Settings — Agent</div>
+          <div class="preview-hint">System prompt · tone · autonomy level · memory</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">500 × 281 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Custom System Prompt — textarea for company/agent context</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Tone Selector — Formal / Professional / Friendly</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Autonomy Level — how proactively Julian takes actions</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Memory Toggle — enable/disable Supermemory context retention</div>
+      </div>
+    </div>
+
+    <!-- 8D Team -->
+    <div class="frame-wrap">
+      <div class="frame-tag">D · Team</div>
+      <div class="frame-sublabel">Members &amp; Roles</div>
+      <div class="frame-box" style="width:500px;height:281px"
+           onclick="openZoom('http://localhost:3000/settings', 'Settings — Team', 'localhost:3000/settings → Team')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/settings · Team</div>
+        </div>
+        <div class="frame-preview" style="height:253px">
+          <div class="preview-icon">👤</div>
+          <div class="preview-name">Settings — Team</div>
+          <div class="preview-hint">Member list · roles · invite by email</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">500 × 281 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Member rows — avatar, name, email, role badge (Owner/Admin/Member)</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Invite Member — email input + role dropdown + Send Invite</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Role Change — dropdown on each member row</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Remove Member — ✗ button, requires confirmation</div>
+      </div>
+    </div>
+
+    <!-- 8E Notifications -->
+    <div class="frame-wrap">
+      <div class="frame-tag">E · Notifications</div>
+      <div class="frame-sublabel">Webhook &amp; Alert Settings</div>
+      <div class="frame-box" style="width:500px;height:281px"
+           onclick="openZoom('http://localhost:3000/settings', 'Settings — Notifications', 'localhost:3000/settings → Notifications')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/settings · Notifications</div>
+        </div>
+        <div class="frame-preview" style="height:253px">
+          <div class="preview-icon">🔔</div>
+          <div class="preview-name">Settings — Notifications</div>
+          <div class="preview-hint">Email alerts · webhook URL · event toggles</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">500 × 281 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Webhook URL — POST endpoint for events (new reply, meeting booked, etc.)</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Email Notifications — toggle per event type</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Event Toggles — New Reply, Meeting Booked, Campaign Finished, Lead Status Change</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Test Webhook — sends a sample payload to the configured URL</div>
+      </div>
+    </div>
+
+    <!-- 8F Security -->
+    <div class="frame-wrap">
+      <div class="frame-tag">F · Security</div>
+      <div class="frame-sublabel">Password &amp; Session Management</div>
+      <div class="frame-box" style="width:500px;height:281px"
+           onclick="openZoom('http://localhost:3000/settings', 'Settings — Security', 'localhost:3000/settings → Security')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/settings · Security</div>
+        </div>
+        <div class="frame-preview" style="height:253px">
+          <div class="preview-icon">🔒</div>
+          <div class="preview-name">Settings — Security</div>
+          <div class="preview-hint">Password change · active sessions · 2FA</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">500 × 281 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Change Password — current + new + confirm fields</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Active Sessions — list of logged-in devices, revoke individual sessions</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Two-Factor Auth — enable/disable TOTP 2FA</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Sign Out All Devices — nuclear option with confirmation</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section settings -->
+
+
+<!-- ════════════════════════════════════════ -->
+<!-- 09  ANALYTICS                           -->
+<!-- ════════════════════════════════════════ -->
+<div class="section visible" data-page="analytics all">
+  <div class="section-header">
+    <span class="section-num">09</span>
+    <span class="section-name">Analytics</span>
+    <span class="section-route">localhost:3000/analytics</span>
+    <span class="section-count">1 state</span>
+  </div>
+  <div class="frames-row">
+
+    <div class="frame-wrap">
+      <div class="frame-tag">A · Main View</div>
+      <div class="frame-sublabel">Analytics Overview</div>
+      <div class="frame-box" style="width:940px;height:529px"
+           onclick="openZoom('http://localhost:3000/analytics', 'Analytics', 'localhost:3000/analytics')">
+        <div class="frame-chrome">
+          <div class="chrome-dot r"></div><div class="chrome-dot y"></div><div class="chrome-dot g"></div>
+          <div class="chrome-url">localhost:3000/analytics · Analytics</div>
+        </div>
+        <div class="frame-preview" style="height:501px">
+          <div class="preview-icon">📈</div>
+          <div class="preview-name">Analytics</div>
+          <div class="preview-hint">Open/reply rates · time-series charts · campaign comparison</div>
+          <div class="preview-badge">▶ Open Live Preview</div>
+        </div>
+      </div>
+      <div class="frame-dims">940 × 529 display · 1504 × 817 native</div>
+      <div class="annotations">
+        <div class="ann-item"><div class="ann-dot b"></div>Date Range Picker — 7d / 30d / 90d / custom range</div>
+        <div class="ann-item"><div class="ann-dot g"></div>Metric Cards — Sent, Delivered, Opened, Replied, Meetings, Bounced</div>
+        <div class="ann-item"><div class="ann-dot y"></div>Time-Series Chart (Recharts) — open rate + reply rate over time</div>
+        <div class="ann-item"><div class="ann-dot p"></div>Campaign Breakdown Table — per-campaign stats, sortable</div>
+        <div class="ann-item"><div class="ann-dot r"></div>Export CSV — download analytics data for the selected period</div>
+        <div class="ann-item"><div class="ann-dot b"></div>Campaign Filter — filter all charts to a specific campaign</div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /section analytics -->
+
+</div><!-- /canvas -->
+
+<script>
+// ── PAGE FILTER ──
+function showPage(page) {
+  const sections = document.querySelectorAll('.section');
+  sections.forEach(s => {
+    const pages = s.dataset.page || 'all';
+    s.classList.toggle('visible', pages.includes(page));
+  });
+  document.querySelectorAll('.page-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent.toLowerCase().includes(page) ||
+      (page === 'all' && b.textContent.trim() === 'All'));
+  });
+}
+
+// ── ZOOM OVERLAY (lazy iframe) ──
+function openZoom(url, label, routeHint) {
+  const overlay = document.getElementById('zoom-overlay');
+  const iframe  = document.getElementById('zoom-iframe');
+  const labelEl = document.getElementById('zoom-label');
+  const urlEl   = document.getElementById('zoom-url');
+
+  // Calc available space
+  const vw = window.innerWidth;
+  const vh = window.innerHeight - 44 - 32; // minus topbar & hint
+  const scale = Math.min(vw / 1504, vh / 817, 1);
+  const iw = Math.round(1504 * scale);
+  const ih = Math.round(817  * scale);
+
+  iframe.width  = iw;
+  iframe.height = ih;
+  iframe.style.width  = iw + 'px';
+  iframe.style.height = ih + 'px';
+
+  labelEl.textContent = label;
+  urlEl.textContent   = routeHint || url;
+
+  // Load the URL
+  iframe.src = url;
+
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeZoom() {
+  const overlay = document.getElementById('zoom-overlay');
+  const iframe  = document.getElementById('zoom-iframe');
+  overlay.style.display = 'none';
+  document.body.style.overflow = '';
+  // Clear src so next open starts fresh
+  setTimeout(() => { iframe.src = ''; }, 200);
+}
+
+// Close on background click (not on iframe or topbar)
+document.getElementById('zoom-overlay').addEventListener('click', function(e) {
+  if (e.target === this || e.target.id === 'zoom-iframe-wrap') closeZoom();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeZoom();
+});
+</script>
+</body>
+</html>
