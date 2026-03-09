@@ -50,6 +50,7 @@ export async function GET(request: NextRequest) {
           .from("inboxing_domain_assignments")
           .select("inboxing_id, company_id, status, assigned_at, companies(id, name, slug)")
           .in("inboxing_id", inboxingIds)
+          .eq("status", "active")
       : { data: [] };
 
     const assignmentMap = new Map(
@@ -122,6 +123,9 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { inboxing_ids, company_id, notes } = body;
+    const domainNameMap = typeof body?.domain_names === "object" && body?.domain_names !== null
+      ? body.domain_names
+      : {};
 
     if (!inboxing_ids || !Array.isArray(inboxing_ids) || inboxing_ids.length === 0) {
       return NextResponse.json({ error: "inboxing_ids array is required" }, { status: 400 });
@@ -156,7 +160,12 @@ export async function POST(request: NextRequest) {
       const inboxingId = inboxing_ids[i];
       const domainResult = domainDetails[i];
 
-      if (domainResult.status === "rejected") {
+      const fallbackDomainName =
+        typeof domainNameMap?.[inboxingId] === "string" && domainNameMap[inboxingId].trim()
+          ? domainNameMap[inboxingId].trim()
+          : null;
+
+      if (domainResult.status === "rejected" && !fallbackDomainName) {
         results.push({
           inboxing_id: inboxingId,
           success: false,
@@ -164,15 +173,16 @@ export async function POST(request: NextRequest) {
         });
         continue;
       }
-
-      const domain = domainResult.value;
+      const resolvedDomainName =
+        domainResult.status === "fulfilled"
+          ? domainResult.value?.domain || fallbackDomainName || `inboxing-${inboxingId}`
+          : fallbackDomainName || `inboxing-${inboxingId}`;
 
       // Check if already assigned
       const { data: existing } = await admin
         .from("inboxing_domain_assignments")
-        .select("id, company_id")
+        .select("id, company_id, status")
         .eq("inboxing_id", inboxingId)
-        .eq("status", "active")
         .maybeSingle();
 
       if (existing) {
@@ -197,21 +207,14 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // If company changed, update slot counts
-        if (existing.company_id !== company_id) {
-          // Decrement old company
-          await admin.rpc("decrement_company_slots", { p_company_id: existing.company_id }).catch(() => {});
-          // Increment new company
-          await admin.rpc("increment_company_slots", { p_company_id: company_id }).catch(() => {});
-        }
       } else {
         // Create new assignment
         const { error: insertError } = await admin
           .from("inboxing_domain_assignments")
           .insert({
             company_id,
-            inboxing_id,
-            domain_name: domain.domain,
+            inboxing_id: inboxingId,
+            domain_name: resolvedDomainName,
             assigned_by: auth.userId,
             notes: notes || null,
             status: "active",
@@ -226,13 +229,11 @@ export async function POST(request: NextRequest) {
           continue;
         }
 
-        // Increment company slot usage
-        await admin.rpc("increment_company_slots", { p_company_id: company_id }).catch(() => {});
       }
 
       results.push({
         inboxing_id: inboxingId,
-        domain_name: domain.domain,
+        domain_name: resolvedDomainName,
         success: true,
       });
     }
@@ -242,6 +243,79 @@ export async function POST(request: NextRequest) {
     console.error("[Admin Inboxing Domains] Assignment error:", error);
     return NextResponse.json(
       { error: error.message || "Failed to assign domains" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/admin/inboxing-domains
+ * Reclaim/unassign domain(s) from companies
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await authenticateUser();
+    if (!auth || !isAdminEmail(auth.email)) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const inboxingIds = Array.isArray(body?.inboxing_ids)
+      ? body.inboxing_ids.map((id: unknown) => String(id)).filter(Boolean)
+      : [];
+
+    if (inboxingIds.length === 0) {
+      return NextResponse.json({ error: "inboxing_ids array is required" }, { status: 400 });
+    }
+
+    const admin = getAdmin();
+    const { data: activeAssignments, error: queryError } = await admin
+      .from("inboxing_domain_assignments")
+      .select("id, inboxing_id, domain_name")
+      .in("inboxing_id", inboxingIds)
+      .eq("status", "active");
+
+    if (queryError) {
+      return NextResponse.json({ error: queryError.message }, { status: 500 });
+    }
+
+    if (!activeAssignments || activeAssignments.length === 0) {
+      return NextResponse.json({ results: [] });
+    }
+
+    const reclaimedAt = new Date().toISOString();
+    const results = await Promise.all(
+      activeAssignments.map(async (assignment) => {
+        const { error } = await admin
+          .from("inboxing_domain_assignments")
+          .update({
+            status: "reclaimed",
+            notes: `Reclaimed by ${auth.email} on ${reclaimedAt}`,
+          })
+          .eq("id", assignment.id);
+
+        if (error) {
+          return {
+            inboxing_id: assignment.inboxing_id,
+            domain_name: assignment.domain_name,
+            success: false,
+            error: error.message,
+          };
+        }
+
+        return {
+          inboxing_id: assignment.inboxing_id,
+          domain_name: assignment.domain_name,
+          success: true,
+        };
+      })
+    );
+
+    return NextResponse.json({ results });
+  } catch (error: any) {
+    console.error("[Admin Inboxing Domains] Reclaim error:", error);
+    return NextResponse.json(
+      { error: error.message || "Failed to reclaim domains" },
       { status: 500 }
     );
   }

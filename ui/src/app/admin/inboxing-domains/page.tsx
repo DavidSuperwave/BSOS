@@ -10,7 +10,7 @@ import {
   DialogDescription,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, CheckCircle2, AlertCircle, Download, Link2, Search } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, Download, Link2, Search, Unlink2 } from "lucide-react";
 
 type InboxingDomain = {
   id: string;
@@ -79,6 +79,7 @@ export default function AdminInboxingDomainsPage() {
   });
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
+  const [reclaimingId, setReclaimingId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -186,6 +187,9 @@ export default function AdminInboxingDomainsPage() {
         body: JSON.stringify({
           inboxing_ids: [selectedDomain.id],
           company_id: selectedUser.company_id,
+          domain_names: {
+            [selectedDomain.id]: selectedDomain.domain,
+          },
         }),
       });
 
@@ -200,14 +204,41 @@ export default function AdminInboxingDomainsPage() {
       setSelectedUser(null);
       setUserSearchQuery("");
       setSearchResults([]);
-      await fetchDomains();
+      await Promise.all([fetchDomains(), fetchSlots()]);
     } catch (error: any) {
       console.error(error);
       showToast("error", error.message || "Failed to assign domain.");
     } finally {
       setAssigning(false);
     }
-  }, [selectedDomain, selectedUser, showToast, fetchDomains]);
+  }, [selectedDomain, selectedUser, showToast, fetchDomains, fetchSlots]);
+
+  const handleReclaim = useCallback(async (domain: InboxingDomain) => {
+    const confirmed = window.confirm(`Remove assignment for ${domain.domain}?`);
+    if (!confirmed) return;
+
+    setReclaimingId(domain.id);
+    try {
+      const res = await fetch("/api/admin/inboxing-domains", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inboxing_ids: [domain.id] }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.error || "Failed to remove assignment");
+      }
+
+      showToast("success", `Removed assignment for ${domain.domain}.`);
+      await Promise.all([fetchDomains(), fetchSlots()]);
+    } catch (error: any) {
+      console.error(error);
+      showToast("error", error.message || "Failed to remove assignment.");
+    } finally {
+      setReclaimingId(null);
+    }
+  }, [fetchDomains, fetchSlots, showToast]);
 
   const handleDownloadCsv = useCallback(async (domain: InboxingDomain) => {
     try {
@@ -422,14 +453,30 @@ export default function AdminInboxingDomainsPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end">
-                          <Button
-                            size="sm"
-                            onClick={() => openAssignDialog(domain)}
-                            className="h-8 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20"
-                          >
-                            <Link2 className="h-3.5 w-3.5 mr-1.5" />
-                            Assign
-                          </Button>
+                          {domain.assigned_to_company_id ? (
+                            <Button
+                              size="sm"
+                              onClick={() => handleReclaim(domain)}
+                              disabled={reclaimingId === domain.id}
+                              className="h-8 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/20"
+                            >
+                              {reclaimingId === domain.id ? (
+                                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                              ) : (
+                                <Unlink2 className="h-3.5 w-3.5 mr-1.5" />
+                              )}
+                              Remove
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={() => openAssignDialog(domain)}
+                              className="h-8 bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/20"
+                            >
+                              <Link2 className="h-3.5 w-3.5 mr-1.5" />
+                              Assign
+                            </Button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -479,7 +526,7 @@ export default function AdminInboxingDomainsPage() {
           <DialogContent className="bg-zinc-900 border border-zinc-800 text-white max-w-md">
             <DialogTitle>Assign Domain to Company</DialogTitle>
             <DialogDescription className="text-zinc-400">
-              Search for a user to assign "{selectedDomain?.domain}" to their company.
+              Search for a user to assign {selectedDomain?.domain} to their company.
             </DialogDescription>
 
             <div className="space-y-4 mt-4">
