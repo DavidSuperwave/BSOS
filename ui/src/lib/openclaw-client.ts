@@ -1,5 +1,6 @@
 import { envConfig } from "./env";
 import crypto from "crypto";
+import { normalizeProvisionerSshKey } from "./ssh-key";
 
 const GATEWAY_TOKEN = () => process.env.OPENCLAW_GATEWAY_TOKEN || "";
 const PROTOCOL_VERSION = 3;
@@ -478,7 +479,7 @@ async function createTunneledWs(
   const dropletIp = envConfig.provisioner.dropletIp();
   const sshKey = envConfig.provisioner.sshKey();
   if (!sshKey) throw new Error("PROVISIONER_SSH_KEY not configured");
-  const cleanKey = sshKey.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const cleanKey = normalizeProvisionerSshKey(sshKey);
 
   return new Promise((resolve, reject) => {
     const sshConn = new Client();

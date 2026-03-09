@@ -1,5 +1,6 @@
 import { Client } from "ssh2";
 import { envConfig } from "@/lib/env";
+import { normalizeProvisionerSshKey } from "@/lib/ssh-key";
 
 /**
  * Execute SSH command(s) on the provisioner droplet using the ssh2 library.
@@ -15,8 +16,7 @@ export async function sshExec(
     throw new Error("PROVISIONER_SSH_KEY not configured");
   }
 
-  // Ensure Unix line endings for the key
-  const cleanKey = sshKey.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const cleanKey = normalizeProvisionerSshKey(sshKey);
   const combined = commands.join(" && ");
 
   return new Promise((resolve, reject) => {

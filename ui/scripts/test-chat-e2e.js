@@ -8,6 +8,39 @@ const OPENROUTER_KEY = "sk-or-v1-11d91980f92360a4ebc0eb4592aaa92e074494da6a1e413
 
 const TEST_MESSAGE = "Hello! This is a test. Please respond with a short greeting and your model name.";
 
+function normalizeLineEndings(value) {
+  return value
+    .replace(/\\u000d/gi, "\n")
+    .replace(/\\u000a/gi, "\n")
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+}
+
+function normalizeProvisionerSshKey(rawValue) {
+  if (!rawValue || !String(rawValue).trim()) {
+    throw new Error("PROVISIONER_SSH_KEY is not configured");
+  }
+
+  let normalized = String(rawValue).trim();
+  if ((normalized.startsWith('"') && normalized.endsWith('"')) || (normalized.startsWith("'") && normalized.endsWith("'"))) {
+    normalized = normalized.slice(1, -1);
+  }
+  normalized = normalizeLineEndings(normalized).trim();
+
+  const hasBegin = /BEGIN [A-Z0-9 ]*PRIVATE KEY/.test(normalized);
+  const hasEnd = /END [A-Z0-9 ]*PRIVATE KEY/.test(normalized);
+  if (!hasBegin || !hasEnd) {
+    throw new Error(
+      "Invalid PROVISIONER_SSH_KEY in current environment (missing complete BEGIN/END markers). " +
+      "The value appears truncated or malformed."
+    );
+  }
+  return normalized;
+}
+
 function createSSHTunnel(port) {
   return new Promise((resolve, reject) => {
     const { Client } = require("ssh2");
@@ -45,7 +78,7 @@ function createSSHTunnel(port) {
     sshConn.connect({
       host: DROPLET_IP,
       username: "root",
-      privateKey: SSH_KEY.replace(/\r\n/g, "\n").replace(/\r/g, "\n"),
+      privateKey: normalizeProvisionerSshKey(SSH_KEY),
     });
   });
 }
