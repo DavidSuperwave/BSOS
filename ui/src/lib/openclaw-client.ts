@@ -2,6 +2,13 @@ import { envConfig } from "./env";
 import crypto from "crypto";
 
 const GATEWAY_TOKEN = () => process.env.OPENCLAW_GATEWAY_TOKEN || "";
+const PROTOCOL_VERSION = 3;
+const CLIENT_ID = "gateway-client";
+const CLIENT_VERSION = "1.0.0";
+const CLIENT_MODE = "backend";
+const CLIENT_CAPS = ["tool-events"];
+const OPERATOR_ROLE = "operator";
+const OPERATOR_SCOPES = ["operator.admin"];
 
 // ============================================
 // ED25519 DEVICE AUTH FOR PROTOCOL V3
@@ -25,21 +32,95 @@ function generateDeviceCredentials() {
 }
 
 /**
+ * Build the OpenClaw protocol v3 device-auth payload.
+ */
+function buildDeviceAuthPayloadV3(params: {
+  deviceId: string;
+  token: string;
+  nonce: string;
+  signedAt: number;
+  clientId?: string;
+  clientMode?: string;
+  role?: string;
+  scopes?: string[];
+  platform?: string;
+  deviceFamily?: string;
+}): string {
+  return [
+    "v3",
+    params.deviceId,
+    params.clientId || CLIENT_ID,
+    params.clientMode || CLIENT_MODE,
+    params.role || OPERATOR_ROLE,
+    (params.scopes || OPERATOR_SCOPES).join(","),
+    String(params.signedAt),
+    params.token || "",
+    params.nonce,
+    params.platform || process.platform,
+    params.deviceFamily || "",
+  ].join("|");
+}
+
+/**
  * Sign the OpenClaw connect challenge with Ed25519.
  */
 function signChallenge(
   privateKey: crypto.KeyObject,
-  deviceId: string,
-  token: string,
-  nonce: string
+  params: {
+    deviceId: string;
+    token: string;
+    nonce: string;
+    clientId?: string;
+    clientMode?: string;
+    role?: string;
+    scopes?: string[];
+    platform?: string;
+    deviceFamily?: string;
+  }
 ): { signature: string; signedAt: number } {
   const signedAt = Date.now();
-  const payload = [
-    "v2", deviceId, "cli", "backend", "operator",
-    "operator.read,operator.write", signedAt, token, nonce,
-  ].join("|");
+  const payload = buildDeviceAuthPayloadV3({
+    ...params,
+    signedAt,
+  });
   const sig = crypto.sign(null, Buffer.from(payload), privateKey);
   return { signature: b64url(sig), signedAt };
+}
+
+function buildConnectRequest(params: {
+  id: string;
+  token: string;
+  device: {
+    id: string;
+    publicKey: string;
+    signature: string;
+    signedAt: number;
+    nonce: string;
+  };
+}): string {
+  return JSON.stringify({
+    type: "req",
+    id: params.id,
+    method: "connect",
+    params: {
+      minProtocol: PROTOCOL_VERSION,
+      maxProtocol: PROTOCOL_VERSION,
+      client: {
+        id: CLIENT_ID,
+        displayName: "Blitzscale UI",
+        version: CLIENT_VERSION,
+        platform: process.platform,
+        mode: CLIENT_MODE,
+      },
+      role: OPERATOR_ROLE,
+      scopes: OPERATOR_SCOPES,
+      caps: CLIENT_CAPS,
+      commands: [],
+      permissions: {},
+      auth: params.token ? { token: params.token } : undefined,
+      device: params.device,
+    },
+  });
 }
 
 // ============================================
@@ -61,7 +142,7 @@ export async function sendMessage(
   model?: string;
 } | null> {
   const baseUrl = envConfig.openclaw.url();
-  const token = GATEWAY_TOKEN();
+  const token = envConfig.openclaw.hookToken() || GATEWAY_TOKEN();
 
   try {
     const res = await fetch(`${baseUrl}/hooks/agent`, {
@@ -108,7 +189,7 @@ export async function wakeAgent(
   agentId?: string
 ): Promise<boolean> {
   const baseUrl = envConfig.openclaw.url();
-  const token = GATEWAY_TOKEN();
+  const token = envConfig.openclaw.hookToken() || GATEWAY_TOKEN();
 
   try {
     const res = await fetch(`${baseUrl}/hooks/wake`, {
@@ -139,7 +220,7 @@ export async function getAgentStatus(
   const baseUrl = envConfig.openclaw.url();
 
   try {
-    const res = await fetch(`${baseUrl}/health`, {
+    const res = await fetch(`${baseUrl}/healthz`, {
       signal: AbortSignal.timeout(5000),
     });
     return { healthy: res.ok };
@@ -195,6 +276,7 @@ async function rpcCall(
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);
     const reqId = nextReqId();
+    const { privateKey, deviceId, pubB64 } = generateDeviceCredentials();
     let settled = false;
 
     const timer = setTimeout(() => {
@@ -219,14 +301,23 @@ async function rpcCall(
 
         // Handle connect challenge
         if (msg.type === "event" && msg.event === "connect.challenge") {
+          const nonce = msg.payload?.nonce;
+          if (!nonce) return;
+          const { signature, signedAt } = signChallenge(privateKey, {
+            deviceId,
+            token,
+            nonce,
+          });
           ws.send(
-            JSON.stringify({
-              type: "req",
+            buildConnectRequest({
               id: "connect-1",
-              method: "connect",
-              params: {
-                token,
-                device: { type: "api", name: "blitzscale-ui" },
+              token,
+              device: {
+                id: deviceId,
+                publicKey: pubB64,
+                signature,
+                signedAt,
+                nonce,
               },
             })
           );
@@ -493,37 +584,22 @@ function performHandshake(
             return reject(new Error("No nonce in connect.challenge"));
           }
 
-          const { signature, signedAt } = signChallenge(privateKey, deviceId, token, nonce);
+          const { signature, signedAt } = signChallenge(privateKey, {
+            deviceId,
+            token,
+            nonce,
+          });
 
           ws.send(
-            JSON.stringify({
-              type: "req",
+            buildConnectRequest({
               id: "connect-1",
-              method: "connect",
-              params: {
-                minProtocol: 3,
-                maxProtocol: 3,
-                client: {
-                  id: "cli",
-                  version: "1.0.0",
-                  platform: "win32",
-                  mode: "backend",
-                },
-                role: "operator",
-                scopes: ["operator.read", "operator.write"],
-                caps: ["tool-events"],
-                commands: [],
-                permissions: {},
-                auth: { token },
-                locale: "en-US",
-                userAgent: "blitzscale-ui/1.0.0",
-                device: {
-                  id: deviceId,
-                  publicKey: pubB64,
-                  signature,
-                  signedAt,
-                  nonce,
-                },
+              token,
+              device: {
+                id: deviceId,
+                publicKey: pubB64,
+                signature,
+                signedAt,
+                nonce,
               },
             })
           );
