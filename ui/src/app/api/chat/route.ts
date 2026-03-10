@@ -993,13 +993,75 @@ async function streamChatCompletion({
 
       try {
         const parsed = JSON.parse(payload);
-        if (parsed.type === "content" && parsed.delta) {
+        if ((parsed.type === "content" || parsed.type === "text-delta") && parsed.delta) {
           fullContent += parsed.delta;
         }
         if (parsed.type === "tool" && parsed.tool) {
           const tools = Array.isArray(parsed.tool) ? parsed.tool : [parsed.tool];
           toolCalls.push(...tools);
           toolSteps.push(...tools);
+        }
+        if (
+          parsed.type === "tool-input-start" ||
+          parsed.type === "tool.started" ||
+          parsed.type === "tool-input-available"
+        ) {
+          const toolName = parsed.toolName || parsed.tool || "Tool";
+          const toolCallId = parsed.toolCallId || parsed.tool_call_id || parsed.id || undefined;
+          toolCalls.push({
+            id: toolCallId,
+            toolCallId,
+            name: toolName,
+            action: "Running",
+            status: "running",
+          });
+          toolSteps.push({
+            id: toolCallId,
+            toolCallId,
+            name: toolName,
+            action: "Running",
+            status: "running",
+          });
+        }
+        if (parsed.type === "tool-output-available" || parsed.type === "tool.succeeded") {
+          const toolName = parsed.toolName || parsed.tool || "Tool";
+          const toolCallId = parsed.toolCallId || parsed.tool_call_id || parsed.id || undefined;
+          toolCalls.push({
+            id: toolCallId,
+            toolCallId,
+            name: toolName,
+            action: "Executed",
+            status: "complete",
+            result: parsed.output || parsed.data || parsed.result || null,
+          });
+          toolSteps.push({
+            id: toolCallId,
+            toolCallId,
+            name: toolName,
+            action: "Executed",
+            status: "complete",
+            result: parsed.output || parsed.data || parsed.result || null,
+          });
+        }
+        if (parsed.type === "tool-output-error" || parsed.type === "tool.failed") {
+          const toolName = parsed.toolName || parsed.tool || "Tool";
+          const toolCallId = parsed.toolCallId || parsed.tool_call_id || parsed.id || undefined;
+          toolCalls.push({
+            id: toolCallId,
+            toolCallId,
+            name: toolName,
+            action: "Failed",
+            status: "error",
+            error: parsed.errorText || parsed.error || parsed.data || "Tool failed",
+          });
+          toolSteps.push({
+            id: toolCallId,
+            toolCallId,
+            name: toolName,
+            action: "Failed",
+            status: "error",
+            error: parsed.errorText || parsed.error || parsed.data || "Tool failed",
+          });
         }
         if (parsed.type === "reasoning-start") {
           reasoningStartAt = Date.now();

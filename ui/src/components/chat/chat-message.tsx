@@ -106,6 +106,13 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
     flowId: task.flowId,
     hardStopBehavior: task.hardStopBehavior,
   }));
+  const showThinkingPlaceholder =
+    !isUser &&
+    Boolean(message.isThinking) &&
+    !message.content?.trim() &&
+    !message.reasoning?.trim() &&
+    normalizedToolCalls.length === 0 &&
+    normalizedTasks.length === 0;
 
   const resolveTask = async (taskId: string, decision: "approved" | "rejected") => {
     try {
@@ -166,7 +173,7 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
           isUser ? "items-end" : "items-start"
         )}
       >
-        {message.isThinking ? (
+        {showThinkingPlaceholder ? (
           <AIMessage isThinking>
             <div className="flex items-center gap-2">
               <TextShimmer>Thinking</TextShimmer>
@@ -334,6 +341,7 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
               <ReasoningPanel
                 reasoning={message.reasoning}
                 durationMs={message.reasoningDuration}
+                isStreaming={Boolean(message.isThinking)}
               />
             )}
 
