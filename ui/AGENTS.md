@@ -391,3 +391,54 @@ openclaw deploy ui/dist --name=blitzscale-ui
 - [Tailwind CSS Documentation](https://tailwindcss.com/docs)
 - [Recharts Documentation](https://recharts.org/en-US)
 - [Lucide Icons](https://lucide.dev/icons/)
+
+---
+
+## Cursor Cloud specific instructions
+
+### Services
+
+| Service | Command | Port | Notes |
+|---------|---------|------|-------|
+| Next.js UI/API | `npm run dev` (in `ui/`) | 3000 | Main app; if port 3000 is busy, Next.js auto-selects 3001 |
+| Webhook receiver | `npm run dev` (in root `/workspace`) | 3000 (configurable via `PORT`) | Standalone Express server; conflicts with UI on same port |
+
+### Running the dev server
+
+```bash
+cd ui && npm run dev
+```
+
+All secrets are injected as environment variables by the cloud agent environment. No `.env.local` file is needed — Next.js reads `NEXT_PUBLIC_*` and server-side vars directly from `process.env`.
+
+### Lint
+
+```bash
+cd ui && npm run lint
+```
+
+Pre-existing warnings (console statements, react-hooks/exhaustive-deps) and one `eqeqeq` error in `admin/domain-assignments/page.tsx` are known and should not be fixed unless specifically requested.
+
+### Build
+
+```bash
+cd ui && npm run build
+```
+
+`next.config.js` sets `ignoreDuringBuilds: true` for both ESLint and TypeScript, so builds succeed even with lint warnings.
+
+### Testing
+
+No test framework (Jest, Vitest, Playwright) is configured. Manual testing via the browser is the primary verification method.
+
+### SSH key / provisioner gotcha
+
+The `PROVISIONER_SSH_KEY` env var (multi-line PEM) gets truncated to just the header line by Cursor's secret injection. Use `PROVISIONER_SSH_KEY_B64` instead — set it to the base64-encoded single-line representation of the private key. The codebase already supports this in `src/lib/provisioner-env.ts` via `resolveProvisionerSshKey()`.
+
+### Missing optional secret: `OPENCLAW_GATEWAY_TOKEN`
+
+Without this token, the Julian AI agent chat feature returns errors. All other features (dashboard, campaigns, inbox, knowledge base, settings) work without it.
+
+### Auth flow
+
+Supabase SSR auth with middleware. Unauthenticated users are redirected to `/login`. After login, users without a company are redirected to `/onboarding`. The middleware has a "demo mode" fallback — if `NEXT_PUBLIC_SUPABASE_URL` is unset, auth checks are skipped entirely.
