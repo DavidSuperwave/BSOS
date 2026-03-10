@@ -433,11 +433,11 @@ No test framework (Jest, Vitest, Playwright) is configured. Manual testing via t
 
 ### SSH key / provisioner gotcha
 
-The `PROVISIONER_SSH_KEY` env var (multi-line PEM) gets truncated to just the header line by Cursor's secret injection. Use `PROVISIONER_SSH_KEY_B64` instead — set it to the base64-encoded single-line representation of the private key. The codebase already supports this in `src/lib/provisioner-env.ts` via `resolveProvisionerSshKey()`.
+The `PROVISIONER_SSH_KEY` env var (multi-line PEM) gets truncated to just the header line by Cursor's secret injection. Use `PROVISIONER_SSH_KEY_B64` instead — set it to the base64-encoded single-line representation of the private key. The codebase already supports this in `src/lib/provisioner-env.ts` via `resolveProvisionerSshKey()`. When base64-encoding the key, ensure the PEM END marker reads `KEY` (all caps) — a lowercase `KeY` will pass SSH tests but fail `ssh2` library parsing in Node.js. Validate with `node scripts/validate-provisioner-key.js`.
 
-### Missing optional secret: `OPENCLAW_GATEWAY_TOKEN`
+### Port conflicts
 
-Without this token, the Julian AI agent chat feature returns errors. All other features (dashboard, campaigns, inbox, knowledge base, settings) work without it.
+Kill stale Next.js processes before starting the dev server. If port 3000 is occupied, Next.js auto-selects the next available port (3001, 3002, etc.), but static assets may 404 on the fallback port due to stale build cache. Always ensure port 3000 is free: `lsof -ti:3000 | xargs kill` then `npm run dev`.
 
 ### Auth flow
 
