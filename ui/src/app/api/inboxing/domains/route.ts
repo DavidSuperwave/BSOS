@@ -177,6 +177,25 @@ export async function POST(req: NextRequest) {
         payload: { domain: domainName, user_count, names, auto_upload },
       });
 
+      if (data.inboxing_id) {
+        const { error: assignmentError } = await admin
+          .from("inboxing_domain_assignments")
+          .upsert(
+            {
+              company_id,
+              inboxing_domain_id: data.id,
+              inboxing_id: data.inboxing_id,
+              domain_name: domainName,
+              status: "active",
+            },
+            { onConflict: "inboxing_id,company_id" }
+          );
+
+        if (assignmentError) {
+          console.warn(`[Assignments] Failed to link ${domainName}:`, assignmentError.message);
+        }
+      }
+
       results.push({
         domain: domainName,
         status: inboxingResult?.status || "pending",

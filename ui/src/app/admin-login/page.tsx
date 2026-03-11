@@ -25,27 +25,13 @@ export default function AdminLoginPage() {
 
     try {
       const supabase = createClient();
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (authError) {
         setError(authError.message);
-        setLoading(false);
-        return;
-      }
-
-      // Verify admin access via API
-      const res = await fetch("/api/admin/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (!res.ok) {
-        // Sign out if not admin
-        await supabase.auth.signOut();
-        setError("Access denied. This login is restricted to platform administrators.");
         setLoading(false);
         return;
       }

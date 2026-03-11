@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import * as inboxing from "@/lib/inboxing-client";
-import { getCompanyAssignedDomains } from "@/lib/inboxing-slots";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -29,25 +28,52 @@ export async function GET(request: NextRequest) {
   if ("error" in accessResult) return accessResult.error;
 
   try {
-    // Get only domains assigned to this company
-    const assignedInboxingIds = await getCompanyAssignedDomains(companyId);
+    const admin = getAdmin();
+    const { data: assignments, error } = await admin
+      .from("inboxing_domain_assignments")
+      .select(
+        "inboxing_id, domain_name, assigned_at, inboxing_domains(id, domain, status, mailbox_count, user_count, tags, nameservers, redirect_url, redirect_type, health_score, dns_spf, dns_dkim, dns_dmarc, campaign_id, created_at)"
+      )
+      .eq("company_id", companyId)
+      .eq("status", "active")
+      .order("assigned_at", { ascending: false });
 
-    if (assignedInboxingIds.length === 0) {
+    if (error) throw error;
+
+    if (!assignments || assignments.length === 0) {
       return NextResponse.json({ domains: [], pagination: { total: 0, page: 1, total_pages: 1 } });
     }
 
-    // Fetch only assigned domain IDs, never full platform inventory.
-    const details = await Promise.allSettled(
-      assignedInboxingIds.map((id) => inboxing.getDomain(id, { usePlatformKey: true }))
-    );
-    const filteredDomains = details
-      .filter((result): result is PromiseFulfilledResult<any> => result.status === "fulfilled")
-      .map((result) => result.value);
+    const domains = assignments.map((assignment: any) => {
+      const localDomain = Array.isArray(assignment.inboxing_domains)
+        ? assignment.inboxing_domains[0]
+        : assignment.inboxing_domains;
+
+      return {
+        id: assignment.inboxing_id,
+        domain: assignment.domain_name || localDomain?.domain || assignment.inboxing_id,
+        status: localDomain?.status || "assigned",
+        inboxing_id: assignment.inboxing_id,
+        mailbox_count: localDomain?.mailbox_count ?? 0,
+        user_count: localDomain?.user_count ?? undefined,
+        tags: localDomain?.tags || [],
+        nameservers: localDomain?.nameservers || [],
+        redirect_url: localDomain?.redirect_url || null,
+        redirect_type: localDomain?.redirect_type || "NONE",
+        health_score: localDomain?.health_score || 0,
+        dns_spf: Boolean(localDomain?.dns_spf),
+        dns_dkim: Boolean(localDomain?.dns_dkim),
+        dns_dmarc: Boolean(localDomain?.dns_dmarc),
+        campaign_id: localDomain?.campaign_id || null,
+        created_at: localDomain?.created_at || assignment.assigned_at,
+        assigned_at: assignment.assigned_at,
+      };
+    });
 
     return NextResponse.json({
-      domains: filteredDomains,
+      domains,
       pagination: {
-        total: filteredDomains.length,
+        total: domains.length,
         page: 1,
         total_pages: 1,
       },
@@ -141,9 +167,6 @@ export async function POST(request: NextRequest) {
         status: "active",
       });
 
-      // Increment used slots
-      const { incrementUsedSlots } = await import("@/lib/inboxing-slots");
-      await incrementUsedSlots(company_id);
     }
 
     return NextResponse.json({ domain: inboxingResult }, { status: 201 });

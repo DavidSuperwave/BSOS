@@ -62,7 +62,7 @@ export async function GET(
       );
     }
 
-    const csv = await inboxing.getDomainCsv(domain.inboxing_id);
+    const csv = await inboxing.getDomainCsv(domain.inboxing_id, { usePlatformKey: true });
 
     return new Response(csv, {
       headers: {

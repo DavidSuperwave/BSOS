@@ -77,6 +77,7 @@ export async function POST(req: NextRequest) {
         domain: string;
         inboxing_id: string;
         status: string | null;
+        created_at: string | null;
       }
     >();
 
@@ -87,12 +88,12 @@ export async function POST(req: NextRequest) {
         localQueries.push(
           admin
             .from("inboxing_domains")
-            .select("id, domain, inboxing_id, status")
+            .select("id, domain, inboxing_id, status, created_at")
             .eq("company_id", companyId)
             .in("id", ids),
           admin
             .from("inboxing_domains")
-            .select("id, domain, inboxing_id, status")
+            .select("id, domain, inboxing_id, status, created_at")
             .eq("company_id", companyId)
             .in("inboxing_id", ids)
         );
@@ -101,7 +102,7 @@ export async function POST(req: NextRequest) {
         localQueries.push(
           admin
             .from("inboxing_domains")
-            .select("id, domain, inboxing_id, status")
+            .select("id, domain, inboxing_id, status, created_at")
             .eq("company_id", companyId)
             .in("domain", emailDomains)
         );
@@ -116,6 +117,7 @@ export async function POST(req: NextRequest) {
             domain: row.domain,
             inboxing_id: row.inboxing_id,
             status: row.status || null,
+            created_at: row.created_at || null,
           });
         }
       }
@@ -127,7 +129,9 @@ export async function POST(req: NextRequest) {
         assignmentQueries.push(
           admin
             .from("inboxing_domain_assignments")
-            .select("inboxing_id, domain_name")
+            .select(
+              "inboxing_id, domain_name, inboxing_domains(id, status, created_at)"
+            )
             .eq("company_id", companyId)
             .eq("status", "active")
             .in("inboxing_id", ids)
@@ -137,7 +141,9 @@ export async function POST(req: NextRequest) {
         assignmentQueries.push(
           admin
             .from("inboxing_domain_assignments")
-            .select("inboxing_id, domain_name")
+            .select(
+              "inboxing_id, domain_name, inboxing_domains(id, status, created_at)"
+            )
             .eq("company_id", companyId)
             .eq("status", "active")
             .in("domain_name", emailDomains)
@@ -148,11 +154,15 @@ export async function POST(req: NextRequest) {
       for (const result of assignmentResults) {
         for (const row of result.data || []) {
           if (!row.inboxing_id || uploadTargets.has(row.inboxing_id)) continue;
+          const localDomain = Array.isArray(row.inboxing_domains)
+            ? row.inboxing_domains[0]
+            : row.inboxing_domains;
           uploadTargets.set(row.inboxing_id, {
-            local_id: null,
+            local_id: localDomain?.id || null,
             domain: row.domain_name || row.inboxing_id,
             inboxing_id: row.inboxing_id,
-            status: null,
+            status: localDomain?.status || null,
+            created_at: localDomain?.created_at || null,
           });
         }
       }
@@ -164,13 +174,18 @@ export async function POST(req: NextRequest) {
 
     const results = [];
     for (const target of uploadTargets.values()) {
-      let liveDomain = target.domain;
       let liveStatus = target.status;
 
-      if (liveStatus !== "active") {
+      // Only re-check the provider when a freshly created local domain has no settled status yet.
+      const shouldProbeProvider =
+        !liveStatus &&
+        Boolean(target.local_id) &&
+        Boolean(target.created_at) &&
+        Date.now() - new Date(target.created_at as string).getTime() < 60 * 60 * 1000;
+
+      if (shouldProbeProvider) {
         try {
-          const providerDomain = await inboxing.getDomain(target.inboxing_id, { usePlatformKey: true });
-          liveDomain = providerDomain.domain || liveDomain;
+          const providerDomain = await inboxing.getDomainStatus(target.inboxing_id, { usePlatformKey: true });
           liveStatus = providerDomain.status || liveStatus;
         } catch {
           liveStatus = liveStatus || "unknown";
@@ -206,7 +221,7 @@ export async function POST(req: NextRequest) {
         result: { ...result, stage },
       });
 
-      results.push({ domain: liveDomain, stage, result });
+      results.push({ domain: target.domain, stage, result });
     }
 
     if (results.length === 0) {

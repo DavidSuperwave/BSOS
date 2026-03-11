@@ -35,7 +35,7 @@ export async function GET(
   let nameservers = (domain.nameservers || []) as string[];
   if (domain.inboxing_id) {
     try {
-      const status = await inboxing.getDomainStatus(domain.inboxing_id);
+      const status = await inboxing.getDomainStatus(domain.inboxing_id, { usePlatformKey: true });
       if (Array.isArray(status.nameservers)) {
         nameservers = status.nameservers;
         await admin

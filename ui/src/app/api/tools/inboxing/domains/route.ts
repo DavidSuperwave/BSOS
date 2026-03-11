@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
 
       return {
         id: String(assignment.inboxing_id),
-        inboxing_id: String(assignment.inboxing_id),
+        provider_id: String(assignment.inboxing_id),
         domain: assignment.domain_name || localDomain?.domain || null,
         status: localDomain?.status || "assigned",
         mailbox_count: localDomain?.mailbox_count ?? 0,

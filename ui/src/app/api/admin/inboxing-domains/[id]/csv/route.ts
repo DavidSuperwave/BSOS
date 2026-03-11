@@ -4,7 +4,7 @@ import { isAdminEmail } from "@/lib/bsos/db";
 import * as inboxing from "@/lib/inboxing-client";
 
 interface RouteParams {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export async function GET(_request: NextRequest, { params }: RouteParams) {
@@ -14,11 +14,12 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    const csv = await inboxing.getDomainCsv(params.id, { usePlatformKey: true });
+    const { id } = await params;
+    const csv = await inboxing.getDomainCsv(id, { usePlatformKey: true });
     return new NextResponse(csv, {
       headers: {
         "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="domain-${params.id}-mailboxes.csv"`,
+        "Content-Disposition": `attachment; filename="domain-${id}-mailboxes.csv"`,
       },
     });
   } catch (error: any) {

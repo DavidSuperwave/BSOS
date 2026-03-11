@@ -134,7 +134,7 @@ export async function DELETE(
 
   if (domain.inboxing_id) {
     try {
-      await inboxing.deleteDomain(domain.inboxing_id);
+      await inboxing.deleteDomain(domain.inboxing_id, { usePlatformKey: true });
     } catch (err) {
       console.warn("[Inboxing] deleteDomain failed", err);
     }

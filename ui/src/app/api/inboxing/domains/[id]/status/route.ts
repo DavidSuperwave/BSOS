@@ -42,7 +42,7 @@ export async function GET(
     let apiStatus = null;
     if (domain.inboxing_id) {
       try {
-        apiStatus = await inboxing.getDomainStatus(domain.inboxing_id);
+        apiStatus = await inboxing.getDomainStatus(domain.inboxing_id, { usePlatformKey: true });
 
         // Update local record if status changed
         if (apiStatus.status !== domain.status) {
