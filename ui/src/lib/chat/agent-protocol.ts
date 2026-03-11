@@ -37,6 +37,17 @@ export interface ParsedAgentDirectives {
   budget?: ActionBudgetDirective;
 }
 
+function stripTrailingPartialDirective(content: string): string {
+  const partialPatterns = [
+    /<tool_call>[\s\S]*$/i,
+    /<task_call>[\s\S]*$/i,
+    /<action_budget>[\s\S]*$/i,
+    /```agent-actions[\s\S]*$/i,
+  ];
+
+  return partialPatterns.reduce((value, pattern) => value.replace(pattern, ""), content);
+}
+
 function safeParseJson(input: string): any | null {
   try {
     return JSON.parse(input);
@@ -205,6 +216,12 @@ export function parseAgentDirectives(content: string): ParsedAgentDirectives {
     directives,
     budget: budget.budget,
   };
+}
+
+export function stripDirectiveMarkupForDisplay(content: string): string {
+  const parsed = parseAgentDirectives(content || "");
+  const withoutTrailingDirective = stripTrailingPartialDirective(parsed.cleanContent || "");
+  return withoutTrailingDirective.replace(/\n{3,}/g, "\n\n").trim();
 }
 
 export function getDirectivePromptInstructions(): string {

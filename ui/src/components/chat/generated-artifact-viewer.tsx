@@ -13,13 +13,11 @@ import {
   FileText,
   PanelRightClose,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import type { GeneratedArtifactSelection } from "./generated-artifact-types";
 
 interface GeneratedArtifactViewerProps {
   artifact: GeneratedArtifactSelection;
   onClose: () => void;
-  onBackToChats?: () => void;
 }
 
 const REPORT_TOKEN_REGEX = /\[report:([^\]]+)\]/g;
