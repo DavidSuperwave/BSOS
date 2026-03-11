@@ -9,6 +9,22 @@ import { envConfig } from "@/lib/env";
 // ── SOUL.md cache ────────────────────────────────────────────────
 let soulMdCache: string | null = null;
 
+function appendDebugLog(entry: {
+  hypothesisId: string;
+  location: string;
+  message: string;
+  data: Record<string, any>;
+}) {
+  try {
+    fs.appendFileSync(
+      "/opt/cursor/logs/debug.log",
+      `${JSON.stringify({ ...entry, timestamp: Date.now() })}\n`
+    );
+  } catch {
+    // Non-blocking debug instrumentation
+  }
+}
+
 function loadSoulMd(): string {
   if (soulMdCache !== null) return soulMdCache;
   try {
@@ -207,7 +223,7 @@ export async function buildAgentSystemPrompt(params: PromptParams): Promise<stri
     ? ["## Working Memory (NOTES.md)", params.notesMarkdown].join("\n")
     : "";
 
-  return [
+  const prompt = [
     // Identity first — SOUL.md defines who Julian is
     soulMd,
     // Then company-specific base context
@@ -225,4 +241,28 @@ export async function buildAgentSystemPrompt(params: PromptParams): Promise<stri
   ]
     .filter(Boolean)
     .join("\n\n");
+  // #region agent log
+  appendDebugLog({
+    hypothesisId: "A",
+    location: "src/lib/chat/system-prompts.ts:buildAgentSystemPrompt",
+    message: "Built base agent system prompt",
+    data: {
+      agentType,
+      promptLength: prompt.length,
+      availableToolsCount: Array.isArray(params.agent?.available_tools)
+        ? params.agent.available_tools.length
+        : 0,
+      hasCreateReport: Array.isArray(params.agent?.available_tools)
+        ? params.agent.available_tools.includes("create_report")
+        : false,
+      hasCreateReportDocument: Array.isArray(params.agent?.available_tools)
+        ? params.agent.available_tools.includes("create_report_document")
+        : false,
+      hasScheduleDailyReport: Array.isArray(params.agent?.available_tools)
+        ? params.agent.available_tools.includes("schedule_daily_report")
+        : false,
+    },
+  });
+  // #endregion
+  return prompt;
 }

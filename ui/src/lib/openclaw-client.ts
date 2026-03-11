@@ -1,5 +1,6 @@
 import { envConfig } from "./env";
 import crypto from "crypto";
+import fs from "fs";
 import {
   normalizeSshPrivateKey,
   resolveProvisionerDropletIp,
@@ -14,6 +15,22 @@ const CLIENT_MODE = "backend";
 const CLIENT_CAPS = ["tool-events"];
 const OPERATOR_ROLE = "operator";
 const OPERATOR_SCOPES = ["operator.admin"];
+
+function appendDebugLog(entry: {
+  hypothesisId: string;
+  location: string;
+  message: string;
+  data: Record<string, any>;
+}) {
+  try {
+    fs.appendFileSync(
+      "/opt/cursor/logs/debug.log",
+      `${JSON.stringify({ ...entry, timestamp: Date.now() })}\n`
+    );
+  } catch {
+    // Non-blocking debug instrumentation
+  }
+}
 
 // ============================================
 // ED25519 DEVICE AUTH FOR PROTOCOL V3
@@ -675,14 +692,27 @@ function buildContextualMessage(params: ChatSendParams): string {
   const baseMessage = String(params.message || "");
   const inlineMode =
     String(process.env.OPENCLAW_CHAT_CONTEXT_MODE || "inline").toLowerCase() !== "native";
-  if (!inlineMode) return baseMessage;
+  if (!inlineMode) {
+    // #region agent log
+    appendDebugLog({
+      hypothesisId: "C",
+      location: "src/lib/openclaw-client.ts:buildContextualMessage",
+      message: "OpenClaw context mode bypassed inline prompt injection",
+      data: {
+        inlineMode,
+        systemPromptLength: String(params.systemPrompt || "").length,
+      },
+    });
+    // #endregion
+    return baseMessage;
+  }
 
   const blocks: string[] = [];
   if (params.agentId) {
     blocks.push(`Agent Target: ${params.agentId}`);
   }
   if (params.systemPrompt) {
-    blocks.push(`System Instructions:\n${params.systemPrompt.slice(0, 6000)}`);
+    blocks.push(`System Instructions:\n${params.systemPrompt}`);
   }
   const historyBlock = formatHistory(params.history);
   if (historyBlock) {
@@ -690,6 +720,28 @@ function buildContextualMessage(params: ChatSendParams): string {
   }
 
   if (blocks.length === 0) return baseMessage;
+
+  const originalSystemPrompt = String(params.systemPrompt || "");
+  const truncatedSystemPrompt = originalSystemPrompt.slice(0, 6000);
+  // #region agent log
+  appendDebugLog({
+    hypothesisId: "C",
+    location: "src/lib/openclaw-client.ts:buildContextualMessage",
+    message: "Prepared contextual OpenClaw message",
+    data: {
+      inlineMode,
+      systemPromptLength: originalSystemPrompt.length,
+      truncatedSystemPromptLength: truncatedSystemPrompt.length,
+      reportToolIndex: originalSystemPrompt.indexOf("create_report"),
+      reportToolSurvivesTruncation: truncatedSystemPrompt.includes("create_report"),
+      reportDocumentToolSurvivesTruncation: truncatedSystemPrompt.includes(
+        "create_report_document"
+      ),
+      scheduleToolSurvivesTruncation: truncatedSystemPrompt.includes("schedule_daily_report"),
+      actionProtocolSurvivesTruncation: truncatedSystemPrompt.includes("## ACTION PROTOCOL"),
+    },
+  });
+  // #endregion
 
   return [
     "You are receiving contextual routing instructions. Follow them strictly.",

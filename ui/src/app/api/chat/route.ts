@@ -1,3 +1,4 @@
+import fs from "fs";
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "@/lib/env";
@@ -13,12 +14,13 @@ import {
   companyContainerTag,
 } from "@/lib/supermemory-client";
 import { parseAgentDirectives, getDirectivePromptInstructions } from "@/lib/chat/agent-protocol";
-import { executeGatewayTool, type AgentType } from "@/lib/chat/tool-gateway";
+import { executeGatewayTool, getAllowedTools, type AgentType } from "@/lib/chat/tool-gateway";
 import { createTask, updateTask, appendTaskStep } from "@/lib/chat/task-runner";
 import { getChatFeatureFlags } from "@/lib/chat/feature-flags";
 import { getPresetFlowContract, getPresetFlowPromptInstructions } from "@/lib/chat/preset-flows";
 import { runTaskWorkerForTask, sweepTaskHealthForCompany } from "@/lib/chat/task-worker";
 import { toFlowTelemetrySummary } from "@/lib/chat/flow-observability";
+import { formatReportAutomationToolDescriptions } from "@/lib/reports/report-automation";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -33,6 +35,22 @@ const limiter = createRateLimiter({ limit: 30, window: 60 });
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 const MAX_REFERENCED_DOCS = 5;
 const MAX_REFERENCED_DOC_PREVIEW_CHARS = 1200;
+
+function appendDebugLog(entry: {
+  hypothesisId: string;
+  location: string;
+  message: string;
+  data: Record<string, any>;
+}) {
+  try {
+    fs.appendFileSync(
+      "/opt/cursor/logs/debug.log",
+      `${JSON.stringify({ ...entry, timestamp: Date.now() })}\n`
+    );
+  } catch {
+    // Non-blocking debug instrumentation
+  }
+}
 
 /**
  * POST /api/chat
@@ -259,6 +277,20 @@ async function getOrCreateSession({
     ? `company:${companySlug}:${sessionType}:${contextId}`
     : `company:${companySlug}:${sessionType}`;
 
+  // #region agent log
+  appendDebugLog({
+    hypothesisId: "D",
+    location: "src/app/api/chat/route.ts:getOrCreateSession",
+    message: "Computed OpenClaw session key",
+    data: {
+      sessionType,
+      hasIncomingSessionId: Boolean(sessionId),
+      contextId: contextId || null,
+      deterministicSessionKey,
+    },
+  });
+  // #endregion
+
   // Try to find existing session
   if (sessionId) {
     const { data: existing } = await admin
@@ -422,17 +454,48 @@ async function buildSystemPrompt({
   company?: { id: string; name: string; slug: string } | null;
   supermemoryApiKey?: string | null;
 }) {
+  const sessionType = String(session?.session_type || "main").toLowerCase();
+  const mergedAvailableTools = Array.from(
+    new Set([
+      ...(Array.isArray(agent?.available_tools) ? agent.available_tools : []),
+      ...getAllowedTools(sessionType as AgentType),
+    ])
+  );
+  // #region agent log
+  appendDebugLog({
+    hypothesisId: "A",
+    location: "src/app/api/chat/route.ts:buildSystemPrompt:mergedAvailableTools",
+    message: "Merged allowed tool list for prompt",
+    data: {
+      sessionType,
+      availableToolsCount: mergedAvailableTools.length,
+      hasCreateReport: mergedAvailableTools.includes("create_report"),
+      hasCreateReportDocument: mergedAvailableTools.includes("create_report_document"),
+      hasScheduleDailyReport: mergedAvailableTools.includes("schedule_daily_report"),
+    },
+  });
+  // #endregion
+  const promptAgent = {
+    ...agent,
+    available_tools: mergedAvailableTools,
+  };
+
   // If this is the knowledge component, use specialized prompt
   if (componentContext?.component === "knowledge") {
-    return `${buildKnowledgeSystemPrompt(agent, componentContext)}\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
+    return `${buildKnowledgeSystemPrompt(promptAgent, componentContext)}\n\n## AVAILABLE REPORT AUTOMATION TOOLS\n${formatReportAutomationToolDescriptions()}\n\nWhen a user asks for a report or a document with live charts, create the report first and embed it into the document with [report:<id>] tokens.\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
   }
 
-  let prompt = await buildAgentSystemPrompt({ agent, session, componentContext, company });
-  const sessionType = String(session?.session_type || "main").toLowerCase();
+  let prompt = await buildAgentSystemPrompt({
+    agent: promptAgent,
+    session,
+    componentContext,
+    company,
+  });
 
   // Ensure main chat agents always see actionable knowledge tool definitions.
   if (sessionType === "main" || sessionType === "knowledge") {
     prompt += `\n\n## AVAILABLE KNOWLEDGE TOOLS\n${formatKnowledgeToolDescriptions()}\n\nAfter using a tool, wait for the result before confirming to the user.`;
+    prompt += `\n\n## AVAILABLE REPORT AUTOMATION TOOLS\n${formatReportAutomationToolDescriptions()}\n\nYou do have access to these report tools in this environment. Do not claim they are unavailable. When a user asks for a report, chart, dashboard card, daily summary, or a document with a live chart, create the report first, then create the document with [report:<id>] in the markdown, and schedule it when the user asks for recurring delivery.`;
   }
 
   // Inject explicit vault references selected in the chat composer.
@@ -447,8 +510,23 @@ async function buildSystemPrompt({
       prompt += `\n\n## REFERENCED VAULT DOCUMENTS\n${referenceContext}`;
     }
   }
-
-  return `${prompt}\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
+  const finalPrompt = `${prompt}\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
+  // #region agent log
+  appendDebugLog({
+    hypothesisId: "B",
+    location: "src/app/api/chat/route.ts:buildSystemPrompt:finalPrompt",
+    message: "Built final system prompt",
+    data: {
+      sessionType,
+      promptLength: finalPrompt.length,
+      reportToolIndex: finalPrompt.indexOf("create_report"),
+      reportDocumentToolIndex: finalPrompt.indexOf("create_report_document"),
+      scheduleToolIndex: finalPrompt.indexOf("schedule_daily_report"),
+      actionProtocolIndex: finalPrompt.indexOf("## ACTION PROTOCOL"),
+    },
+  });
+  // #endregion
+  return finalPrompt;
 }
 
 /**
@@ -631,6 +709,24 @@ async function executeAssistantDirectives({
     return { finalContent: content, toolCalls: [], taskIds: [] };
   }
   const parsed = parseAgentDirectives(content || "");
+  // #region agent log
+  appendDebugLog({
+    hypothesisId: "E",
+    location: "src/app/api/chat/route.ts:executeAssistantDirectives",
+    message: "Parsed assistant directives",
+    data: {
+      directiveCount: parsed.directives.length,
+      directiveKinds: parsed.directives.map((directive) => directive.kind),
+      directiveTools: parsed.directives
+        .filter((directive) => directive.kind === "tool")
+        .map((directive: any) => directive.tool),
+      mentionsUnavailable: /do not have access|unavailable/i.test(content || ""),
+      mentionsReportTools: /create_report|create_report_document|schedule_daily_report/i.test(
+        content || ""
+      ),
+    },
+  });
+  // #endregion
   const toolCalls: any[] = [];
   const taskIds: string[] = [];
   const flowContract = getPresetFlowContract(parsed.budget?.flowId);
@@ -1104,6 +1200,20 @@ async function streamChatCompletion({
         }
 
         // Execute structured tool/task directives from assistant output.
+        // #region agent log
+        appendDebugLog({
+          hypothesisId: "E",
+          location: "src/app/api/chat/route.ts:streamChatCompletion:done",
+          message: "Model stream completed before directive execution",
+          data: {
+            contentLength: fullContent.length,
+            mentionsUnavailable: /do not have access|unavailable/i.test(fullContent),
+            mentionsCreateReport: /create_report/i.test(fullContent),
+            mentionsCreateReportDocument: /create_report_document/i.test(fullContent),
+            mentionsScheduleDailyReport: /schedule_daily_report/i.test(fullContent),
+          },
+        });
+        // #endregion
         let finalContent = fullContent;
         let executedToolResults: any[] = [];
         const directiveResults = await executeAssistantDirectives({
