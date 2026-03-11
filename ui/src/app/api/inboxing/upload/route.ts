@@ -54,55 +54,134 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const domainIdsToUpload = new Set<string>();
-    if (domain_id) domainIdsToUpload.add(domain_id);
+    const requestedDomainIds = new Set<string>();
+    if (domain_id) requestedDomainIds.add(domain_id);
     if (Array.isArray(domain_ids)) {
-      for (const id of domain_ids) domainIdsToUpload.add(id);
+      for (const id of domain_ids) requestedDomainIds.add(id);
     }
 
-    if (Array.isArray(emails)) {
-      const domainsFromEmails = Array.from(
-        new Set(
-          emails
-            .map((email: string) => (email.includes("@") ? email.split("@")[1].toLowerCase() : ""))
-            .filter(Boolean)
+    const emailDomains = Array.isArray(emails)
+      ? Array.from(
+          new Set(
+            emails
+              .map((email: string) => (email.includes("@") ? email.split("@")[1].toLowerCase() : ""))
+              .filter(Boolean)
+          )
         )
-      );
-      if (domainsFromEmails.length > 0) {
-        const { data: matchedDomains } = await admin
-          .from("inboxing_domains")
-          .select("id")
-          .eq("company_id", companyId)
-          .in("domain", domainsFromEmails);
-        for (const row of matchedDomains || []) domainIdsToUpload.add(row.id);
+      : [];
+
+    const uploadTargets = new Map<
+      string,
+      {
+        local_id: string | null;
+        domain: string;
+        inboxing_id: string;
+        status: string | null;
+      }
+    >();
+
+    const ids = Array.from(requestedDomainIds);
+    if (ids.length > 0 || emailDomains.length > 0) {
+      const localQueries = [];
+      if (ids.length > 0) {
+        localQueries.push(
+          admin
+            .from("inboxing_domains")
+            .select("id, domain, inboxing_id, status")
+            .eq("company_id", companyId)
+            .in("id", ids),
+          admin
+            .from("inboxing_domains")
+            .select("id, domain, inboxing_id, status")
+            .eq("company_id", companyId)
+            .in("inboxing_id", ids)
+        );
+      }
+      if (emailDomains.length > 0) {
+        localQueries.push(
+          admin
+            .from("inboxing_domains")
+            .select("id, domain, inboxing_id, status")
+            .eq("company_id", companyId)
+            .in("domain", emailDomains)
+        );
+      }
+
+      const localResults = await Promise.all(localQueries);
+      for (const result of localResults) {
+        for (const row of result.data || []) {
+          if (!row.inboxing_id) continue;
+          uploadTargets.set(row.inboxing_id, {
+            local_id: row.id,
+            domain: row.domain,
+            inboxing_id: row.inboxing_id,
+            status: row.status || null,
+          });
+        }
       }
     }
 
-    const ids = Array.from(domainIdsToUpload);
-    if (ids.length === 0) {
+    if (ids.length > 0 || emailDomains.length > 0) {
+      const assignmentQueries = [];
+      if (ids.length > 0) {
+        assignmentQueries.push(
+          admin
+            .from("inboxing_domain_assignments")
+            .select("inboxing_id, domain_name")
+            .eq("company_id", companyId)
+            .eq("status", "active")
+            .in("inboxing_id", ids)
+        );
+      }
+      if (emailDomains.length > 0) {
+        assignmentQueries.push(
+          admin
+            .from("inboxing_domain_assignments")
+            .select("inboxing_id, domain_name")
+            .eq("company_id", companyId)
+            .eq("status", "active")
+            .in("domain_name", emailDomains)
+        );
+      }
+
+      const assignmentResults = await Promise.all(assignmentQueries);
+      for (const result of assignmentResults) {
+        for (const row of result.data || []) {
+          if (!row.inboxing_id || uploadTargets.has(row.inboxing_id)) continue;
+          uploadTargets.set(row.inboxing_id, {
+            local_id: null,
+            domain: row.domain_name || row.inboxing_id,
+            inboxing_id: row.inboxing_id,
+            status: null,
+          });
+        }
+      }
+    }
+
+    if (uploadTargets.size === 0) {
       return NextResponse.json({ error: "No matching domains to upload" }, { status: 400 });
     }
 
-    const { data: domains, error } = await admin
-      .from("inboxing_domains")
-      .select("*")
-      .eq("company_id", companyId)
-      .in("id", ids);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-    const validDomains = (domains || []).filter(
-      (domain) => domain.status === "active" && Boolean(domain.inboxing_id)
-    );
-    if (validDomains.length === 0) {
-      return NextResponse.json(
-        { error: "No active domains are eligible for upload" },
-        { status: 400 }
-      );
-    }
-
     const results = [];
-    for (const domain of validDomains) {
-      const result = await inboxing.uploadDomainToPlatform(domain.inboxing_id, {
+    for (const target of uploadTargets.values()) {
+      let liveDomain = target.domain;
+      let liveStatus = target.status;
+
+      if (liveStatus !== "active") {
+        try {
+          const providerDomain = await inboxing.getDomain(target.inboxing_id, { usePlatformKey: true });
+          liveDomain = providerDomain.domain || liveDomain;
+          liveStatus = providerDomain.status || liveStatus;
+        } catch {
+          liveStatus = liveStatus || "unknown";
+        }
+      }
+
+      if (liveStatus !== "active") {
+        continue;
+      }
+
+      const result = await inboxing.uploadDomainToPlatform(target.inboxing_id, {
         platform_connection_id,
         enable_warmup,
         sync_tags,
@@ -119,15 +198,22 @@ export async function POST(req: NextRequest) {
 
       const stage = result?.stage || "upload";
       await admin.from("inboxing_jobs").insert({
-        company_id: domain.company_id,
-        domain_id: domain.id,
+        company_id: companyId,
+        domain_id: target.local_id,
         type: "upload",
         status: "processing",
         payload: jobPayload,
         result: { ...result, stage },
       });
 
-      results.push({ domain: domain.domain, stage, result });
+      results.push({ domain: liveDomain, stage, result });
+    }
+
+    if (results.length === 0) {
+      return NextResponse.json(
+        { error: "No active domains are eligible for upload" },
+        { status: 400 }
+      );
     }
 
     return NextResponse.json({

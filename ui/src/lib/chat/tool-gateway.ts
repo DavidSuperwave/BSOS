@@ -26,6 +26,7 @@ export interface ToolExecutionResult {
 
 const TOOL_POLICIES: Record<AgentType, string[]> = {
   main: [
+    "list_domains",
     "create_report",
     "create_report_document",
     "schedule_daily_report",
@@ -46,7 +47,7 @@ const TOOL_POLICIES: Record<AgentType, string[]> = {
   ],
   campaigns: ["list_campaigns", "get_campaign_details", "research_topic"],
   crm: ["research_topic", "list_knowledge_docs", "get_knowledge_doc"],
-  inbox: ["search_documents", "get_document", "research_topic"],
+  inbox: ["list_domains", "search_documents", "get_document", "research_topic"],
   research: [
     "research_topic",
     "search_documents",

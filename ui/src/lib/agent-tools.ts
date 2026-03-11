@@ -170,6 +170,119 @@ export const tools: Tool[] = [
   },
 
   // ============================================
+  // DOMAIN TOOLS
+  // ============================================
+  {
+    name: "list_domains",
+    description: "List domains available to the company",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+      status: {
+        type: "string",
+        description: "Optional status filter",
+      },
+      limit: { type: "number", description: "Maximum domains to return" },
+    },
+    execute: async (params) => {
+      if (!params.companyId) {
+        throw new Error("companyId is required");
+      }
+
+      const supabase = getSupabase();
+      const [{ data: localDomains, error: localError }, { data: assignments, error: assignmentError }] =
+        await Promise.all([
+          supabase
+            .from("inboxing_domains")
+            .select(
+              "id, domain, status, inboxing_id, mailbox_count, health_score, dns_spf, dns_dkim, dns_dmarc, created_at, tags"
+            )
+            .eq("company_id", params.companyId),
+          supabase
+            .from("inboxing_domain_assignments")
+            .select(
+              "inboxing_id, domain_name, assigned_at, inboxing_domains(id, domain, status, inboxing_id, mailbox_count, health_score, dns_spf, dns_dkim, dns_dmarc, created_at, tags)"
+            )
+            .eq("company_id", params.companyId)
+            .eq("status", "active"),
+        ]);
+
+      if (localError) throw new Error(localError.message);
+      if (assignmentError) throw new Error(assignmentError.message);
+
+      const domains = new Map<string, any>();
+
+      for (const domain of localDomains || []) {
+        domains.set(domain.inboxing_id || domain.id, {
+          id: domain.id,
+          inboxing_id: domain.inboxing_id || null,
+          domain: domain.domain,
+          status: domain.status,
+          mailbox_count: domain.mailbox_count ?? 0,
+          health_score: domain.health_score ?? 0,
+          dns_spf: domain.dns_spf ?? false,
+          dns_dkim: domain.dns_dkim ?? false,
+          dns_dmarc: domain.dns_dmarc ?? false,
+          created_at: domain.created_at,
+          tags: domain.tags || [],
+          access_mode: "local",
+        });
+      }
+
+      for (const assignment of assignments || []) {
+        const localDomain = Array.isArray((assignment as any).inboxing_domains)
+          ? (assignment as any).inboxing_domains[0]
+          : (assignment as any).inboxing_domains;
+        const key = (assignment as any).inboxing_id;
+
+        if (domains.has(key)) {
+          const existing = domains.get(key);
+          domains.set(key, {
+            ...existing,
+            assigned_at: (assignment as any).assigned_at || existing.assigned_at || null,
+          });
+          continue;
+        }
+
+        domains.set(key, {
+          id: key,
+          inboxing_id: key,
+          domain: (assignment as any).domain_name || localDomain?.domain || key,
+          status: localDomain?.status || "assigned",
+          mailbox_count: localDomain?.mailbox_count ?? 0,
+          health_score: localDomain?.health_score ?? 0,
+          dns_spf: localDomain?.dns_spf ?? false,
+          dns_dkim: localDomain?.dns_dkim ?? false,
+          dns_dmarc: localDomain?.dns_dmarc ?? false,
+          created_at: localDomain?.created_at || (assignment as any).assigned_at,
+          assigned_at: (assignment as any).assigned_at || null,
+          tags: localDomain?.tags || [],
+          access_mode: "assignment",
+        });
+      }
+
+      let list = Array.from(domains.values()).sort((a, b) => {
+        const aDate = new Date(a.assigned_at || a.created_at).getTime();
+        const bDate = new Date(b.assigned_at || b.created_at).getTime();
+        return bDate - aDate;
+      });
+
+      if (params.status) {
+        list = list.filter((domain) => domain.status === params.status);
+      }
+
+      if (params.limit) {
+        list = list.slice(0, params.limit);
+      }
+
+      return { count: list.length, domains: list };
+    },
+  },
+
+  // ============================================
   // KNOWLEDGE BASE TOOLS
   // ============================================
   {
@@ -401,4 +514,6 @@ export function getToolDescriptions(): string {
     .join("\n");
 }
 
-export default { tools, executeTool, getToolDescriptions };
+const agentToolsModule = { tools, executeTool, getToolDescriptions };
+
+export default agentToolsModule;

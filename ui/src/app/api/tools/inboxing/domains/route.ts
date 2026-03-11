@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { validateAgentRequest } from "@/lib/agent-auth";
 import { logInvocation } from "@/lib/tool-logger";
-import * as inboxing from "@/lib/inboxing-client";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -34,44 +33,25 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
-    const domains = await Promise.all(
-      (assignments || []).map(async (assignment: any) => {
-        const localDomain = Array.isArray(assignment.inboxing_domains)
-          ? assignment.inboxing_domains[0]
-          : assignment.inboxing_domains;
+    const domains = (assignments || []).map((assignment: any) => {
+      const localDomain = Array.isArray(assignment.inboxing_domains)
+        ? assignment.inboxing_domains[0]
+        : assignment.inboxing_domains;
 
-        try {
-          const liveDomain = await inboxing.getDomain(assignment.inboxing_id, { usePlatformKey: true });
-          return {
-            id: String(assignment.inboxing_id),
-            inboxing_id: String(assignment.inboxing_id),
-            domain: liveDomain?.domain || assignment.domain_name || localDomain?.domain || null,
-            status: liveDomain?.status || localDomain?.status || "assigned",
-            mailbox_count: liveDomain?.mailbox_count ?? localDomain?.mailbox_count ?? 0,
-            health_score: localDomain?.health_score ?? 0,
-            dns_spf: localDomain?.dns_spf ?? false,
-            dns_dkim: localDomain?.dns_dkim ?? false,
-            dns_dmarc: localDomain?.dns_dmarc ?? false,
-            created_at: localDomain?.created_at || assignment.assigned_at,
-            assigned_at: assignment.assigned_at,
-          };
-        } catch {
-          return {
-            id: String(assignment.inboxing_id),
-            inboxing_id: String(assignment.inboxing_id),
-            domain: assignment.domain_name || localDomain?.domain || null,
-            status: localDomain?.status || "assigned",
-            mailbox_count: localDomain?.mailbox_count ?? 0,
-            health_score: localDomain?.health_score ?? 0,
-            dns_spf: localDomain?.dns_spf ?? false,
-            dns_dkim: localDomain?.dns_dkim ?? false,
-            dns_dmarc: localDomain?.dns_dmarc ?? false,
-            created_at: localDomain?.created_at || assignment.assigned_at,
-            assigned_at: assignment.assigned_at,
-          };
-        }
-      })
-    );
+      return {
+        id: String(assignment.inboxing_id),
+        inboxing_id: String(assignment.inboxing_id),
+        domain: assignment.domain_name || localDomain?.domain || null,
+        status: localDomain?.status || "assigned",
+        mailbox_count: localDomain?.mailbox_count ?? 0,
+        health_score: localDomain?.health_score ?? 0,
+        dns_spf: localDomain?.dns_spf ?? false,
+        dns_dkim: localDomain?.dns_dkim ?? false,
+        dns_dmarc: localDomain?.dns_dmarc ?? false,
+        created_at: localDomain?.created_at || assignment.assigned_at,
+        assigned_at: assignment.assigned_at,
+      };
+    });
 
     await logInvocation({
       companyId: auth.companyId,

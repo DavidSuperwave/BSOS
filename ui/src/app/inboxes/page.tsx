@@ -51,8 +51,8 @@ export default function InboxesPage() {
   return (
     <AppShell
       header={{
-        title: "Inboxes",
-        subtitle: "Domains & platform upload",
+        title: "Domains",
+        subtitle: "Assigned domains and platform upload",
         actions: (
           <div className="flex gap-2">
             {activeTab === "domains" ? (
@@ -116,7 +116,7 @@ export default function InboxesPage() {
 
         {!companyId ? (
           <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">
-            Select a company to manage inboxing.
+            Select a company to manage domains.
           </div>
         ) : null}
 

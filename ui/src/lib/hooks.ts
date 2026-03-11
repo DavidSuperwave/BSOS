@@ -439,6 +439,12 @@ export interface InboxingDomain {
   dns_dmarc: boolean;
   campaign_id?: string;
   created_at: string;
+  assigned_at?: string | null;
+  access_mode?: "local" | "assignment";
+  can_manage?: boolean;
+  can_upload?: boolean;
+  can_download_csv?: boolean;
+  can_view_nameservers?: boolean;
 }
 
 export function useInboxingDomains(companyId?: string, status?: string) {

@@ -33,7 +33,7 @@ const navItems = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { id: "campaigns", label: "Campaigns", icon: Target, href: "/campaigns" },
   { id: "inbox", label: "Inbox", icon: Mail, href: "/inbox" },
-  { id: "inboxes", label: "Inboxes", icon: Globe, href: "/inboxes" },
+  { id: "inboxes", label: "Domains", icon: Globe, href: "/inboxes" },
   { id: "knowledge", label: "Knowledge Base", icon: BookOpen, href: "/knowledge" },
   { id: "skills", label: "Skills Store", icon: Sparkles, href: "/skills" },
   { id: "settings", label: "Settings", icon: Settings, href: "/settings" },

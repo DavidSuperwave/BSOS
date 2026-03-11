@@ -71,6 +71,7 @@ type SlotInfo = {
 export default function AdminInboxingDomainsPage() {
   const [domains, setDomains] = useState<InboxingDomain[]>([]);
   const [slots, setSlots] = useState<SlotInfo | null>(null);
+  const [providerWarning, setProviderWarning] = useState<string | null>(null);
   const [pagination, setPagination] = useState({
     page: 1,
     per_page: 50,
@@ -112,6 +113,7 @@ export default function AdminInboxingDomainsPage() {
       if (!res.ok) throw new Error("Failed to load domains");
       const data = await res.json();
       setDomains(Array.isArray(data?.domains) ? data.domains : []);
+      setProviderWarning(typeof data?.provider_error === "string" ? data.provider_error : null);
       setPagination((prev) => ({
         ...prev,
         ...(data?.pagination ?? {}),
@@ -242,7 +244,7 @@ export default function AdminInboxingDomainsPage() {
 
   const handleDownloadCsv = useCallback(async (domain: InboxingDomain) => {
     try {
-      const res = await fetch(`/api/inboxing/domains/${domain.id}/csv`);
+      const res = await fetch(`/api/admin/inboxing-domains/${domain.id}/csv`);
       if (!res.ok) {
         if (res.status === 403) {
           showToast("error", "CSV not available yet (24-hour warmup period).");
@@ -306,6 +308,12 @@ export default function AdminInboxingDomainsPage() {
             {toast.message}
           </div>
         )}
+
+        {providerWarning ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            Live Inboxing sync is unavailable right now. Showing locally assigned domains only.
+          </div>
+        ) : null}
 
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
