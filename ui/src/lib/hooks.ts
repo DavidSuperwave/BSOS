@@ -454,7 +454,7 @@ export function useInboxingDomains(companyId?: string, status?: string) {
     const params = new URLSearchParams();
     params.set("companyId", companyId);
     if (status) params.set("status", status);
-    url = `/api/inboxing/domains?${params.toString()}`;
+    url = `/api/domains?${params.toString()}`;
   }
   return useApiData<{
     domains: InboxingDomain[];
@@ -478,8 +478,8 @@ export function useInboxingDomainsQuery(
     if (options?.status) params.set("status", options.status);
     if (options?.search) params.set("search", options.search);
     if (options?.page) params.set("page", String(options.page));
-    if (options?.limit) params.set("limit", String(options.limit));
-    url = `/api/inboxing/domains?${params.toString()}`;
+    if (options?.limit) params.set("per_page", String(options.limit));
+    url = `/api/domains?${params.toString()}`;
   }
   return useApiData<{ domains: InboxingDomain[]; pagination: any }>(url);
 }
@@ -495,7 +495,7 @@ export function useInboxingHealth(companyId?: string) {
       active: number;
       avg_health: number;
     };
-  }>(companyId ? `/api/inboxing/health?companyId=${companyId}` : null);
+  }>(companyId ? `/api/domains/health?companyId=${companyId}` : null);
 }
 
 export interface MediaFile {
@@ -538,13 +538,13 @@ export function useMediaFile(companyId?: string, mediaId?: string) {
 
 export function useRegistrars(companyId?: string) {
   return useApiData<{ registrars: any[] }>(
-    companyId ? `/api/inboxing/registrars?companyId=${companyId}` : null
+    companyId ? `/api/domains/registrars?companyId=${companyId}` : null
   );
 }
 
 export function usePlatformConnections(companyId?: string) {
   return useApiData<{ platforms: any[] }>(
-    companyId ? `/api/inboxing/platforms?companyId=${companyId}` : null
+    companyId ? `/api/domains/platforms?companyId=${companyId}` : null
   );
 }
 
@@ -580,7 +580,7 @@ export function useInboxingUploadJobs(
     if (options?.platform_connection_id) {
       params.set("platform_connection_id", options.platform_connection_id);
     }
-    url = `/api/inboxing/upload/status?${params.toString()}`;
+    url = `/api/domains/upload/status?${params.toString()}`;
   }
   return useApiData<{
     jobs: InboxingUploadJob[];

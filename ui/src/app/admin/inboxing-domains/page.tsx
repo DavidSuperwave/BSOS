@@ -85,6 +85,7 @@ export default function AdminInboxingDomainsPage() {
   const [toast, setToast] = useState<ToastState>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<InboxingDomain | null>(null);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
@@ -99,6 +100,13 @@ export default function AdminInboxingDomainsPage() {
     }, 3500);
   }, []);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
   const fetchDomains = useCallback(async () => {
     setLoading(true);
     try {
@@ -106,9 +114,9 @@ export default function AdminInboxingDomainsPage() {
       params.set("page", String(pagination.page));
       params.set("per_page", String(pagination.per_page));
       if (statusFilter !== "all") params.set("status", statusFilter);
-      if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      if (debouncedSearchQuery) params.set("search", debouncedSearchQuery);
 
-      const res = await fetch(`/api/admin/inboxing-domains?${params.toString()}`, {
+      const res = await fetch(`/api/admin/domains?${params.toString()}`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error("Failed to load domains");
@@ -126,11 +134,11 @@ export default function AdminInboxingDomainsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.per_page, statusFilter, searchQuery, showToast]);
+  }, [pagination.page, pagination.per_page, statusFilter, debouncedSearchQuery, showToast]);
 
   const fetchSlots = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/inboxing-slots", { cache: "no-store" });
+      const res = await fetch("/api/admin/domains/slots", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setSlots(data?.slots || null);
@@ -185,7 +193,7 @@ export default function AdminInboxingDomainsPage() {
 
     setAssigning(true);
     try {
-      const res = await fetch("/api/admin/inboxing-domains", {
+      const res = await fetch("/api/admin/domains", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -223,7 +231,7 @@ export default function AdminInboxingDomainsPage() {
 
     setReclaimingId(domain.id);
     try {
-      const res = await fetch("/api/admin/inboxing-domains", {
+      const res = await fetch("/api/admin/domains", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inboxing_ids: [domain.id] }),
@@ -246,7 +254,7 @@ export default function AdminInboxingDomainsPage() {
 
   const handleDownloadCsv = useCallback(async (domain: InboxingDomain) => {
     try {
-      const res = await fetch(`/api/admin/inboxing-domains/${domain.id}/csv`);
+      const res = await fetch(`/api/admin/domains/${domain.id}/csv`);
       if (!res.ok) {
         if (res.status === 403) {
           showToast("error", "CSV not available yet (24-hour warmup period).");
@@ -287,9 +295,9 @@ export default function AdminInboxingDomainsPage() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-white text-lg font-semibold">Inboxing Domains</h1>
+            <h1 className="text-white text-lg font-semibold">Domain Management</h1>
             <p className="text-zinc-400 text-sm mt-1">
-              Manage all domains from Inboxing API and assign them to companies.
+              Manage platform domains and assign them to companies.
             </p>
           </div>
         </div>

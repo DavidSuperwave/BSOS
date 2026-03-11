@@ -23,8 +23,8 @@ async function downloadCsv(companyId: string, domain: DomainRecord) {
   const providerDomainId = domain.inboxing_id || domain.id;
   const requestUrl =
     domain.access_mode === "assignment"
-      ? `/api/inboxing/protected/domains/${providerDomainId}/csv?companyId=${encodeURIComponent(companyId)}`
-      : `/api/inboxing/domains/${domain.id}/csv?companyId=${encodeURIComponent(companyId)}`;
+      ? `/api/domains/protected/${providerDomainId}/csv?companyId=${encodeURIComponent(companyId)}`
+      : `/api/domains/${domain.id}/csv?companyId=${encodeURIComponent(companyId)}`;
   const res = await fetch(requestUrl);
   if (!res.ok) {
     const payload = await res.json().catch(() => ({ error: "Download failed" }));
@@ -57,8 +57,8 @@ export function DomainActionsMenu({
   const onViewNameservers = async () => {
     const url =
       isAssignmentDomain
-        ? `/api/inboxing/protected/domains/${providerDomainId}/nameservers?companyId=${encodeURIComponent(companyId)}`
-        : `/api/inboxing/domains/${domain.id}/nameservers?companyId=${encodeURIComponent(companyId)}`;
+        ? `/api/domains/protected/${providerDomainId}/nameservers?companyId=${encodeURIComponent(companyId)}`
+        : `/api/domains/${domain.id}/nameservers?companyId=${encodeURIComponent(companyId)}`;
     const res = await fetch(
       url
     );
@@ -86,7 +86,7 @@ export function DomainActionsMenu({
       .map((tag) => tag.trim())
       .filter(Boolean);
 
-    const res = await fetch(`/api/inboxing/domains/${domain.id}`, {
+    const res = await fetch(`/api/domains/${domain.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyId, tags }),
@@ -107,7 +107,7 @@ export function DomainActionsMenu({
     const redirectType = window.prompt("Redirect type: NONE | REGULAR | MASKED", "REGULAR");
     if (redirectType === null) return;
 
-    const res = await fetch(`/api/inboxing/domains/${domain.id}`, {
+    const res = await fetch(`/api/domains/${domain.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -139,7 +139,7 @@ export function DomainActionsMenu({
         return { first_name, last_name: rest.join(" ") || "Sender" };
       });
 
-    const res = await fetch(`/api/inboxing/domains/${domain.id}`, {
+    const res = await fetch(`/api/domains/${domain.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyId, names }),
@@ -156,7 +156,7 @@ export function DomainActionsMenu({
     if (!window.confirm(`Delete ${domain.domain}?`)) return;
 
     const res = await fetch(
-      `/api/inboxing/domains/${domain.id}?companyId=${encodeURIComponent(companyId)}`,
+      `/api/domains/${domain.id}?companyId=${encodeURIComponent(companyId)}`,
       { method: "DELETE" }
     );
     if (!res.ok) {

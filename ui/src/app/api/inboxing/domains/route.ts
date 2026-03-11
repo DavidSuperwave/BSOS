@@ -24,7 +24,10 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get("status");
   const search = searchParams.get("search");
   const page = parseInt(searchParams.get("page") || "1");
-  const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
+  const limit = Math.min(
+    parseInt(searchParams.get("per_page") || searchParams.get("limit") || "50"),
+    100
+  );
   const offset = (page - 1) * limit;
 
   if (!companyId) {

@@ -187,7 +187,7 @@ export function AddDomainModal({
         .map((tag) => tag.trim())
         .filter(Boolean);
 
-      const res = await fetch("/api/inboxing/domains", {
+      const res = await fetch("/api/domains", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -229,7 +229,7 @@ export function AddDomainModal({
           .map((tag) => tag.trim())
           .filter(Boolean);
 
-        const res = await fetch("/api/inboxing/domains", {
+        const res = await fetch("/api/domains", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
