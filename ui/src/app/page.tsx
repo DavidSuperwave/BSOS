@@ -8,6 +8,8 @@ import { useDashboardMetrics, useCampaigns, useChatSessions, useSupermemoryDocum
 import { ChatInput } from "@/components/chat/chat-input";
 import { ChatMessage } from "@/components/chat/chat-message";
 import { SessionSidebar } from "@/components/chat/session-sidebar";
+import { GeneratedArtifactViewer } from "@/components/chat/generated-artifact-viewer";
+import type { GeneratedArtifactSelection } from "@/components/chat/generated-artifact-types";
 import { Sparkles } from "lucide-react";
 
 export default function ChatPage() {
@@ -15,6 +17,9 @@ export default function ChatPage() {
   const companyId = selectedCompany?.id;
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [chatMode, setChatMode] = useState<"Chat" | "Research">("Chat");
+  const [selectedArtifact, setSelectedArtifact] = useState<GeneratedArtifactSelection | null>(
+    null
+  );
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -38,7 +43,7 @@ export default function ChatPage() {
   const { data: metrics } = useDashboardMetrics(companyId);
   const { data: campaignsData } = useCampaigns(companyId);
   const sessions = sessionsData?.sessions || [];
-  const campaigns = campaignsData?.campaigns || [];
+  const campaigns = useMemo(() => campaignsData?.campaigns || [], [campaignsData?.campaigns]);
   const vaultDocuments = useMemo(() => {
     const docs = vaultData?.documents || [];
     return docs
@@ -94,6 +99,7 @@ export default function ChatPage() {
   const handleSessionClick = useCallback(
     async (sessionId: string) => {
       setSessionError(null);
+      setSelectedArtifact(null);
       try {
         await loadSession(sessionId);
       } catch {
@@ -105,6 +111,7 @@ export default function ChatPage() {
 
   const handleNewChat = useCallback(() => {
     setSessionError(null);
+    setSelectedArtifact(null);
     clearMessages();
   }, [clearMessages]);
 
@@ -187,6 +194,7 @@ export default function ChatPage() {
   }
 
   const hasMessages = messages.length > 0;
+  const rightRailWidthClass = selectedArtifact ? "w-[34rem]" : "w-80";
 
   return (
     <AppShell
@@ -242,6 +250,7 @@ export default function ChatPage() {
                         reasoning: message.reasoning,
                         reasoningDuration: message.reasoningDuration,
                       }}
+                      onOpenArtifact={setSelectedArtifact}
                     />
                   ))}
                   <div ref={messagesEndRef} />
@@ -274,15 +283,24 @@ export default function ChatPage() {
           ) : null}
         </div>
 
-        <div className="hidden w-80 shrink-0 border-l border-[#e0e5ef] bg-white lg:block">
-          <SessionSidebar
-            sessions={sessions}
-            activeSessionId={currentSessionId}
-            onSessionClick={(id) => void handleSessionClick(id)}
-            onNewChat={handleNewChat}
-            onDeleteSession={(id) => void handleDeleteSession(id)}
-            isLoading={sessionsLoading}
-          />
+        <div
+          className={`hidden shrink-0 border-l border-[#e0e5ef] bg-white transition-[width] duration-200 lg:block ${rightRailWidthClass}`}
+        >
+          {selectedArtifact ? (
+            <GeneratedArtifactViewer
+              artifact={selectedArtifact}
+              onClose={() => setSelectedArtifact(null)}
+            />
+          ) : (
+            <SessionSidebar
+              sessions={sessions}
+              activeSessionId={currentSessionId}
+              onSessionClick={(id) => void handleSessionClick(id)}
+              onNewChat={handleNewChat}
+              onDeleteSession={(id) => void handleDeleteSession(id)}
+              isLoading={sessionsLoading}
+            />
+          )}
         </div>
       </div>
     </AppShell>

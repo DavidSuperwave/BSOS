@@ -5,11 +5,15 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, User } from "lucide-react";
 import { format } from "date-fns";
 import { AIMessage, LoadingDots, TextShimmer } from "@/components/ui/text-effects";
-import { ToolCallCard } from "./tool-call-card";
-import { ReasoningPanel } from "./reasoning-panel";
+import { ActionTracePanel } from "./action-trace-panel";
 import { SkillExecution } from "./skill-execution";
 import { DocumentCreatedCard } from "./document-created-card";
 import { TaskCard } from "./task-card";
+import { ReportArtifactCard } from "./report-artifact-card";
+import { DocumentArtifactCard } from "./document-artifact-card";
+import { ScheduleArtifactCard } from "./schedule-artifact-card";
+import { stripDirectiveMarkupForDisplay } from "@/lib/chat/agent-protocol";
+import type { GeneratedArtifactSelection } from "./generated-artifact-types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -60,12 +64,21 @@ export interface ChatMessageData {
 interface ChatMessageProps {
   message: ChatMessageData;
   onSaveToKnowledge?: (content: string) => void;
+  onOpenArtifact?: (artifact: GeneratedArtifactSelection) => void;
   variant?: "default" | "modern";
 }
 
-export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  onSaveToKnowledge,
+  onOpenArtifact,
+  variant = "default",
+}: ChatMessageProps) {
   const isUser = message.role === "user";
   const isModern = variant === "modern";
+  const displayContent = isUser
+    ? message.content
+    : stripDirectiveMarkupForDisplay(message.content || "");
   const normalizedToolCalls = (message.toolCalls || []).map((tool, index) => ({
     key: `${tool.name || "tool"}-${index}`,
     name: tool.name || "Tool",
@@ -113,6 +126,62 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
     !message.reasoning?.trim() &&
     normalizedToolCalls.length === 0 &&
     normalizedTasks.length === 0;
+
+  const renderStructuredArtifact = (tool: (typeof normalizedToolCalls)[number]) => {
+    if (!tool.result) return null;
+
+    try {
+      const parsed = JSON.parse(tool.result);
+      if (!parsed || typeof parsed !== "object") return null;
+
+      if (tool.name === "create_report" && parsed.reportId) {
+        return (
+          <ReportArtifactCard
+            key={`report-${parsed.reportId}`}
+            reportId={parsed.reportId}
+            title={parsed.title || "Untitled report"}
+            description={parsed.description}
+            chartType={parsed.chartType}
+            dataSource={parsed.dataSource}
+            onOpen={onOpenArtifact}
+          />
+        );
+      }
+
+      if (tool.name === "create_report_document" && parsed.documentId) {
+        return (
+          <DocumentArtifactCard
+            key={`structured-document-${parsed.documentId}`}
+            documentId={parsed.documentId}
+            title={parsed.title || "Untitled document"}
+            markdown={parsed.markdown || ""}
+            reportIds={Array.isArray(parsed.reportIds) ? parsed.reportIds : []}
+            status={parsed.status}
+            category={parsed.category}
+            onOpen={onOpenArtifact}
+          />
+        );
+      }
+
+      if (tool.name === "schedule_daily_report" && parsed.automationId) {
+        return (
+          <ScheduleArtifactCard
+            key={`schedule-${parsed.automationId}`}
+            automationId={parsed.automationId}
+            title={parsed.title || "Daily report"}
+            deliveryHourUtc={parsed.deliveryHourUtc || 8}
+            enabled={parsed.enabled !== false}
+            reportId={parsed.reportId}
+            onOpen={onOpenArtifact}
+          />
+        );
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  };
 
   const resolveTask = async (taskId: string, decision: "approved" | "rejected") => {
     try {
@@ -195,37 +264,33 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
           >
             {isUser ? (
               <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                {message.content}
+                {displayContent}
               </p>
             ) : (
-              <div
-                className={cn(
-                  "prose prose-sm max-w-none prose-pre:rounded-lg prose-code:before:content-none prose-code:after:content-none",
-                  isModern
-                    ? "prose-headings:text-[#1f2430] prose-p:text-[#2c3345] prose-strong:text-[#111827] prose-li:text-[#2c3345] prose-pre:bg-[#f4f6fb]"
-                    : "dark:prose-invert prose-pre:bg-background"
-                )}
-              >
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-                  {message.content}
-                </ReactMarkdown>
-              </div>
+              displayContent.trim() ? (
+                <div
+                  className={cn(
+                    "prose prose-sm max-w-none prose-pre:rounded-lg prose-code:before:content-none prose-code:after:content-none",
+                    isModern
+                      ? "prose-headings:text-[#1f2430] prose-p:text-[#2c3345] prose-strong:text-[#111827] prose-li:text-[#2c3345] prose-pre:bg-[#f4f6fb]"
+                      : "dark:prose-invert prose-pre:bg-background"
+                  )}
+                >
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+                    {displayContent}
+                  </ReactMarkdown>
+                </div>
+              ) : null
             )}
 
-            {/* Tool calls */}
-            {normalizedToolCalls.length > 0 && (
-              <div className="mt-3 space-y-2">
-                {normalizedToolCalls.map((tool) => (
-                  <ToolCallCard
-                    key={tool.key}
-                    name={tool.name}
-                    action={tool.action}
-                    status={tool.status}
-                    result={tool.result}
-                  />
-                ))}
-              </div>
-            )}
+            {(!isUser && (normalizedToolCalls.length > 0 || message.reasoning?.trim())) ? (
+              <ActionTracePanel
+                reasoning={message.reasoning}
+                reasoningDuration={message.reasoningDuration}
+                isStreaming={Boolean(message.isThinking)}
+                toolCalls={normalizedToolCalls}
+              />
+            ) : null}
 
             {!isUser && message.flowBudget && (
               <div className="mt-3 rounded-lg border border-border bg-background/40 px-3 py-2 text-xs text-muted-foreground">
@@ -324,6 +389,9 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
                 return null;
               })}
 
+            {normalizedToolCalls.length > 0 &&
+              normalizedToolCalls.map((tool) => renderStructuredArtifact(tool))}
+
             {message.content.includes("Running skill") && (
               <div className="mt-3">
                 <SkillExecution
@@ -337,18 +405,10 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
               </div>
             )}
 
-            {!isUser && message.reasoning && (
-              <ReasoningPanel
-                reasoning={message.reasoning}
-                durationMs={message.reasoningDuration}
-                isStreaming={Boolean(message.isThinking)}
-              />
-            )}
-
             {/* Save to knowledge base button for assistant messages */}
-            {!isUser && message.content.length > 100 && onSaveToKnowledge && (
+            {!isUser && displayContent.length > 100 && onSaveToKnowledge && (
               <button
-                onClick={() => onSaveToKnowledge(message.content)}
+                onClick={() => onSaveToKnowledge(displayContent)}
                 className="mt-3 text-xs text-muted-foreground hover:text-primary transition-colors"
               >
                 Save to Knowledge Base

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { tools, getToolDescriptions } from '@/lib/agent-tools';
 import { authenticateUser, requireCompanyAccess } from '@/lib/api-auth';
 import { executeGatewayTool, getAllowedTools, type AgentType } from '@/lib/chat/tool-gateway';
+import { reportAutomationToolDefinitions } from "@/lib/reports/report-automation";
 import { createClient } from "@supabase/supabase-js";
 
 export const dynamic = 'force-dynamic';
@@ -19,14 +20,24 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const agentType = (searchParams.get("agentType") || "main") as AgentType;
   const allowed = getAllowedTools(agentType);
+  const reportTools = reportAutomationToolDefinitions.filter((tool) =>
+    allowed.includes(tool.name)
+  );
   return NextResponse.json({
-    tools: tools
-      .filter((t) => allowed.includes(t.name))
-      .map(t => ({
-      name: t.name,
-      description: t.description,
-      parameters: t.parameters,
+    tools: [
+      ...tools
+        .filter((t) => allowed.includes(t.name))
+        .map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
+      ...reportTools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters.properties,
       })),
+    ],
     descriptions: getToolDescriptions(),
     policies: {
       agentType,

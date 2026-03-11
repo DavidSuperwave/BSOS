@@ -682,7 +682,7 @@ function buildContextualMessage(params: ChatSendParams): string {
     blocks.push(`Agent Target: ${params.agentId}`);
   }
   if (params.systemPrompt) {
-    blocks.push(`System Instructions:\n${params.systemPrompt.slice(0, 6000)}`);
+    blocks.push(`System Instructions:\n${params.systemPrompt}`);
   }
   const historyBlock = formatHistory(params.history);
   if (historyBlock) {

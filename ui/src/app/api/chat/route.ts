@@ -13,12 +13,13 @@ import {
   companyContainerTag,
 } from "@/lib/supermemory-client";
 import { parseAgentDirectives, getDirectivePromptInstructions } from "@/lib/chat/agent-protocol";
-import { executeGatewayTool, type AgentType } from "@/lib/chat/tool-gateway";
+import { executeGatewayTool, getAllowedTools, type AgentType } from "@/lib/chat/tool-gateway";
 import { createTask, updateTask, appendTaskStep } from "@/lib/chat/task-runner";
 import { getChatFeatureFlags } from "@/lib/chat/feature-flags";
 import { getPresetFlowContract, getPresetFlowPromptInstructions } from "@/lib/chat/preset-flows";
 import { runTaskWorkerForTask, sweepTaskHealthForCompany } from "@/lib/chat/task-worker";
 import { toFlowTelemetrySummary } from "@/lib/chat/flow-observability";
+import { formatReportAutomationToolDescriptions } from "@/lib/reports/report-automation";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -422,17 +423,34 @@ async function buildSystemPrompt({
   company?: { id: string; name: string; slug: string } | null;
   supermemoryApiKey?: string | null;
 }) {
+  const sessionType = String(session?.session_type || "main").toLowerCase();
+  const mergedAvailableTools = Array.from(
+    new Set([
+      ...(Array.isArray(agent?.available_tools) ? agent.available_tools : []),
+      ...getAllowedTools(sessionType as AgentType),
+    ])
+  );
+  const promptAgent = {
+    ...agent,
+    available_tools: mergedAvailableTools,
+  };
+
   // If this is the knowledge component, use specialized prompt
   if (componentContext?.component === "knowledge") {
-    return `${buildKnowledgeSystemPrompt(agent, componentContext)}\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
+    return `${buildKnowledgeSystemPrompt(promptAgent, componentContext)}\n\n## AVAILABLE REPORT AUTOMATION TOOLS\n${formatReportAutomationToolDescriptions()}\n\nWhen a user asks for a report or a document with live charts, create the report first and embed it into the document with [report:<id>] tokens.\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
   }
 
-  let prompt = await buildAgentSystemPrompt({ agent, session, componentContext, company });
-  const sessionType = String(session?.session_type || "main").toLowerCase();
+  let prompt = await buildAgentSystemPrompt({
+    agent: promptAgent,
+    session,
+    componentContext,
+    company,
+  });
 
   // Ensure main chat agents always see actionable knowledge tool definitions.
   if (sessionType === "main" || sessionType === "knowledge") {
     prompt += `\n\n## AVAILABLE KNOWLEDGE TOOLS\n${formatKnowledgeToolDescriptions()}\n\nAfter using a tool, wait for the result before confirming to the user.`;
+    prompt += `\n\n## AVAILABLE REPORT AUTOMATION TOOLS\n${formatReportAutomationToolDescriptions()}\n\nYou do have access to these report tools in this environment. Do not claim they are unavailable. When a user asks for a report, chart, dashboard card, daily summary, or a document with a live chart, create the report first, then create the document with [report:<id>] in the markdown, and schedule it when the user asks for recurring delivery.`;
   }
 
   // Inject explicit vault references selected in the chat composer.
@@ -447,7 +465,6 @@ async function buildSystemPrompt({
       prompt += `\n\n## REFERENCED VAULT DOCUMENTS\n${referenceContext}`;
     }
   }
-
   return `${prompt}\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
 }
 
