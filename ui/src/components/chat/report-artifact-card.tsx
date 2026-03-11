@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { BarChart3, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useCompany } from "@/contexts/company-context";
 import { ChartBlock } from "@/components/documents/chart-block";
+import type { GeneratedArtifactSelection } from "./generated-artifact-types";
 
 interface ReportArtifactCardProps {
   reportId: string;
@@ -12,6 +14,7 @@ interface ReportArtifactCardProps {
   description?: string;
   chartType?: string;
   dataSource?: string;
+  onOpen?: (artifact: GeneratedArtifactSelection) => void;
 }
 
 export function ReportArtifactCard({
@@ -20,6 +23,7 @@ export function ReportArtifactCard({
   description,
   chartType,
   dataSource,
+  onOpen,
 }: ReportArtifactCardProps) {
   const { selectedCompany } = useCompany();
 
@@ -55,13 +59,34 @@ export function ReportArtifactCard({
             <ChartBlock companyId={selectedCompany.id} reportId={reportId} />
           ) : null}
 
-          <Link
-            href="/analytics"
-            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-          >
-            <ExternalLink className="h-3 w-3" />
-            Open in Analytics
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            {onOpen ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  onOpen({
+                    type: "report",
+                    reportId,
+                    title,
+                    description,
+                    chartType,
+                    dataSource,
+                  })
+                }
+              >
+                View file
+              </Button>
+            ) : null}
+            <Link
+              href="/analytics"
+              className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              Open in Analytics
+            </Link>
+          </div>
         </div>
       </div>
     </div>

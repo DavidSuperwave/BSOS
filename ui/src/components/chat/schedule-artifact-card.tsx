@@ -2,12 +2,16 @@
 
 import { Clock3 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { GeneratedArtifactSelection } from "./generated-artifact-types";
 
 interface ScheduleArtifactCardProps {
+  automationId?: string;
   title: string;
   deliveryHourUtc: number;
   enabled?: boolean;
   reportId?: string;
+  onOpen?: (artifact: GeneratedArtifactSelection) => void;
 }
 
 function formatHour(hour: number) {
@@ -16,10 +20,12 @@ function formatHour(hour: number) {
 }
 
 export function ScheduleArtifactCard({
+  automationId,
   title,
   deliveryHourUtc,
   enabled = true,
   reportId,
+  onOpen,
 }: ScheduleArtifactCardProps) {
   return (
     <div className="mt-3 rounded-xl border border-border bg-card/70 p-4">
@@ -43,6 +49,27 @@ export function ScheduleArtifactCard({
           </p>
           {reportId ? (
             <p className="text-xs text-muted-foreground">Linked report: {reportId}</p>
+          ) : null}
+          {onOpen ? (
+            <div className="pt-1">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  onOpen({
+                    type: "schedule",
+                    automationId,
+                    title,
+                    deliveryHourUtc,
+                    enabled,
+                    reportId,
+                  })
+                }
+              >
+                View file
+              </Button>
+            </div>
           ) : null}
         </div>
       </div>

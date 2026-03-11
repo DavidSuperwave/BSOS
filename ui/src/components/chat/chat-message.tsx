@@ -13,6 +13,7 @@ import { TaskCard } from "./task-card";
 import { ReportArtifactCard } from "./report-artifact-card";
 import { DocumentArtifactCard } from "./document-artifact-card";
 import { ScheduleArtifactCard } from "./schedule-artifact-card";
+import type { GeneratedArtifactSelection } from "./generated-artifact-types";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -63,10 +64,16 @@ export interface ChatMessageData {
 interface ChatMessageProps {
   message: ChatMessageData;
   onSaveToKnowledge?: (content: string) => void;
+  onOpenArtifact?: (artifact: GeneratedArtifactSelection) => void;
   variant?: "default" | "modern";
 }
 
-export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }: ChatMessageProps) {
+export function ChatMessage({
+  message,
+  onSaveToKnowledge,
+  onOpenArtifact,
+  variant = "default",
+}: ChatMessageProps) {
   const isUser = message.role === "user";
   const isModern = variant === "modern";
   const normalizedToolCalls = (message.toolCalls || []).map((tool, index) => ({
@@ -133,6 +140,7 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
             description={parsed.description}
             chartType={parsed.chartType}
             dataSource={parsed.dataSource}
+            onOpen={onOpenArtifact}
           />
         );
       }
@@ -141,11 +149,13 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
         return (
           <DocumentArtifactCard
             key={`structured-document-${parsed.documentId}`}
+            documentId={parsed.documentId}
             title={parsed.title || "Untitled document"}
             markdown={parsed.markdown || ""}
             reportIds={Array.isArray(parsed.reportIds) ? parsed.reportIds : []}
             status={parsed.status}
             category={parsed.category}
+            onOpen={onOpenArtifact}
           />
         );
       }
@@ -154,10 +164,12 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
         return (
           <ScheduleArtifactCard
             key={`schedule-${parsed.automationId}`}
+            automationId={parsed.automationId}
             title={parsed.title || "Daily report"}
             deliveryHourUtc={parsed.deliveryHourUtc || 8}
             enabled={parsed.enabled !== false}
             reportId={parsed.reportId}
+            onOpen={onOpenArtifact}
           />
         );
       }

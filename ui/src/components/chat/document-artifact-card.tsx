@@ -5,26 +5,32 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { useCompany } from "@/contexts/company-context";
 import { ChartBlock } from "@/components/documents/chart-block";
+import type { GeneratedArtifactSelection } from "./generated-artifact-types";
 
 interface DocumentArtifactCardProps {
+  documentId: string;
   title: string;
   markdown: string;
   reportIds?: string[];
   status?: string;
   category?: string;
+  onOpen?: (artifact: GeneratedArtifactSelection) => void;
 }
 
 export function DocumentArtifactCard({
+  documentId,
   title,
   markdown,
   reportIds = [],
   status,
   category,
+  onOpen,
 }: DocumentArtifactCardProps) {
   const { selectedCompany } = useCompany();
-  const renderedMarkdown = markdown.replace(/\[report:[a-zA-Z0-9-]+\]/g, "").trim();
+  const renderedMarkdown = markdown.replace(/\[report:[^\]]+\]/g, "").trim();
 
   return (
     <div className="mt-3 rounded-xl border border-border bg-card/70 p-4">
@@ -65,6 +71,29 @@ export function DocumentArtifactCard({
                   reportId={reportId}
                 />
               ))}
+            </div>
+          ) : null}
+
+          {onOpen ? (
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  onOpen({
+                    type: "document",
+                    documentId,
+                    title,
+                    markdown,
+                    reportIds,
+                    status,
+                    category,
+                  })
+                }
+              >
+                View file
+              </Button>
             </div>
           ) : null}
         </div>
