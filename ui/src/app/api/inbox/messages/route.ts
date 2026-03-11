@@ -64,7 +64,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/inbox/messages
- * Create/sync inbox message (used by webhook or manual sync)
+ * Create inbox message (used by webhook/hydration flows)
  */
 export async function POST(req: NextRequest) {
   const admin = getAdmin();

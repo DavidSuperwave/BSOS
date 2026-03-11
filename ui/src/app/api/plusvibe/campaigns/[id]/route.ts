@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProjectCredentials } from "@/lib/plusvibe-project";
-
-const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
-
-function sanitizePlusVibeErrorDetails(raw: string) {
-  return raw.replace(/\s+/g, " ").trim().slice(0, 400);
-}
+import { PlusVibeError, plusvibeFetch } from "@/lib/plusvibe-client";
 
 function resolveCampaignName(input: Record<string, any>) {
   const candidate =
@@ -16,6 +10,17 @@ function resolveCampaignName(input: Record<string, any>) {
   return typeof candidate === "string" ? candidate.trim() : "";
 }
 
+function normalizeStatusAction(input: string) {
+  const value = String(input || "").toUpperCase().trim();
+  if (["ACTIVE", "RUNNING", "LAUNCHED", "STARTED", "ON", "ENABLED"].includes(value)) {
+    return "ACTIVE";
+  }
+  if (["PAUSED", "PAUSE", "INACTIVE", "STOPPED", "OFF", "DISABLED"].includes(value)) {
+    return "PAUSED";
+  }
+  return null;
+}
+
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -23,49 +28,46 @@ export async function PATCH(
   const { searchParams } = new URL(req.url);
   const companyId = searchParams.get("companyId") || undefined;
 
-  const credentials = await getProjectCredentials(companyId);
-  
-  if (!credentials) {
-    return NextResponse.json(
-      { error: "PlusVibe API key not configured", code: "MISSING_KEY" },
-      { status: 503 }
-    );
-  }
-
   const { id } = await params;
 
   try {
     const body = await req.json();
+    const action = normalizeStatusAction((body?.status ?? "").toString());
+
+    if (action === "ACTIVE") {
+      const data = await plusvibeFetch("/campaign/launch", companyId, {
+        method: "POST",
+        body: { campaign_id: id },
+      });
+      return NextResponse.json(data);
+    }
+
+    if (action === "PAUSED") {
+      const data = await plusvibeFetch("/campaign/pause", companyId, {
+        method: "POST",
+        body: { campaign_id: id },
+      });
+      return NextResponse.json(data);
+    }
+
     const campName = resolveCampaignName(body);
     const payload = {
       ...body,
+      campaign_id: id,
       ...(campName ? { camp_name: campName } : {}),
-      workspace_id: credentials.workspaceId,
     };
-    const res = await fetch(`${PLUSVIBE_BASE}/campaigns/${id}`, {
+    const data = await plusvibeFetch("/campaign/update/campaign", companyId, {
       method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": credentials.apiKey,
-      },
-      body: JSON.stringify(payload),
+      body: payload,
     });
-    
-    if (!res.ok) {
-      const errorText = await res.text();
-      return NextResponse.json(
-        {
-          error: `PlusVibe API error: ${res.status}`,
-          code: "PLUSVIBE_ERROR",
-          details: sanitizePlusVibeErrorDetails(errorText),
-        },
-        { status: res.status }
-      );
-    }
-    
-    const data = await res.json();
     return NextResponse.json(data);
   } catch (err: any) {
+    if (err instanceof PlusVibeError) {
+      return NextResponse.json(
+        { error: err.details, code: err.code },
+        { status: err.status }
+      );
+    }
     return NextResponse.json(
       { error: err.message || "Failed to update campaign" },
       { status: 500 }
@@ -80,56 +82,31 @@ export async function DELETE(
   const { searchParams } = new URL(req.url);
   const companyId = searchParams.get("companyId") || undefined;
 
-  const credentials = await getProjectCredentials(companyId);
-  
-  if (!credentials) {
-    return NextResponse.json(
-      { error: "PlusVibe API key not configured", code: "MISSING_KEY" },
-      { status: 503 }
-    );
-  }
-
   const { id } = await params;
 
   try {
     const body = await req.json().catch(() => ({}));
     const archiveCampaign = body?.archive_campaign;
     const saveLeadsToList = body?.save_leads_to_list;
-    const query = new URLSearchParams({
-      workspace_id: credentials.workspaceId,
-      ...(typeof archiveCampaign === "boolean"
-        ? { archive_campaign: String(archiveCampaign) }
-        : {}),
-      ...(typeof saveLeadsToList === "boolean"
-        ? { save_leads_to_list: String(saveLeadsToList) }
-        : {}),
+    const payload = {
+      campaign_id: id,
+      is_archive: archiveCampaign === false ? "no" : "yes",
+      is_save_lead_data: saveLeadsToList === true ? "yes" : "no",
+    };
+
+    await plusvibeFetch("/campaign/delete", companyId, {
+      method: "DELETE",
+      body: payload,
     });
 
-    const res = await fetch(
-      `${PLUSVIBE_BASE}/campaigns/${id}?${query.toString()}`,
-      {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": credentials.apiKey,
-        },
-      }
-    );
-    
-    if (!res.ok) {
-      const errorText = await res.text();
-      return NextResponse.json(
-        {
-          error: `PlusVibe API error: ${res.status}`,
-          code: "PLUSVIBE_ERROR",
-          details: sanitizePlusVibeErrorDetails(errorText),
-        },
-        { status: res.status }
-      );
-    }
-    
     return NextResponse.json({ success: true });
   } catch (err: any) {
+    if (err instanceof PlusVibeError) {
+      return NextResponse.json(
+        { error: err.details, code: err.code },
+        { status: err.status }
+      );
+    }
     return NextResponse.json(
       { error: err.message || "Failed to delete campaign" },
       { status: 500 }

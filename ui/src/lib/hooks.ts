@@ -104,6 +104,8 @@ export interface PlusVibeCampaign {
   id: string;
   name: string;
   status: string;
+  sequences?: Array<Record<string, any>>;
+  sequence?: Array<Record<string, any>> | Record<string, any>;
   stats?: {
     sent: number;
     replies: number;
@@ -140,12 +142,37 @@ export interface CampaignLead {
   lastActivity: string;
 }
 
-export function useCampaignLeads(campaignId?: string, companyId?: string) {
-  return useApiData<{ leads: CampaignLead[]; total: number }>(
-    campaignId && companyId
-      ? `/api/plusvibe/campaigns/${campaignId}/leads?companyId=${companyId}`
-      : null
-  );
+interface CampaignLeadsQuery {
+  page?: number;
+  limit?: number;
+  status?: string;
+  tag?: string;
+  search?: string;
+  step?: string;
+  sort?: string;
+  direction?: string;
+}
+
+export function useCampaignLeads(
+  campaignId?: string,
+  companyId?: string,
+  options?: CampaignLeadsQuery
+) {
+  let url: string | null = null;
+  if (campaignId && companyId) {
+    const params = new URLSearchParams();
+    params.set("companyId", companyId);
+    if (options?.page) params.set("page", String(options.page));
+    if (options?.limit) params.set("limit", String(options.limit));
+    if (options?.status) params.set("status", options.status);
+    if (options?.tag) params.set("tag", options.tag);
+    if (options?.search) params.set("search", options.search);
+    if (options?.step) params.set("step", options.step);
+    if (options?.sort) params.set("sort", options.sort);
+    if (options?.direction) params.set("direction", options.direction);
+    url = `/api/plusvibe/campaigns/${campaignId}/leads?${params.toString()}`;
+  }
+  return useApiData<{ leads: CampaignLead[]; total: number; page: number; limit: number }>(url);
 }
 
 export interface CampaignAnalyticsData {

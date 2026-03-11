@@ -9,6 +9,112 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const limiter = createRateLimiter({ limit: 60, window: 60 });
 
+function firstString(...values: any[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function normalizeEmail(value: any): string | null {
+  if (!value) return null;
+  if (Array.isArray(value)) {
+    return normalizeEmail(value[0]);
+  }
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  const match = trimmed.match(/<([^>]+)>/);
+  return (match?.[1] || trimmed || "").trim() || null;
+}
+
+function stripHtml(html: string) {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function parseWebhookPayload(body: any) {
+  const payload = body?.event?.data || body?.data || body?.payload || body || {};
+  const bodyHtml =
+    firstString(
+      payload?.body_html,
+      payload?.body?.html,
+      payload?.html,
+      payload?.body,
+      payload?.content
+    ) || "";
+  const bodyText =
+    firstString(
+      payload?.body_text,
+      payload?.body?.text,
+      payload?.text,
+      payload?.content_preview
+    ) || stripHtml(bodyHtml);
+
+  const tags = Array.isArray(payload?.tags)
+    ? payload.tags.map((tag: any) => String(tag))
+    : typeof payload?.tags === "string"
+      ? payload.tags.split(",").map((tag: string) => tag.trim()).filter(Boolean)
+      : [];
+
+  return {
+    campaign_id: firstString(
+      payload?.campaign_id,
+      payload?.campaignId,
+      payload?.campaign?._id,
+      payload?.campaign?.id
+    ),
+    company_id: firstString(payload?.company_id, payload?.companyId),
+    from_email: normalizeEmail(
+      firstString(
+        payload?.from_email,
+        payload?.from_address_email,
+        payload?.sender_email,
+        payload?.from?.email
+      )
+    ),
+    from_name: firstString(
+      payload?.from_name,
+      payload?.from_address_name,
+      payload?.sender_name,
+      payload?.from?.name
+    ),
+    to_email: normalizeEmail(
+      firstString(
+        payload?.to_email,
+        payload?.to_address_email,
+        Array.isArray(payload?.to_address_email_list) ? payload.to_address_email_list[0] : null,
+        Array.isArray(payload?.to_emails) ? payload.to_emails[0] : null,
+        payload?.to?.email
+      )
+    ),
+    subject: firstString(payload?.subject, payload?.title),
+    body_html: bodyHtml,
+    body_text: bodyText,
+    thread_id: firstString(payload?.thread_id, payload?.threadId, payload?.conversation_id),
+    plusvibe_id: firstString(
+      payload?.plusvibe_id,
+      payload?.message_id,
+      payload?.email_id,
+      payload?.id,
+      payload?._id
+    ),
+    campaign_name: firstString(
+      payload?.campaign_name,
+      payload?.camp_name,
+      payload?.campaign?.name
+    ),
+    sentiment: firstString(payload?.sentiment),
+    intent: firstString(payload?.intent),
+    priority: firstString(payload?.priority) || "medium",
+    tags,
+    timestamp: firstString(
+      payload?.timestamp_created,
+      payload?.created_at,
+      payload?.createdAt,
+      payload?.timestamp
+    ),
+  };
+}
+
 /**
  * POST /api/webhooks/plusvibe
  *
@@ -23,27 +129,27 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-
-    // Validate required fields
-    const {
-      campaign_id,
-      from_email,
-      to_email,
-      subject,
-      body: emailBody,
-    } = body;
+    const payload = parseWebhookPayload(body);
+    const campaign_id = payload.campaign_id;
+    const from_email = payload.from_email;
+    const to_email = payload.to_email;
+    const subject = payload.subject;
+    const emailBody = payload.body_html || payload.body_text;
 
     if (!campaign_id || !from_email || !to_email || !subject || !emailBody) {
       return NextResponse.json(
-        { error: "Missing required fields: campaign_id, from_email, to_email, subject, body" },
-        { status: 400 }
+        { received: true, ignored: true, reason: "missing_message_fields" },
+        { status: 202 }
       );
     }
 
     const admin = createClient(supabaseUrl, supabaseServiceKey);
 
     // Resolve company from campaign_id or explicit company_id
-    let companyId = body.company_id;
+    let companyId =
+      payload.company_id ||
+      req.nextUrl.searchParams.get("companyId") ||
+      firstString(body?.company_id, body?.companyId);
 
     if (!companyId) {
       // Try to find company by looking up which company owns this campaign
@@ -59,8 +165,8 @@ export async function POST(req: NextRequest) {
 
     if (!companyId) {
       return NextResponse.json(
-        { error: "Could not resolve company for this campaign" },
-        { status: 400 }
+        { received: true, ignored: true, reason: "company_not_resolved" },
+        { status: 202 }
       );
     }
 
@@ -69,21 +175,23 @@ export async function POST(req: NextRequest) {
     const messageData = {
       company_id: companyId,
       campaign_id,
-      campaign_name: body.campaign_name || null,
-      thread_id: body.thread_id || null,
-      plusvibe_id: body.plusvibe_id || null,
+      campaign_name: payload.campaign_name || null,
+      thread_id: payload.thread_id || null,
+      plusvibe_id:
+        payload.plusvibe_id || `${campaign_id}:${payload.thread_id || from_email}:${subject}`,
       from_email,
-      from_name: body.from_name || null,
+      from_name: payload.from_name || null,
       from_domain: fromDomain,
       to_email,
       subject,
       body: emailBody,
-      body_text: body.body_text || null,
-      sentiment: body.sentiment || null,
-      intent: body.intent || null,
-      tags: body.tags || [],
+      body_text: payload.body_text || null,
+      sentiment: payload.sentiment || null,
+      intent: payload.intent || null,
+      tags: payload.tags || [],
       status: "unread",
-      priority: body.priority || "medium",
+      priority: payload.priority || "medium",
+      created_at: payload.timestamp || undefined,
     };
 
     // Upsert into inbox_messages
@@ -119,18 +227,18 @@ export async function POST(req: NextRequest) {
     }
 
     // Update email thread if thread_id exists
-    if (body.thread_id) {
+    if (payload.thread_id) {
       await admin
         .from("email_threads")
         .upsert(
           {
-            thread_id: body.thread_id,
+            thread_id: payload.thread_id,
             company_id: companyId,
             prospect_email: from_email,
-            prospect_name: body.from_name || null,
+            prospect_name: payload.from_name || null,
             subject,
             last_message_body: emailBody,
-            last_activity: new Date().toISOString(),
+            last_activity: payload.timestamp || new Date().toISOString(),
             status: "active",
           } as any,
           { onConflict: "thread_id" }
@@ -138,7 +246,7 @@ export async function POST(req: NextRequest) {
         .then(() => {
           // Increment message count
           admin.rpc("increment_thread_message_count", {
-            tid: body.thread_id,
+            tid: payload.thread_id,
           }).then(() => {});
         });
     }
@@ -147,7 +255,7 @@ export async function POST(req: NextRequest) {
     await admin.from("events").insert({
       company_id: companyId,
       event_type: "email_reply",
-      title: `New reply from ${body.from_name || from_email}`,
+      title: `New reply from ${payload.from_name || from_email}`,
       description: `Re: ${subject}`,
       priority: "medium",
       actions: [
@@ -181,9 +289,9 @@ export async function POST(req: NextRequest) {
     autoMovePipelineEntries(admin, {
       companyId,
       fromEmail: from_email,
-      sentiment: body.sentiment,
-      intent: body.intent,
-      tags: body.tags,
+      sentiment: payload.sentiment || undefined,
+      intent: payload.intent || undefined,
+      tags: payload.tags || [],
     }).catch((err) =>
       console.error("[Webhook PlusVibe] Pipeline auto-move error:", err)
     );

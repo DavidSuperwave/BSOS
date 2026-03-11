@@ -1,12 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProjectCredentials } from "@/lib/plusvibe-project";
-
-const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
-
-function sanitizePlusVibeErrorDetails(raw: string) {
-  // Keep diagnostics concise and avoid leaking oversized payloads to the client.
-  return raw.replace(/\s+/g, " ").trim().slice(0, 400);
-}
+import { PlusVibeError, plusvibeFetch } from "@/lib/plusvibe-client";
 
 function resolveCampaignName(input: Record<string, any>) {
   const candidate =
@@ -17,73 +10,54 @@ function resolveCampaignName(input: Record<string, any>) {
   return typeof candidate === "string" ? candidate.trim() : "";
 }
 
+function normalizeCampaignStatus(input: any): string {
+  const value = String(input || "").toLowerCase().trim();
+  if (["active", "running", "launched", "started", "live", "in_progress", "enabled", "on"].includes(value)) {
+    return "active";
+  }
+  if (["paused", "pause", "stopped", "inactive", "disabled", "off"].includes(value)) {
+    return "paused";
+  }
+  if (["complete", "completed", "finished", "done", "ended"].includes(value)) {
+    return "complete";
+  }
+  if (!value || value === "draft" || value === "new" || value === "pending") {
+    return "draft";
+  }
+  return value;
+}
+
 export async function GET(request: NextRequest) {
   // Get companyId from query params
   const { searchParams } = new URL(request.url);
   const companyId = searchParams.get("companyId") || undefined;
 
-  const credentials = await getProjectCredentials(companyId);
-  
-  if (!credentials) {
-    return NextResponse.json(
-      { error: "PlusVibe API key not configured", code: "MISSING_KEY" },
-      { status: 503 }
-    );
-  }
-
   try {
-    // Fetch campaign list
-    const listRes = await fetch(
-      `${PLUSVIBE_BASE}/campaign/list?workspace_id=${credentials.workspaceId}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": credentials.apiKey,
-        },
-      }
-    );
-    
-    if (!listRes.ok) {
-      const errorText = await listRes.text();
-      return NextResponse.json(
-        {
-          error: `PlusVibe API error: ${listRes.status}`,
-          code: "PLUSVIBE_ERROR",
-          details: sanitizePlusVibeErrorDetails(errorText),
-        },
-        { status: listRes.status }
-      );
-    }
-    
-    const listData = await listRes.json();
-    const campaigns = listData.value || listData.data || listData;
+    const listData = await plusvibeFetch("/campaign/list-all", companyId, {
+      method: "GET",
+    });
+    const campaignsRaw = Array.isArray(listData)
+      ? listData
+      : listData?.value || listData?.data || [];
+    const campaigns = Array.isArray(campaignsRaw) ? campaignsRaw : [];
 
-    // Fetch campaign stats
     const startDate = "2020-01-01";
     const endDate = "2030-12-31";
-    const statsRes = await fetch(
-      `${PLUSVIBE_BASE}/campaign/stats?workspace_id=${credentials.workspaceId}&start_date=${startDate}&end_date=${endDate}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": credentials.apiKey,
-        },
-      }
-    );
-
     let statsMap: Record<string, any> = {};
-    
-    if (statsRes.ok) {
-      const statsData = await statsRes.json();
-      if (Array.isArray(statsData)) {
-        // Create a map of campaign_id -> stats
-        statsMap = statsData.reduce((acc: Record<string, any>, stat: any) => {
-          if (stat._id) {
-            acc[stat._id] = stat;
-          }
-          return acc;
-        }, {});
-      }
+
+    try {
+      const statsData = await plusvibeFetch(
+        `/analytics/campaign/stats?start_date=${startDate}&end_date=${endDate}`,
+        companyId,
+        { method: "GET" }
+      );
+      const statsArr = Array.isArray(statsData) ? statsData : (typeof statsData === "object" && statsData !== null ? Object.values(statsData) : []);
+      statsMap = statsArr.reduce((acc: Record<string, any>, stat: any) => {
+        if (stat?._id) acc[stat._id] = stat;
+        return acc;
+      }, {});
+    } catch {
+      // Non-fatal: render campaigns even when stats endpoint is temporarily unavailable.
     }
 
     // Merge stats into campaigns
@@ -109,6 +83,9 @@ export async function GET(request: NextRequest) {
           ...campaign,
           id: campaignId,
           name: normalizedName,
+          status: normalizeCampaignStatus(
+            campaign?.status || campaign?.campaign_status || campaign?.state
+          ),
           createdAt: normalizedCreatedAt,
           stats: {
             sent,
@@ -134,6 +111,9 @@ export async function GET(request: NextRequest) {
         ...campaign,
         id: campaignId,
         name: normalizedName,
+        status: normalizeCampaignStatus(
+          campaign?.status || campaign?.campaign_status || campaign?.state
+        ),
         createdAt: normalizedCreatedAt,
         stats: {
           leadCount: 0,
@@ -152,9 +132,14 @@ export async function GET(request: NextRequest) {
     
     return NextResponse.json({
       campaigns: campaignsWithStats,
-      credentialsSource: credentials.source,
     });
   } catch (err: any) {
+    if (err instanceof PlusVibeError) {
+      return NextResponse.json(
+        { error: err.details, code: err.code },
+        { status: err.status }
+      );
+    }
     return NextResponse.json(
       {
         error: err.message || "Failed to fetch campaigns",
@@ -169,15 +154,6 @@ export async function POST(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const companyId = searchParams.get("companyId") || undefined;
 
-  const credentials = await getProjectCredentials(companyId);
-  
-  if (!credentials) {
-    return NextResponse.json(
-      { error: "PlusVibe API key not configured", code: "MISSING_KEY" },
-      { status: 503 }
-    );
-  }
-
   try {
     const body = await req.json();
     const campName = resolveCampaignName(body);
@@ -191,33 +167,20 @@ export async function POST(req: NextRequest) {
     const payload = {
       ...body,
       camp_name: campName,
-      workspace_id: credentials.workspaceId,
     };
 
-    const res = await fetch(`${PLUSVIBE_BASE}/campaigns`, {
+    const data = await plusvibeFetch("/campaign/add/campaign", companyId, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": credentials.apiKey,
-      },
-      body: JSON.stringify(payload),
+      body: payload,
     });
-    
-    if (!res.ok) {
-      const errorText = await res.text();
-      return NextResponse.json(
-        {
-          error: `PlusVibe API error: ${res.status}`,
-          code: "PLUSVIBE_ERROR",
-          details: sanitizePlusVibeErrorDetails(errorText),
-        },
-        { status: res.status }
-      );
-    }
-    
-    const data = await res.json();
     return NextResponse.json(data);
   } catch (err: any) {
+    if (err instanceof PlusVibeError) {
+      return NextResponse.json(
+        { error: err.details, code: err.code },
+        { status: err.status }
+      );
+    }
     return NextResponse.json(
       {
         error: err.message || "Failed to create campaign",

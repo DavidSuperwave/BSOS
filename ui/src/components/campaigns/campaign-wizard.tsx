@@ -4,24 +4,15 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Bot,
-  Bold,
-  CalendarDays,
-  Clock3,
   Filter,
-  Italic,
   Loader2,
-  Link2,
-  List,
-  ListOrdered,
   Mail,
   Plus,
-  Quote,
   Reply,
   Search,
   Send,
   Settings2,
   ThumbsUp,
-  Underline,
   Users,
 } from "lucide-react";
 import { type PlusVibeCampaign, useCampaignLeads, type CampaignLead } from "@/lib/hooks";
@@ -29,7 +20,6 @@ import { useStreamingChat } from "@/lib/hooks/use-streaming-chat";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ChatMessage } from "@/components/chat/chat-message";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -62,6 +52,14 @@ interface SequenceStepDraft {
   positiveRate: number;
 }
 
+interface SequenceVariation {
+  id: string;
+  label: string;
+  name: string;
+  subject: string;
+  body: string;
+}
+
 interface SubsequenceDraft {
   id: string;
   name: string;
@@ -70,41 +68,127 @@ interface SubsequenceDraft {
   status: "Active" | "Draft";
 }
 
-const INITIAL_SEQUENCE_STEPS: SequenceStepDraft[] = [
-  {
+const LEADS_PAGE_SIZE = 25;
+
+function toStringValue(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+function toNumberValue(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function coerceArray(input: unknown): any[] {
+  if (Array.isArray(input)) return input;
+  if (input && typeof input === "object") {
+    const record = input as Record<string, unknown>;
+    const nested = [record.steps, record.sequences, record.sequence, record.data, record.value];
+    for (const candidate of nested) {
+      if (Array.isArray(candidate)) return candidate;
+    }
+  }
+  return [];
+}
+
+function getFallbackSequenceStep(): SequenceStepDraft {
+  return {
     id: "step-1",
-    title: "Step 1 - Intro",
-    subject: "Quick idea for {{company}}",
-    body: "Hey {{first_name}}, I noticed {{company}} is scaling outbound...",
+    title: "Step 1",
+    subject: "",
+    body: "",
     waitDays: 0,
-    sent: 412,
-    openRate: 71,
-    replyRate: 6.4,
-    positiveRate: 2.1,
-  },
-  {
-    id: "step-2",
-    title: "Step 2 - Follow-up",
-    subject: "Worth a quick look?",
-    body: "Wanted to bump this in case it got buried...",
-    waitDays: 3,
-    sent: 276,
-    openRate: 63,
-    replyRate: 4.1,
-    positiveRate: 1.4,
-  },
-  {
-    id: "step-3",
-    title: "Step 3 - Final touch",
-    subject: "Should I close this out?",
-    body: "Last follow-up from me - happy to circle back later.",
-    waitDays: 5,
-    sent: 181,
-    openRate: 58,
-    replyRate: 3.3,
-    positiveRate: 1.0,
-  },
-];
+    sent: 0,
+    openRate: 0,
+    replyRate: 0,
+    positiveRate: 0,
+  };
+}
+
+function normalizeSequenceSteps(campaign: PlusVibeCampaign): SequenceStepDraft[] {
+  const candidates = [
+    campaign.sequences,
+    campaign.sequence,
+    (campaign as any)?.settings?.sequences,
+    (campaign as any)?.campaign?.sequences,
+    (campaign as any)?.steps,
+  ];
+
+  let rawSteps: any[] = [];
+  for (const candidate of candidates) {
+    rawSteps = coerceArray(candidate);
+    if (rawSteps.length > 0) break;
+  }
+
+  if (rawSteps.length === 0) return [getFallbackSequenceStep()];
+
+  const normalized = rawSteps.map((step: any, index: number) => {
+    const stepNumber = toNumberValue(step?.step, index + 1);
+    const delayDaysRaw = step?.delay_days ?? step?.wait_days ?? step?.waitDays ?? step?.delay;
+    const delayDays = toNumberValue(delayDaysRaw, index === 0 ? 0 : 3);
+
+    return {
+      id: toStringValue(step?.id, step?._id, `step-${stepNumber}`),
+      title: toStringValue(step?.title, step?.name, `Step ${stepNumber}`),
+      subject: toStringValue(
+        step?.subject,
+        step?.subject_line,
+        step?.email_subject,
+        step?.email?.subject,
+        step?.mail?.subject
+      ),
+      body: toStringValue(
+        step?.body,
+        step?.message,
+        step?.content,
+        step?.email_body,
+        step?.email?.body,
+        step?.mail?.body
+      ),
+      waitDays: delayDays < 0 ? 0 : delayDays,
+      sent: toNumberValue(step?.sent ?? step?.emails_sent ?? step?.sent_count, 0),
+      openRate: toNumberValue(step?.open_rate ?? step?.openRate, 0),
+      replyRate: toNumberValue(step?.reply_rate ?? step?.replyRate, 0),
+      positiveRate: toNumberValue(step?.positive_rate ?? step?.positiveRate, 0),
+    };
+  });
+
+  return normalized.length > 0 ? normalized : [getFallbackSequenceStep()];
+}
+
+function variationLabelAt(index: number): string {
+  const code = "A".charCodeAt(0) + index;
+  return String.fromCharCode(code);
+}
+
+function buildDefaultVariationsForStep(
+  step: SequenceStepDraft,
+  stepIndex: number
+): SequenceVariation[] {
+  return [
+    {
+      id: `${step.id}-var-a`,
+      label: "A",
+      name: `Variation Name ${stepIndex + 1}A`,
+      subject: step.subject || "",
+      body: step.body || "",
+    },
+    {
+      id: `${step.id}-var-b`,
+      label: "B",
+      name: `Variation Name ${stepIndex + 1}B`,
+      subject: "",
+      body: "",
+    },
+  ];
+}
 
 const INITIAL_SUBSEQUENCES: SubsequenceDraft[] = [
   {
@@ -134,10 +218,17 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [leadSearch, setLeadSearch] = useState("");
   const [leadStatusFilter, setLeadStatusFilter] = useState("all");
   const [leadTagFilter, setLeadTagFilter] = useState("all");
+  const [leadPage, setLeadPage] = useState(1);
 
-  // Real lead data from PlusVibe
-  const { data: leadData, mutate: mutateLeads } = useCampaignLeads(campaign.id, companyId);
-  const allLeads: CampaignLead[] = leadData?.leads || [];
+  const { data: leadData, mutate: mutateLeads } = useCampaignLeads(campaign.id, companyId, {
+    page: leadPage,
+    limit: LEADS_PAGE_SIZE,
+    status: leadStatusFilter !== "all" ? leadStatusFilter : undefined,
+    tag: leadTagFilter !== "all" ? leadTagFilter : undefined,
+    search: leadSearch.trim() || undefined,
+    sort: "updated_at",
+    direction: "desc",
+  });
 
   // Add lead dialog state
   const [isAddLeadOpen, setIsAddLeadOpen] = useState(false);
@@ -189,10 +280,13 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     }
   };
 
-  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>(INITIAL_SEQUENCE_STEPS);
+  const initialSequenceSteps = useMemo(() => normalizeSequenceSteps(campaign), [campaign]);
+  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>(initialSequenceSteps);
   const [selectedSequenceStepId, setSelectedSequenceStepId] = useState(
-    INITIAL_SEQUENCE_STEPS[0]?.id || ""
+    initialSequenceSteps[0]?.id || ""
   );
+  const [stepVariations, setStepVariations] = useState<Record<string, SequenceVariation[]>>({});
+  const [activeVariationByStep, setActiveVariationByStep] = useState<Record<string, string>>({});
 
   const [settingsName, setSettingsName] = useState(campaign.name || "");
   const [dailyLimit, setDailyLimit] = useState("200");
@@ -207,6 +301,8 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [endHour, setEndHour] = useState("17:00");
   const [sendingDays, setSendingDays] = useState<string[]>(["Mon", "Tue", "Wed", "Thu", "Fri"]);
   const [minDelayMinutes, setMinDelayMinutes] = useState("2");
+  const [scheduleName, setScheduleName] = useState("New schedule");
+  const [selectedScheduleId, setSelectedScheduleId] = useState("schedule-default");
 
   const [subsequences, setSubsequences] = useState<SubsequenceDraft[]>(INITIAL_SUBSEQUENCES);
   const [isSubsequenceDialogOpen, setIsSubsequenceDialogOpen] = useState(false);
@@ -216,33 +312,20 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [subsequenceConditionValue, setSubsequenceConditionValue] = useState("3");
 
   const sendingDaySet = useMemo(() => new Set(sendingDays), [sendingDays]);
-  const leads = useMemo(() => {
-    return allLeads.filter((lead) => {
-      if (leadStatusFilter !== "all" && lead.status.toLowerCase() !== leadStatusFilter) return false;
-      if (leadTagFilter !== "all" && lead.tag.toLowerCase() !== leadTagFilter) return false;
-      if (leadSearch.trim()) {
-        const haystack = `${lead.name} ${lead.email} ${lead.company}`.toLowerCase();
-        if (!haystack.includes(leadSearch.trim().toLowerCase())) return false;
-      }
-      return true;
-    });
-  }, [allLeads, leadSearch, leadStatusFilter, leadTagFilter]);
+  const leads: CampaignLead[] = leadData?.leads || [];
+  const totalLeads = leadData?.total || 0;
+  const leadLimit = leadData?.limit || LEADS_PAGE_SIZE;
+  const leadCurrentPage = leadData?.page || leadPage;
+  const leadTotalPages = Math.max(1, Math.ceil(totalLeads / leadLimit));
 
-  const totalSent = sequenceSteps.reduce((sum, step) => sum + step.sent, 0);
+  const totalSentFromSteps = sequenceSteps.reduce((sum, step) => sum + step.sent, 0);
+  const totalSent = campaign.stats?.sent ?? totalSentFromSteps;
   const quickLeadContext = leads.slice(0, 6);
   const selectedSequenceStep =
     sequenceSteps.find((step) => step.id === selectedSequenceStepId) || sequenceSteps[0] || null;
   const selectedSequenceIndex = selectedSequenceStep
     ? sequenceSteps.findIndex((step) => step.id === selectedSequenceStep.id)
     : -1;
-  const sequenceVariables = [
-    "{{first_name}}",
-    "{{last_name}}",
-    "{{company}}",
-    "{{title}}",
-    "{{industry}}",
-    "{{website}}",
-  ];
   const {
     messages: sequenceAgentMessages,
     isStreaming: isSequenceAgentStreaming,
@@ -256,6 +339,34 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   useEffect(() => {
     sequenceAgentEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sequenceAgentMessages]);
+
+  useEffect(() => {
+    setLeadPage(1);
+  }, [leadStatusFilter, leadTagFilter, leadSearch, campaign.id]);
+
+  useEffect(() => {
+    setSequenceSteps(initialSequenceSteps);
+    setSelectedSequenceStepId(initialSequenceSteps[0]?.id || "");
+    const nextVariations: Record<string, SequenceVariation[]> = {};
+    const nextActive: Record<string, string> = {};
+    initialSequenceSteps.forEach((step, index) => {
+      const variations = buildDefaultVariationsForStep(step, index);
+      nextVariations[step.id] = variations;
+      nextActive[step.id] = variations[0]?.id || "";
+    });
+    setStepVariations(nextVariations);
+    setActiveVariationByStep(nextActive);
+  }, [campaign.id, initialSequenceSteps]);
+
+  const variationsForSelectedStep = selectedSequenceStep
+    ? stepVariations[selectedSequenceStep.id] || []
+    : [];
+  const activeVariationId = selectedSequenceStep
+    ? activeVariationByStep[selectedSequenceStep.id] || variationsForSelectedStep[0]?.id || ""
+    : "";
+  const selectedVariation = variationsForSelectedStep.find((variation) => variation.id === activeVariationId) ||
+    variationsForSelectedStep[0] ||
+    null;
 
   const savePatch = async (payload: Record<string, unknown>) => {
     setSaving(true);
@@ -287,29 +398,110 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
 
   const addSequenceStep = () => {
     const stepId = `step-${Date.now()}`;
-    setSequenceSteps((prev) => [
-      ...prev,
-      {
-        id: stepId,
-        title: `Step ${prev.length + 1} - New step`,
-        subject: "New follow-up subject",
-        body: "Write your follow-up message...",
-        waitDays: 3,
-        sent: 0,
-        openRate: 0,
-        replyRate: 0,
-        positiveRate: 0,
-      },
-    ]);
+    let nextStepIndex = 0;
+    setSequenceSteps((prev) => {
+      nextStepIndex = prev.length;
+      return [
+        ...prev,
+        {
+          id: stepId,
+          title: `Step ${prev.length + 1}`,
+          subject: "",
+          body: "",
+          waitDays: prev.length === 0 ? 0 : 3,
+          sent: 0,
+          openRate: 0,
+          replyRate: 0,
+          positiveRate: 0,
+        },
+      ];
+    });
+    const blankStep: SequenceStepDraft = {
+      id: stepId,
+      title: `Step ${nextStepIndex + 1}`,
+      subject: "",
+      body: "",
+      waitDays: nextStepIndex === 0 ? 0 : 3,
+      sent: 0,
+      openRate: 0,
+      replyRate: 0,
+      positiveRate: 0,
+    };
+    const variations = buildDefaultVariationsForStep(blankStep, nextStepIndex);
+    setStepVariations((prev) => ({ ...prev, [stepId]: variations }));
+    setActiveVariationByStep((prev) => ({ ...prev, [stepId]: variations[0]?.id || "" }));
     setSelectedSequenceStepId(stepId);
+  };
+
+  const selectVariationForStep = (stepId: string, variationId: string) => {
+    setActiveVariationByStep((prev) => ({ ...prev, [stepId]: variationId }));
+  };
+
+  const addVariationToStep = (stepId: string) => {
+    setStepVariations((prev) => {
+      const existing = prev[stepId] || [];
+      const nextIndex = existing.length;
+      const stepIndex = sequenceSteps.findIndex((step) => step.id === stepId);
+      const nextVariation: SequenceVariation = {
+        id: `${stepId}-var-${Date.now()}`,
+        label: variationLabelAt(nextIndex),
+        name: `Variation Name ${Math.max(0, stepIndex) + 1}${variationLabelAt(nextIndex)}`,
+        subject: "",
+        body: "",
+      };
+      const next = [...existing, nextVariation];
+      setActiveVariationByStep((activePrev) => ({ ...activePrev, [stepId]: nextVariation.id }));
+      return { ...prev, [stepId]: next };
+    });
+  };
+
+  const removeVariationFromStep = (stepId: string) => {
+    setStepVariations((prev) => {
+      const existing = prev[stepId] || [];
+      if (existing.length <= 1) return prev;
+      const currentId = activeVariationByStep[stepId] || existing[0]?.id;
+      const filtered = existing.filter((variation) => variation.id !== currentId);
+      const relabeled = filtered.map((variation, index) => ({
+        ...variation,
+        label: variationLabelAt(index),
+      }));
+      setActiveVariationByStep((activePrev) => ({
+        ...activePrev,
+        [stepId]: relabeled[0]?.id || "",
+      }));
+      return { ...prev, [stepId]: relabeled };
+    });
+  };
+
+  const updateSelectedVariation = (
+    patch: Partial<Pick<SequenceVariation, "name" | "subject" | "body">>
+  ) => {
+    if (!selectedSequenceStep || !selectedVariation) return;
+    const stepId = selectedSequenceStep.id;
+    setStepVariations((prev) => ({
+      ...prev,
+      [stepId]: (prev[stepId] || []).map((variation) =>
+        variation.id === selectedVariation.id ? { ...variation, ...patch } : variation
+      ),
+    }));
   };
 
   const saveSequences = () => {
     void savePatch({
-      sequence: sequenceSteps.map((step, index) => ({
+      sequences: sequenceSteps.map((step, index) => ({
         step: index + 1,
-        subject: step.subject,
-        body: step.body,
+        subject:
+          (stepVariations[step.id] || []).find(
+            (variation) => variation.id === activeVariationByStep[step.id]
+          )?.subject ||
+          stepVariations[step.id]?.[0]?.subject ||
+          step.subject,
+        body:
+          (stepVariations[step.id] || []).find(
+            (variation) => variation.id === activeVariationByStep[step.id]
+          )?.body ||
+          stepVariations[step.id]?.[0]?.body ||
+          step.body,
         delay_days: step.waitDays,
       })),
     });
@@ -422,8 +614,9 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 md:grid-cols-5">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 md:grid-cols-6">
           <TabsTrigger value="leads">Leads</TabsTrigger>
+          <TabsTrigger value="stepAnalytics">Step Analytics</TabsTrigger>
           <TabsTrigger value="sequences">Sequences</TabsTrigger>
           <TabsTrigger value="schedule">Schedule</TabsTrigger>
           <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -522,83 +715,234 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               </div>
 
               <p className="text-xs text-muted-foreground">
-                Showing {leads.length} of {allLeads.length} leads
+                Showing {leads.length} of {totalLeads} leads
               </p>
+              {leadTotalPages > 1 && (
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-muted-foreground">
+                    Page {leadCurrentPage} of {leadTotalPages}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setLeadPage((prev) => Math.max(1, prev - 1))}
+                      disabled={leadCurrentPage <= 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setLeadPage((prev) => Math.min(leadTotalPages, prev + 1))
+                      }
+                      disabled={leadCurrentPage >= leadTotalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
+        <TabsContent value="stepAnalytics" className="space-y-4 mt-4">
+          <div className="space-y-4 rounded-xl border border-border bg-card p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Step Analytics</p>
+                <p className="text-xs text-muted-foreground">
+                  Performance snapshot by step and recent activity.
+                </p>
+              </div>
+              <Badge variant="outline">Draft-friendly view</Badge>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div className="rounded-lg border border-border bg-background p-4">
+                <p className="text-xs text-muted-foreground">Open Rate</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {campaign.stats?.openRate ?? 0}%
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-4">
+                <p className="text-xs text-muted-foreground">Click Rate</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">0%</p>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-4">
+                <p className="text-xs text-muted-foreground">Reply Rate</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {campaign.stats?.replyRate ?? 0}%
+                </p>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-4">
+                <p className="text-xs text-muted-foreground">Positive Rate</p>
+                <p className="mt-2 text-2xl font-semibold text-foreground">
+                  {campaign.stats?.positiveRate ?? 0}%
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+              <div className="rounded-lg border border-border bg-background p-4">
+                <p className="text-sm font-medium text-foreground">Step Breakdown</p>
+                <div className="mt-3 space-y-2">
+                  {sequenceSteps.map((step, index) => (
+                    <div
+                      key={`analytics-step-${step.id}`}
+                      className="flex items-center justify-between rounded-md border border-border bg-card px-3 py-2 text-sm"
+                    >
+                      <span className="text-foreground">Step {index + 1}</span>
+                      <span className="text-muted-foreground">{step.sent} sent</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-lg border border-border bg-background p-4">
+                <p className="text-sm font-medium text-foreground">Activity</p>
+                <div className="mt-3 rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                  Step analytics and recent activity will appear here once the campaign is published.
+                </div>
+              </div>
+            </div>
+          </div>
+        </TabsContent>
+
         <TabsContent value="sequences" className="mt-4">
           <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <div className="flex flex-col gap-2 border-b border-border px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="border-b border-border px-4 py-3">
               <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                 <Mail className="h-4 w-4" />
                 Sequences
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm" className="gap-1">
-                  <Settings2 className="h-4 w-4" />
-                  Analytics, Steps & Variations
-                </Button>
-                <Button onClick={addSequenceStep} size="sm" className="gap-1">
-                  <Plus className="h-4 w-4" />
-                  Add Step
-                </Button>
-              </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-3 bg-muted/10 p-3 xl:grid-cols-[280px_minmax(0,1fr)_360px]">
+            <div className="grid grid-cols-1 gap-3 bg-muted/10 p-3 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
               <aside className="space-y-3 rounded-md border border-border bg-card p-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sequences</p>
-                  <div className="mt-2 space-y-2">
-                    {sequenceSteps.map((step, index) => {
-                      const isSelected = step.id === selectedSequenceStep?.id;
-                      return (
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Steps</p>
+                <div className="space-y-3">
+                  {sequenceSteps.map((step, index) => {
+                    const isSelected = step.id === selectedSequenceStep?.id;
+                    const variations = stepVariations[step.id] || [];
+                    const activeVariationIdForStep =
+                      activeVariationByStep[step.id] || variations[0]?.id || "";
+                    const activeVariation =
+                      variations.find((variation) => variation.id === activeVariationIdForStep) || variations[0];
+
+                    return (
+                      <div
+                        key={step.id}
+                        className={`rounded-xl border p-3 transition-colors ${
+                          isSelected ? "border-primary/60 bg-primary/10" : "border-border bg-card"
+                        }`}
+                      >
                         <button
-                          key={step.id}
                           type="button"
                           onClick={() => setSelectedSequenceStepId(step.id)}
-                          className={`w-full rounded-md border p-3 text-left transition-colors ${
-                            isSelected
-                              ? "border-primary/40 bg-primary/10"
-                              : "border-border bg-card hover:bg-muted/40"
-                          }`}
+                          className="w-full text-left"
                         >
                           <div className="flex items-center justify-between">
                             <p className="text-sm font-semibold text-foreground">Step {index + 1}</p>
-                            <span className="text-[11px] text-muted-foreground">{step.sent} sent</span>
+                            <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] text-primary">
+                              {variations.length} variations
+                            </span>
                           </div>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">{step.subject}</p>
-                          <p className="mt-2 text-[11px] text-muted-foreground">
-                            {index === 0 ? "Initial email" : `Wait ${step.waitDays} days`} · 1 variation
-                          </p>
                         </button>
-                      );
-                    })}
-                  </div>
+
+                        <div className="mt-2 flex items-center gap-2">
+                          {variations.map((variation) => (
+                            <button
+                              key={variation.id}
+                              type="button"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedSequenceStepId(step.id);
+                                selectVariationForStep(step.id, variation.id);
+                              }}
+                              className={`h-8 min-w-8 rounded-md border px-3 text-xs font-medium ${
+                                activeVariationIdForStep === variation.id
+                                  ? "border-primary bg-primary text-primary-foreground"
+                                  : "border-border bg-background text-muted-foreground"
+                              }`}
+                            >
+                              {variation.label}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedSequenceStepId(step.id);
+                              addVariationToStep(step.id);
+                            }}
+                            className="h-8 w-8 rounded-full border border-primary text-primary"
+                          >
+                            +
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedSequenceStepId(step.id);
+                              removeVariationFromStep(step.id);
+                            }}
+                            className="h-8 w-8 rounded-full border border-red-400 text-red-400"
+                          >
+                            -
+                          </button>
+                        </div>
+
+                        <Input
+                          value={activeVariation?.name || ""}
+                          onChange={(event) => {
+                            setSelectedSequenceStepId(step.id);
+                            setActiveVariationByStep((prev) => ({ ...prev, [step.id]: activeVariationIdForStep }));
+                            setStepVariations((prev) => ({
+                              ...prev,
+                              [step.id]: (prev[step.id] || []).map((variation) =>
+                                variation.id === activeVariationIdForStep
+                                  ? { ...variation, name: event.target.value }
+                                  : variation
+                              ),
+                            }));
+                          }}
+                          className="mt-3"
+                          placeholder={`Variation Name ${index + 1}${activeVariation?.label || "A"}`}
+                        />
+
+                        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>Wait</span>
+                          <Input
+                            type="number"
+                            min={index === 0 ? 0 : 1}
+                            value={step.waitDays}
+                            onChange={(event) =>
+                              updateSequenceStep(step.id, {
+                                waitDays: Number(event.target.value) || (index === 0 ? 0 : 1),
+                              })
+                            }
+                            className="h-10 w-20"
+                          />
+                          <span>Day, then</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="border-t border-border pt-3">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Variables
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {sequenceVariables.map((variable) => (
-                      <Badge key={variable} variant="outline" className="text-[11px]">
-                        {variable}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
+                <Button variant="outline" onClick={addSequenceStep} className="w-full">
+                  Add Step
+                </Button>
               </aside>
 
               <div className="space-y-4 rounded-md border border-border bg-card p-4">
-                {selectedSequenceStep ? (
+                {selectedSequenceStep && selectedVariation ? (
                   <>
                     <div className="rounded-md border border-border bg-background">
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
                         <p className="text-sm font-medium text-foreground">
-                          {selectedSequenceStep.title}
+                          Step {selectedSequenceIndex + 1} · Variation {selectedVariation.label}
                         </p>
                         <Badge variant="outline" className="text-[11px]">
                           {selectedSequenceStep.sent} sent
@@ -607,56 +951,28 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
 
                       <div className="space-y-3 p-3">
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                            Subject
-                          </label>
+                          <label className="mb-1 block text-xs font-medium text-muted-foreground">Subject</label>
                           <Input
-                            value={selectedSequenceStep.subject}
+                            value={selectedVariation.subject}
                             onChange={(event) =>
-                              updateSequenceStep(selectedSequenceStep.id, { subject: event.target.value })
+                              updateSelectedVariation({ subject: event.target.value })
                             }
                           />
                         </div>
 
-                        <div className="flex flex-wrap gap-1 rounded-md border border-border bg-muted/20 p-1">
-                          {[Bold, Italic, Underline, Link2, List, ListOrdered, Quote].map((Icon, idx) => (
-                            <Button key={idx} type="button" size="icon" variant="ghost" className="h-8 w-8">
-                              <Icon className="h-4 w-4" />
-                            </Button>
-                          ))}
-                        </div>
-
                         <div>
-                          <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                            Body
-                          </label>
+                          <label className="mb-1 block text-xs font-medium text-muted-foreground">Body</label>
                           <textarea
-                            value={selectedSequenceStep.body}
+                            value={selectedVariation.body}
                             onChange={(event) =>
-                              updateSequenceStep(selectedSequenceStep.id, { body: event.target.value })
+                              updateSelectedVariation({ body: event.target.value })
                             }
-                            rows={14}
-                            className="min-h-[280px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none resize-y"
+                            rows={16}
+                            className="min-h-[320px] w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none resize-y"
                           />
                         </div>
                       </div>
                     </div>
-
-                    {selectedSequenceIndex > 0 ? (
-                      <div className="max-w-xs">
-                        <label className="mb-1 block text-xs font-medium text-muted-foreground">Wait Days</label>
-                        <Input
-                          type="number"
-                          min={1}
-                          value={selectedSequenceStep.waitDays}
-                          onChange={(event) =>
-                            updateSequenceStep(selectedSequenceStep.id, {
-                              waitDays: Number(event.target.value) || 1,
-                            })
-                          }
-                        />
-                      </div>
-                    ) : null}
 
                     <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-3">
                       <div className="rounded-md border border-border bg-muted/30 p-2">
@@ -685,50 +1001,53 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                 )}
               </div>
 
-              <div className="flex min-h-[560px] flex-col rounded-md border border-border bg-card">
-                <div className="flex items-center justify-between border-b border-border px-3 py-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                    <Bot className="h-4 w-4 text-primary" />
-                    Sequence Agent
+              <div className="flex min-h-[560px] flex-col rounded-2xl border border-border bg-card">
+                <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                  <div className="flex items-center gap-2 text-lg font-semibold text-foreground">
+                    <Bot className="h-5 w-5 text-primary" />
+                    Acme AI
                   </div>
                   <Badge variant="outline" className="text-[11px]">
                     {isSequenceAgentStreaming ? "Thinking..." : "Ready"}
                   </Badge>
                 </div>
 
-                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
                   {!companyId ? (
-                    <p className="text-sm text-muted-foreground">Select a company to activate the Sequence agent.</p>
+                    <div className="rounded-xl border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                      Select a company to activate the Sequence agent.
+                    </div>
                   ) : sequenceAgentMessages.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Ask the agent to rewrite this step, suggest variants, or adjust timing for your selected leads.
-                    </p>
+                    <div className="space-y-3">
+                      <div className="rounded-2xl bg-muted px-4 py-3 text-sm text-foreground">
+                        Create personalized email draft for this lead.
+                      </div>
+                      <div className="rounded-xl border border-border bg-background p-4 text-sm text-muted-foreground">
+                        Thought and draft preview will appear here once you send a prompt.
+                      </div>
+                    </div>
                   ) : (
                     sequenceAgentMessages.map((message) => (
-                      <ChatMessage
+                      <div
                         key={message.id}
-                        message={{
-                          id: message.id,
-                          role: message.role,
-                          content: message.content,
-                          timestamp: message.timestamp,
-                          isThinking: message.isStreaming,
-                          toolCalls: message.toolCalls,
-                          tasks: message.tasks as any,
-                          reasoning: message.reasoning,
-                          reasoningDuration: message.reasoningDuration,
-                        }}
-                      />
+                        className={`rounded-2xl px-4 py-3 text-sm ${
+                          message.role === "user"
+                            ? "bg-muted text-foreground"
+                            : "border border-border bg-background text-foreground"
+                        }`}
+                      >
+                        <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                      </div>
                     ))
                   )}
                   <div ref={sequenceAgentEndRef} />
                 </div>
 
                 {sequenceAgentError ? (
-                  <p className="border-t border-border px-3 py-2 text-xs text-destructive">{sequenceAgentError}</p>
+                  <p className="border-t border-border px-4 py-2 text-xs text-destructive">{sequenceAgentError}</p>
                 ) : null}
 
-                <div className="border-t border-border p-3">
+                <div className="border-t border-border p-4">
                   <div className="flex items-end gap-2">
                     <textarea
                       value={sequenceAgentInput}
@@ -739,13 +1058,14 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                           void handleSequenceAgentSend();
                         }
                       }}
-                      placeholder="Ask Sequence Agent..."
-                      rows={2}
-                      className="min-h-[70px] flex-1 resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
+                      placeholder="Ask Acme AI to improve this variation..."
+                      rows={3}
+                      className="min-h-[90px] flex-1 resize-none rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none"
                     />
                     <Button
                       type="button"
                       size="icon"
+                      className="h-10 w-10 rounded-xl"
                       onClick={() => void handleSequenceAgentSend()}
                       disabled={!companyId || !sequenceAgentInput.trim() || isSequenceAgentStreaming}
                     >
@@ -763,90 +1083,116 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
         </TabsContent>
 
         <TabsContent value="schedule" className="space-y-4 mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <CalendarDays className="h-4 w-4" />
-                Schedule
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div>
-                  <label className="text-sm font-medium">Timezone</label>
-                  <select
-                    value={timezone}
-                    onChange={(event) => setTimezone(event.target.value)}
-                    className="mt-1 h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
-                  >
-                    <option value="America/New_York">America/New_York</option>
-                    <option value="Europe/London">Europe/London</option>
-                    <option value="UTC">UTC</option>
-                  </select>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
+            <aside className="space-y-4 rounded-xl border border-border bg-card p-4">
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Start</span>
+                  <span className="font-medium text-primary">Now</span>
                 </div>
-                <div>
-                  <label className="text-sm font-medium">Start Time</label>
-                  <Input type="time" value={startHour} onChange={(event) => setStartHour(event.target.value)} />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">End Time</label>
-                  <Input type="time" value={endHour} onChange={(event) => setEndHour(event.target.value)} />
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">End</span>
+                  <span className="font-medium text-primary">No end date</span>
                 </div>
               </div>
 
+              <button
+                type="button"
+                onClick={() => setSelectedScheduleId("schedule-default")}
+                className={`w-full rounded-md border px-3 py-3 text-left text-sm transition-colors ${
+                  selectedScheduleId === "schedule-default"
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground"
+                }`}
+              >
+                New schedule
+              </button>
+
+              <Button variant="outline" className="w-full">
+                Add schedule
+              </Button>
+            </aside>
+
+            <div className="space-y-4 rounded-xl border border-border bg-card p-4">
               <div>
-                <label className="text-sm font-medium">Sending Days</label>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((day) => (
-                    <Button
-                      key={day}
-                      type="button"
-                      size="sm"
-                      variant={sendingDaySet.has(day) ? "default" : "outline"}
-                      onClick={() =>
-                        setSendingDays((prev) =>
-                          prev.includes(day) ? prev.filter((value) => value !== day) : [...prev, day]
-                        )
-                      }
+                <label className="text-sm font-medium text-foreground">Schedule Name</label>
+                <Input
+                  className="mt-2"
+                  value={scheduleName}
+                  onChange={(event) => setScheduleName(event.target.value)}
+                  placeholder="New schedule"
+                />
+              </div>
+
+              <div className="rounded-lg border border-border p-4">
+                <p className="text-sm font-medium text-foreground">Timing</p>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">From</label>
+                    <Input type="time" value={startHour} onChange={(event) => setStartHour(event.target.value)} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">To</label>
+                    <Input type="time" value={endHour} onChange={(event) => setEndHour(event.target.value)} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs text-muted-foreground">Timezone</label>
+                    <select
+                      value={timezone}
+                      onChange={(event) => setTimezone(event.target.value)}
+                      className="h-9 w-full rounded-md border border-border bg-background px-3 text-sm"
                     >
-                      {day}
-                    </Button>
-                  ))}
+                      <option value="America/New_York">Eastern Time (US)</option>
+                      <option value="America/Chicago">Central Time (US)</option>
+                      <option value="America/Los_Angeles">Pacific Time (US)</option>
+                      <option value="UTC">UTC</option>
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div>
-                  <label className="text-sm font-medium">Daily Sending Limit</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={dailyLimit}
-                    onChange={(event) => setDailyLimit(event.target.value)}
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Min Delay Between Sends (min)</label>
-                  <Input
-                    type="number"
-                    min={0}
-                    value={minDelayMinutes}
-                    onChange={(event) => setMinDelayMinutes(event.target.value)}
-                  />
-                </div>
-                <div className="rounded-md border border-border px-3 py-2 flex items-center gap-2 text-sm text-muted-foreground">
-                  <Clock3 className="h-4 w-4" />
-                  Recommended window: 09:00 - 17:00
+              <div className="rounded-lg border border-border p-4">
+                <p className="text-sm font-medium text-foreground">Days</p>
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {[
+                    "Monday",
+                    "Tuesday",
+                    "Wednesday",
+                    "Thursday",
+                    "Friday",
+                    "Saturday",
+                    "Sunday",
+                  ].map((dayLabel) => {
+                    const short = dayLabel.slice(0, 3);
+                    return (
+                      <label key={dayLabel} className="flex items-center gap-2 text-sm text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={sendingDaySet.has(short)}
+                          onChange={() =>
+                            setSendingDays((prev) =>
+                              prev.includes(short)
+                                ? prev.filter((value) => value !== short)
+                                : [...prev, short]
+                            )
+                          }
+                          className="h-4 w-4 rounded border-border"
+                        />
+                        {dayLabel}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              <div className="flex justify-start">
                 <Button
                   onClick={() =>
                     savePatch({
                       timezone,
                       daily_limit: Number(dailyLimit) || 0,
                       schedule: {
+                        name: scheduleName,
                         start_time: startHour,
                         end_time: endHour,
                         days: sendingDays,
@@ -858,11 +1204,11 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
                   className="gap-2"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                  Save Schedule
+                  Save
                 </Button>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-4 mt-4">

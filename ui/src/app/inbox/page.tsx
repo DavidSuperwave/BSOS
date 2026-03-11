@@ -352,7 +352,7 @@ export default function InboxPage() {
         actions: (
           <Button variant="outline" className="gap-2" onClick={() => mutate()}>
             <RefreshCw className="h-4 w-4" />
-            Sync
+            Refresh
           </Button>
         ),
       }}

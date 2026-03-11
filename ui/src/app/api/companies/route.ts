@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
 import { envConfig } from "@/lib/env";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
+import { hydratePlusVibeInboxAndWebhook } from "@/lib/plusvibe-inbox-sync";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -254,6 +255,13 @@ export async function PATCH(req: NextRequest) {
     }
 
     const admin = getAdmin();
+    const { data: existingCompany } = await admin
+      .from("companies")
+      .select("integration_credentials")
+      .eq("id", id)
+      .single();
+    const existingCreds =
+      (existingCompany?.integration_credentials as Record<string, any> | null) || {};
 
     const { data: company, error } = await admin
       .from("companies")
@@ -264,7 +272,46 @@ export async function PATCH(req: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({ company });
+    let nextCreds = { ...existingCreds };
+    if (
+      updateData.integration_credentials &&
+      typeof updateData.integration_credentials === "object"
+    ) {
+      nextCreds = {
+        ...nextCreds,
+        ...updateData.integration_credentials,
+      };
+    }
+    if ("plusvibe_api_key" in updateData) {
+      nextCreds.plusvibe_api_key = updateData.plusvibe_api_key || null;
+    }
+    if ("plusvibe_workspace_id" in updateData) {
+      nextCreds.plusvibe_workspace_id = updateData.plusvibe_workspace_id || null;
+    }
+
+    const hadPlusVibe =
+      !!existingCreds.plusvibe_api_key && !!existingCreds.plusvibe_workspace_id;
+    const hasPlusVibe =
+      !!nextCreds.plusvibe_api_key && !!nextCreds.plusvibe_workspace_id;
+    const plusVibeChanged =
+      existingCreds.plusvibe_api_key !== nextCreds.plusvibe_api_key ||
+      existingCreds.plusvibe_workspace_id !== nextCreds.plusvibe_workspace_id;
+
+    let inboxSetup: Record<string, any> | null = null;
+    if (hasPlusVibe && (!hadPlusVibe || plusVibeChanged)) {
+      try {
+        inboxSetup = await hydratePlusVibeInboxAndWebhook(id);
+      } catch (syncErr: any) {
+        inboxSetup = {
+          error: syncErr?.message || "Inbox setup failed",
+          webhookRegistered: false,
+          hydratedCount: 0,
+          pagesFetched: 0,
+        };
+      }
+    }
+
+    return NextResponse.json({ company, inbox_setup: inboxSetup });
   } catch (err: any) {
     console.error("[Companies API] PATCH error:", err);
     return NextResponse.json(

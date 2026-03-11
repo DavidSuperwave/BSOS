@@ -1,55 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProjectCredentials } from "@/lib/plusvibe-project";
-
-const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
+import { PlusVibeError, plusvibeFetch } from "@/lib/plusvibe-client";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const companyId = searchParams.get("companyId") || undefined;
 
-  const credentials = await getProjectCredentials(companyId);
-  
-  if (!credentials) {
-    return NextResponse.json(
-      { error: "PlusVibe API key not configured", code: "MISSING_KEY" },
-      { status: 503 }
-    );
-  }
-
   try {
-    // Note: PlusVibe's unibox endpoint may vary - trying common patterns
-    const res = await fetch(
-      `${PLUSVIBE_BASE}/unibox?workspace_id=${credentials.workspaceId}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": credentials.apiKey,
-        },
-      }
-    );
-    
-    if (!res.ok) {
-      // Fallback: return empty since unibox endpoint may not exist in v1
-      return NextResponse.json({
-        emails: [],
-        message: "Unibox endpoint not available in API v1",
-        credentialsSource: credentials.source,
-      });
-    }
-    
-    const data = await res.json();
+    const pathParams = new URLSearchParams();
+    const pageTrail = searchParams.get("page_trail");
+    const limit = searchParams.get("limit");
+    if (pageTrail) pathParams.set("page_trail", pageTrail);
+    if (limit) pathParams.set("limit", limit);
+
+    const path = pathParams.size > 0
+      ? `/unibox/emails?${pathParams.toString()}`
+      : "/unibox/emails";
+    const data = await plusvibeFetch(path, companyId, { method: "GET" });
+    const emails = Array.isArray(data)
+      ? data
+      : data?.emails || data?.data || data?.value || [];
+
     return NextResponse.json({
-      emails: data.data || data.value || data,
-      credentialsSource: credentials.source,
+      emails: Array.isArray(emails) ? emails : [],
+      page_trail: data?.page_trail || data?.next_page_trail || null,
     });
   } catch (err: any) {
+    if (err instanceof PlusVibeError) {
+      return NextResponse.json(
+        { error: err.details, code: err.code },
+        { status: err.status }
+      );
+    }
     return NextResponse.json(
       {
         error: err.message || "Failed to fetch unibox",
-        emails: [],
-        credentialsSource: credentials?.source,
       },
-      { status: 200 } // Return 200 with empty to avoid breaking UI
+      { status: 500 }
     );
   }
 }

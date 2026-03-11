@@ -605,12 +605,8 @@ export default function Campaigns() {
       }
 
       if (activeAction === 'delete') {
-        const snapshot = data;
-        await mutate((prev) => {
-          if (!prev) return prev;
-          return { campaigns: prev.campaigns.filter((campaign) => campaign.id !== activeActionCampaign.id) };
-        }, { revalidate: false });
-        const response = await fetch(`/api/plusvibe/campaigns/${activeActionCampaign.id}${companyQuery}`, {
+        const campaignIdToDelete = activeActionCampaign.id;
+        const response = await fetch(`/api/plusvibe/campaigns/${campaignIdToDelete}${companyQuery}`, {
           method: 'DELETE',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -620,10 +616,13 @@ export default function Campaigns() {
         });
         if (!response.ok) {
           const payload = await response.json().catch(() => ({ error: 'Failed to delete campaign' }));
-          await mutate(snapshot, { revalidate: false });
           throw new Error(payload.error || payload.details || 'Failed to delete campaign');
         }
         closeActionDialog();
+        await mutate((prev) => {
+          if (!prev) return prev;
+          return { campaigns: prev.campaigns.filter((campaign) => campaign.id !== campaignIdToDelete) };
+        }, { revalidate: false });
         mutate();
       }
     } catch (err) {
@@ -1050,7 +1049,12 @@ export default function Campaigns() {
           if (!open) closeActionDialog();
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent
+          className="max-w-md"
+          onCloseAutoFocus={() => {
+            document.body.style.pointerEvents = '';
+          }}
+        >
           <DialogHeader>
             <DialogTitle>
               {activeAction === 'rename' && 'Rename Campaign'}

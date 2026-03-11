@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
+import { hydratePlusVibeInboxAndWebhook } from "@/lib/plusvibe-inbox-sync";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -64,6 +65,9 @@ export async function PATCH(
       .select("integration_credentials, agent_config")
       .eq("id", id)
       .single();
+    const existingIntegrationCredentials =
+      (existingCompany?.integration_credentials as Record<string, any> | null) || {};
+    let mergedIntegrationCredentials = existingIntegrationCredentials;
 
     const updateData: Record<string, any> = {};
     if (body.onboarding_data !== undefined) updateData.onboarding_data = body.onboarding_data;
@@ -81,13 +85,11 @@ export async function PATCH(
       };
     }
     if (body.integration_credentials !== undefined) {
-      const existingIntegrationCredentials =
-        (existingCompany?.integration_credentials as Record<string, any> | null) || {};
       const incomingIntegrationCredentials =
         body.integration_credentials && typeof body.integration_credentials === "object"
           ? body.integration_credentials
           : {};
-      const mergedIntegrationCredentials = {
+      mergedIntegrationCredentials = {
         ...existingIntegrationCredentials,
         ...incomingIntegrationCredentials,
       };
@@ -122,7 +124,33 @@ export async function PATCH(
       .single();
 
     if (error) throw error;
-    return NextResponse.json({ company: data });
+    const hadPlusVibe =
+      !!existingIntegrationCredentials.plusvibe_api_key &&
+      !!existingIntegrationCredentials.plusvibe_workspace_id;
+    const hasPlusVibe =
+      !!mergedIntegrationCredentials.plusvibe_api_key &&
+      !!mergedIntegrationCredentials.plusvibe_workspace_id;
+    const plusVibeChanged =
+      existingIntegrationCredentials.plusvibe_api_key !==
+        mergedIntegrationCredentials.plusvibe_api_key ||
+      existingIntegrationCredentials.plusvibe_workspace_id !==
+        mergedIntegrationCredentials.plusvibe_workspace_id;
+
+    let inboxSetup: Record<string, any> | null = null;
+    if (hasPlusVibe && (!hadPlusVibe || plusVibeChanged)) {
+      try {
+        inboxSetup = await hydratePlusVibeInboxAndWebhook(id);
+      } catch (syncErr: any) {
+        inboxSetup = {
+          error: syncErr?.message || "Inbox setup failed",
+          webhookRegistered: false,
+          hydratedCount: 0,
+          pagesFetched: 0,
+        };
+      }
+    }
+
+    return NextResponse.json({ company: data, inbox_setup: inboxSetup });
   } catch (err: any) {
     return NextResponse.json(
       { error: err.message },

@@ -15,6 +15,7 @@ import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
 import { runIntakePipeline, mapFormToContract } from "@/lib/intake";
+import { hydratePlusVibeInboxAndWebhook } from "@/lib/plusvibe-inbox-sync";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -306,6 +307,23 @@ Pain points: ${(onboardingData.pain_points || []).join(", ")}`,
       console.warn("[Deploy Agent] Intake pipeline failed (non-blocking):", intakeErr?.message || intakeErr);
     }
 
+    let inboxSetup: Record<string, any> | null = null;
+    if (
+      integrationCredentials.plusvibe_api_key &&
+      integrationCredentials.plusvibe_workspace_id
+    ) {
+      try {
+        inboxSetup = await hydratePlusVibeInboxAndWebhook(id);
+      } catch (syncErr: any) {
+        inboxSetup = {
+          error: syncErr?.message || "Inbox setup failed",
+          webhookRegistered: false,
+          hydratedCount: 0,
+          pagesFetched: 0,
+        };
+      }
+    }
+
     return NextResponse.json({
       success: true,
       agent_id: agent.agentId,
@@ -320,6 +338,7 @@ Pain points: ${(onboardingData.pain_points || []).join(", ")}`,
             dealsImported: intakeResult.summary.totalDealsImported,
           }
         : null,
+      inbox_setup: inboxSetup,
     });
   } catch (err: any) {
     console.error("[Deploy Agent] Error:", err);
