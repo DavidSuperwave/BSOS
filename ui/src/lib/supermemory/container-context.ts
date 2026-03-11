@@ -1,5 +1,3 @@
-const seededContainers = new Set<string>();
-
 export function buildEntityContext(
   containerTag: string,
   params?: {
@@ -51,23 +49,14 @@ and onboarding analysis outputs.`.slice(0, 1500);
   return undefined;
 }
 
-export async function ensureContainerContext(
+export function getContainerEntityContext(
   containerTag: string,
-  entityContext?: string,
   params?: {
     companyName?: string;
     campaignName?: string;
     leadName?: string;
     reportDate?: string;
   }
-): Promise<string | undefined> {
-  if (seededContainers.has(containerTag)) return undefined;
-
-  const context = entityContext || buildEntityContext(containerTag, params);
-  seededContainers.add(containerTag);
-  return context;
-}
-
-export function resetContainerContextCache(): void {
-  seededContainers.clear();
+): string | undefined {
+  return buildEntityContext(containerTag, params);
 }

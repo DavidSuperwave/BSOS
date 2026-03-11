@@ -81,6 +81,19 @@ CREATE TABLE IF NOT EXISTS memory_write_audit (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'memory_write_audit_content_hash_company_uq'
+  ) THEN
+    ALTER TABLE memory_write_audit
+    ADD CONSTRAINT memory_write_audit_content_hash_company_uq
+    UNIQUE (content_hash, company_id);
+  END IF;
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_memory_write_audit_company_created
   ON memory_write_audit(company_id, created_at DESC);
 

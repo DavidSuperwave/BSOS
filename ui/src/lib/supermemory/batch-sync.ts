@@ -36,20 +36,40 @@ export async function batchSyncToSupermemory(params: {
   for (let i = 0; i < params.items.length; i += chunkSize) {
     const chunk = params.items.slice(i, i + chunkSize);
 
-    for (const item of chunk) {
-      try {
-        await params.supermemoryClient.addDocument({
+    try {
+      await params.supermemoryClient.batchAdd({
+        documents: chunk.map((item) => ({
           content: item.content,
           containerTag: item.containerTag,
           customId: item.customId,
           metadata: item.metadata,
-        });
-        results.succeeded += 1;
-      } catch (error: any) {
-        results.failed += 1;
+        })),
+      });
+      results.succeeded += chunk.length;
+    } catch (error: any) {
+      try {
+        for (const item of chunk) {
+          try {
+            await params.supermemoryClient.addDocument({
+              content: item.content,
+              containerTag: item.containerTag,
+              customId: item.customId,
+              metadata: item.metadata,
+            });
+            results.succeeded += 1;
+          } catch (itemError: any) {
+            results.failed += 1;
+            results.errors.push({
+              customId: item.customId,
+              error: itemError?.message || "Unknown error",
+            });
+          }
+        }
+      } catch (fallbackError: any) {
+        results.failed += chunk.length;
         results.errors.push({
-          customId: item.customId,
-          error: error?.message || "Unknown error",
+          customId: chunk[0]?.customId || "batch",
+          error: fallbackError?.message || error?.message || "Unknown batch error",
         });
       }
     }

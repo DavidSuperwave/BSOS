@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { BsosArtifact, BsosKnowledgeTarget, BsosWriteArtifactInput } from "./types";
 import { resolveBsosKnowledgeTarget } from "./target-resolver";
 import { ensureProjectExists } from "./project-seeder";
-import { ensureContainerContext } from "../supermemory/container-context";
+import { getContainerEntityContext } from "../supermemory/container-context";
 import { BsosSupermemoryClient } from "../supermemory/client";
 import { bsosCompanyContainerTag } from "../supermemory/bsos-tags";
 
@@ -160,7 +160,7 @@ export async function writeBsosArtifact(
     supabaseIds.campaignRecommendationId = data.id;
   }
 
-  const entityContext = await ensureContainerContext(target.containerTag, target.entityContext);
+  const entityContext = target.entityContext || getContainerEntityContext(target.containerTag);
 
   const supermemoryDoc = await params.supermemoryClient.addDocument({
     content: params.content,
@@ -187,17 +187,15 @@ export async function writeBsosArtifact(
       .eq("id", supabaseIds.knowledgeDocumentRefId);
   }
 
-  await params.supabase.from("memory_write_audit").insert({
-    company_id: params.companyId,
-    namespace: target.containerTag,
-    container_tag: target.containerTag,
-    content_hash: hashContent(params.content),
-    provenance: params.provenance || {},
-    confidence: params.confidence ?? 0.5,
-    is_inference: params.isInference ?? false,
-    contamination_check_passed: true,
-    contamination_reason: null,
-  });
+  await params.supabase
+    .from("memory_write_audit")
+    .update({
+      provenance: params.provenance || {},
+      confidence: params.confidence ?? 0.5,
+      is_inference: params.isInference ?? false,
+    })
+    .eq("content_hash", hashContent(params.content))
+    .eq("company_id", params.companyId);
 
   return {
     projectKey: target.projectKey,
@@ -215,25 +213,46 @@ async function runContaminationCheck(
 ): Promise<{ passed: boolean; reason?: string }> {
   const contentHash = hashContent(content);
 
-  const { data } = await supabase
-    .from("memory_write_audit")
-    .select("company_id, namespace")
-    .eq("content_hash", contentHash)
-    .neq("company_id", target.companyId)
-    .limit(1);
-
-  if (data && data.length > 0) {
-    return {
-      passed: false,
-      reason: `Content hash ${contentHash} already exists in namespace ${data[0].namespace} for company ${data[0].company_id}`,
-    };
-  }
-
   if (!target.containerTag.startsWith(bsosCompanyContainerTag(target.companySlug))) {
     return {
       passed: false,
       reason: `containerTag ${target.containerTag} does not match company slug ${target.companySlug}`,
     };
+  }
+
+  const { error } = await supabase.from("memory_write_audit").insert({
+    company_id: target.companyId,
+    namespace: target.containerTag,
+    container_tag: target.containerTag,
+    content_hash: contentHash,
+    provenance: {},
+    confidence: 0,
+    is_inference: false,
+    contamination_check_passed: true,
+    contamination_reason: null,
+  });
+
+  if (error) {
+    if (error.code === "23505") {
+      const { data: existing } = await supabase
+        .from("memory_write_audit")
+        .select("company_id")
+        .eq("content_hash", contentHash)
+        .neq("company_id", target.companyId)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        return {
+          passed: false,
+          reason: `Content hash ${contentHash} already exists for a different company`,
+        };
+      }
+    } else {
+      return {
+        passed: false,
+        reason: `Database error during contamination check: ${error.message}`,
+      };
+    }
   }
 
   return { passed: true };
@@ -248,7 +267,7 @@ async function logContaminationFailure(
     company_id: target.companyId,
     namespace: target.containerTag,
     container_tag: target.containerTag,
-    content_hash: "FAILED",
+    content_hash: `FAILED_${crypto.randomUUID()}`,
     provenance: {},
     confidence: 0,
     is_inference: false,

@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "@/lib/env";
-import { searchDocuments } from "@/lib/supermemory/storage";
+import { BsosSupermemoryClient } from "@/lib/supermemory/client";
 import { projectContainerTag } from "@/lib/supermemory-client";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -63,8 +63,8 @@ export async function search_company_knowledge(params: {
   const apiKey = await resolveSupermemoryKey(params.companyId);
   if (!containerTag || !apiKey) return { results: [], total: 0 };
 
-  return searchDocuments(apiKey, {
-    query: params.query,
+  return BsosSupermemoryClient.getInstance(apiKey).searchDocuments({
+    q: params.query,
     containerTags: [containerTag],
     filters: params.primaryTag ? { primaryTag: params.primaryTag } : undefined,
     limit: 10,

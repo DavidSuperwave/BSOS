@@ -9,11 +9,8 @@ import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "@/lib/env";
 import { companyContainerTag } from "@/lib/supermemory-client";
 import { autoTag } from "@/lib/knowledge/auto-tagger";
-import type { PrimaryTag } from "@/lib/supermemory/storage";
-import {
-  getDocumentRelationships,
-  type RelationshipMetadata,
-} from "@/lib/supermemory/storage";
+import type { PrimaryTag, RelationshipMetadata } from "@/lib/supermemory/client";
+import { getLinkedArtifacts } from "./linker";
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -100,6 +97,58 @@ async function syncDocumentRef(opts: {
   } catch {
     // Non-blocking cache sync
   }
+}
+
+async function getDocumentRelationships(params: {
+  companyId: string;
+  docId: string;
+}): Promise<{
+  derived_from: Array<{ id: string; title: string }>;
+  related_to: Array<{ id: string; title: string }>;
+  used_in: Array<{ id: string; title: string }>;
+}> {
+  const empty = {
+    derived_from: [] as Array<{ id: string; title: string }>,
+    related_to: [] as Array<{ id: string; title: string }>,
+    used_in: [] as Array<{ id: string; title: string }>,
+  };
+
+  const linked = await getLinkedArtifacts({
+    companyId: params.companyId,
+    artifactType: "document",
+    artifactId: params.docId,
+    direction: "both",
+    supabase: getSupabase(),
+  });
+
+  if (linked.length === 0) return empty;
+
+  const ids = linked.map((item) => item.id);
+  const { data } = await getSupabase()
+    .from("knowledge_document_refs")
+    .select("supermemory_doc_id, title")
+    .in("supermemory_doc_id", ids);
+
+  const titleMap = new Map<string, string>(
+    (data || []).map((row: any) => [row.supermemory_doc_id, row.title || row.supermemory_doc_id])
+  );
+
+  for (const item of linked) {
+    const entry = {
+      id: item.id,
+      title: titleMap.get(item.id) || item.id,
+    };
+
+    if (item.relation === "derived_from") {
+      empty.derived_from.push(entry);
+    } else if (item.relation === "references" || item.relation === "supersedes") {
+      empty.related_to.push(entry);
+    } else {
+      empty.used_in.push(entry);
+    }
+  }
+
+  return empty;
 }
 
 /**
@@ -566,11 +615,10 @@ export async function getDocumentWithContextTool(
     const doc = await response.json();
 
     // Resolve relationships
-    const relationships = await getDocumentRelationships(
-      auth.smKey,
-      containerTag,
-      params.document_id
-    );
+    const relationships = await getDocumentRelationships({
+      companyId: context.companyId,
+      docId: params.document_id,
+    });
 
     return {
       success: true,

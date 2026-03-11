@@ -6,7 +6,7 @@
  */
 
 import { envConfig } from "@/lib/env";
-import type { PrimaryTag } from "@/lib/supermemory/storage";
+import type { PrimaryTag } from "@/lib/supermemory/client";
 
 const VALID_PRIMARY_TAGS: PrimaryTag[] = [
   "profile",

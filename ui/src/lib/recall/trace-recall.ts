@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "@/lib/env";
-import { searchDocuments, getDocument } from "@/lib/supermemory/storage";
+import { BsosSupermemoryClient } from "@/lib/supermemory/client";
 import { projectContainerTag } from "@/lib/supermemory-client";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -71,8 +71,9 @@ export async function recallWithTrace(
     return { insight: null, trace: null, sources: [] };
   }
 
-  const insights = await searchDocuments(apiKey, {
-    query,
+  const client = BsosSupermemoryClient.getInstance(apiKey);
+  const insights = await client.searchDocuments({
+    q: query,
     containerTags: [containerTag],
     filters: {
       primaryTag: "analysis",
@@ -99,7 +100,7 @@ export async function recallWithTrace(
   const sourceIds = insight.metadata?.relationships?.derived_from || [];
   const sources: any[] = [];
   for (const sourceId of sourceIds) {
-    const source = await getDocument(apiKey, sourceId);
+    const source = await client.getDocument(sourceId);
     if (source) sources.push(source);
   }
 

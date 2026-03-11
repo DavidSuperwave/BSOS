@@ -19,8 +19,8 @@ export function resolveBsosKnowledgeTarget(
     skill_name: input.skillName || "",
     confidence: input.confidence ?? 0.5,
     confidence_status: input.confidenceStatus || "provisional",
-    is_inference: input.isInference ?? false,
-    contamination_check_passed: true,
+    is_inference: String(input.isInference ?? false),
+    contamination_check_passed: "true",
   };
 
   if (input.projectKey) {
@@ -67,7 +67,7 @@ export function resolveBsosKnowledgeTarget(
         project_key: "campaigns",
         campaign_id: input.campaignId,
         campaign_name: input.campaignName || "",
-        requires_approval: isL3,
+        requires_approval: String(isL3),
       },
       supabaseTargets: {
         campaignRecommendation: true,
@@ -264,5 +264,5 @@ function sanitizeCustomId(value: string): string {
 }
 
 function generateId(): string {
-  return Math.random().toString(36).slice(2, 10);
+  return crypto.randomUUID().replace(/-/g, "").slice(0, 16);
 }
