@@ -12,20 +12,36 @@ function getAdmin() {
   return adminClient;
 }
 
+type DomainSource = "local" | "assignment";
+
 async function getDomainWithAccess(id: string) {
   const admin = getAdmin();
-  const { data: domain, error } = await admin
+  const { data: domain } = await admin
     .from("inboxing_domains")
     .select("*")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
-  if (error || !domain) return { error: NextResponse.json({ error: "Domain not found" }, { status: 404 }) };
+  if (domain) {
+    const accessResult = await requireCompanyAccess(domain.company_id);
+    if ("error" in accessResult) return { error: accessResult.error };
+    return { admin, domain, source: "local" as DomainSource };
+  }
 
-  const accessResult = await requireCompanyAccess(domain.company_id);
-  if ("error" in accessResult) return { error: accessResult.error };
+  const { data: assignment } = await admin
+    .from("inboxing_domain_assignments")
+    .select("*")
+    .eq("inboxing_id", id)
+    .eq("status", "active")
+    .maybeSingle();
 
-  return { admin, domain };
+  if (assignment) {
+    const accessResult = await requireCompanyAccess(assignment.company_id);
+    if ("error" in accessResult) return { error: accessResult.error };
+    return { admin, domain: assignment, source: "assignment" as DomainSource };
+  }
+
+  return { error: NextResponse.json({ error: "Domain not found" }, { status: 404 }) };
 }
 
 export async function GET(
@@ -45,7 +61,7 @@ export async function PATCH(
   const { id } = await params;
   const result = await getDomainWithAccess(id);
   if ("error" in result) return result.error;
-  const { admin, domain } = result;
+  const { admin, domain, source } = result;
 
   const body = await request.json();
   const updates: Record<string, unknown> = {};
@@ -56,7 +72,17 @@ export async function PATCH(
 
   if (Object.keys(updates).length > 0) {
     updates.updated_at = new Date().toISOString();
-    const { error } = await admin.from("inboxing_domains").update(updates).eq("id", id);
+    if (source === "assignment" && !domain.inboxing_domain_id) {
+      return NextResponse.json(
+        { error: "Assigned domains cannot be edited until they are synced locally." },
+        { status: 400 }
+      );
+    }
+
+    const table = "inboxing_domains";
+    const matchField = source === "local" ? "id" : "id";
+    const matchValue = source === "local" ? id : domain.inboxing_domain_id;
+    const { error } = await admin.from(table).update(updates).eq(matchField, matchValue);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
@@ -65,10 +91,15 @@ export async function PATCH(
   if (Array.isArray(body.names)) {
     await admin.from("inboxing_jobs").insert({
       company_id: domain.company_id,
-      domain_id: domain.id,
+      domain_id: source === "local" ? domain.id : domain.inboxing_domain_id || null,
       type: "inbox_provision",
       status: "pending",
-      payload: { action: "names_update", names: body.names },
+      payload: {
+        action: "names_update",
+        names: body.names,
+        inboxing_id: source === "local" ? domain.inboxing_id : domain.inboxing_id,
+        domain: source === "local" ? domain.domain : domain.domain_name,
+      },
     });
   }
 
@@ -82,7 +113,24 @@ export async function DELETE(
   const { id } = await params;
   const result = await getDomainWithAccess(id);
   if ("error" in result) return result.error;
-  const { admin, domain } = result;
+  const { admin, domain, source } = result;
+
+  if (source === "assignment") {
+    const { error } = await admin
+      .from("inboxing_domain_assignments")
+      .update({
+        status: "reclaimed",
+        notes: "Reclaimed through domain delete route",
+      })
+      .eq("inboxing_id", id)
+      .eq("status", "active");
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, message: "Assignment reclaimed" });
+  }
 
   if (domain.inboxing_id) {
     try {
@@ -103,6 +151,14 @@ export async function DELETE(
   const { error } = await admin.from("inboxing_domains").delete().eq("id", id);
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (domain.inboxing_id) {
+    await admin
+      .from("inboxing_domain_assignments")
+      .update({ status: "reclaimed", notes: "Auto-reclaimed on domain deletion" })
+      .eq("inboxing_id", domain.inboxing_id)
+      .eq("status", "active");
   }
 
   return NextResponse.json({ success: true, message: "Deletion initiated" });

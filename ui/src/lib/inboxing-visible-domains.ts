@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import * as inboxing from "@/lib/inboxing-client";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -123,40 +122,33 @@ export async function getCompanyVisibleDomains(companyId: string): Promise<Visib
     (assignment) => assignment.inboxing_id && !localProviderIds.has(assignment.inboxing_id)
   );
 
-  const providerResults = await Promise.allSettled(
-    assignmentOnly.map((assignment) => inboxing.getDomain(assignment.inboxing_id, { usePlatformKey: true }))
-  );
-
-  const assignmentDomains = assignmentOnly.map((assignment, index) => {
+  const assignmentDomains = assignmentOnly.map((assignment) => {
     const localDomain = Array.isArray(assignment.inboxing_domains)
       ? assignment.inboxing_domains[0]
       : assignment.inboxing_domains;
-    const providerResult = providerResults[index];
-    const providerDomain = providerResult.status === "fulfilled" ? providerResult.value : null;
-    const createdAt = providerDomain?.created_at || localDomain?.created_at || assignment.assigned_at || new Date().toISOString();
 
     return {
       id: assignment.inboxing_id,
       company_id: companyId,
-      domain: providerDomain?.domain || assignment.domain_name || localDomain?.domain || assignment.inboxing_id,
-      status: providerDomain?.status || localDomain?.status || "assigned",
+      domain: assignment.domain_name || localDomain?.domain || assignment.inboxing_id,
+      status: localDomain?.status || "assigned",
       inboxing_id: assignment.inboxing_id,
-      mailbox_count: providerDomain?.mailbox_count ?? localDomain?.mailbox_count ?? 0,
-      user_count: providerDomain?.user_count ?? localDomain?.user_count ?? undefined,
-      tags: providerDomain?.tags || localDomain?.tags || [],
-      nameservers: providerDomain?.nameservers || localDomain?.nameservers || [],
-      redirect_url: providerDomain?.redirect_url || localDomain?.redirect_url || null,
-      redirect_type: providerDomain?.redirect_type || localDomain?.redirect_type || "NONE",
+      mailbox_count: localDomain?.mailbox_count ?? 0,
+      user_count: localDomain?.user_count ?? undefined,
+      tags: localDomain?.tags || [],
+      nameservers: localDomain?.nameservers || [],
+      redirect_url: localDomain?.redirect_url ?? null,
+      redirect_type: localDomain?.redirect_type || "NONE",
       health_score: localDomain?.health_score || 0,
       dns_spf: Boolean(localDomain?.dns_spf),
       dns_dkim: Boolean(localDomain?.dns_dkim),
       dns_dmarc: Boolean(localDomain?.dns_dmarc),
-      campaign_id: localDomain?.campaign_id || null,
-      created_at: createdAt,
-      assigned_at: assignment.assigned_at || null,
+      campaign_id: localDomain?.campaign_id ?? null,
+      created_at: localDomain?.created_at || assignment.assigned_at || new Date().toISOString(),
+      assigned_at: assignment.assigned_at ?? null,
       access_mode: "assignment" as const,
       can_manage: false,
-      can_upload: providerDomain?.status === "active",
+      can_upload: localDomain?.status === "active",
       can_download_csv: true,
       can_view_nameservers: true,
     };

@@ -72,6 +72,7 @@ export default function AdminInboxingDomainsPage() {
   const [domains, setDomains] = useState<InboxingDomain[]>([]);
   const [slots, setSlots] = useState<SlotInfo | null>(null);
   const [providerWarning, setProviderWarning] = useState<string | null>(null);
+  const [assignedTotal, setAssignedTotal] = useState(0);
   const [pagination, setPagination] = useState({
     page: 1,
     per_page: 50,
@@ -114,6 +115,7 @@ export default function AdminInboxingDomainsPage() {
       const data = await res.json();
       setDomains(Array.isArray(data?.domains) ? data.domains : []);
       setProviderWarning(typeof data?.provider_error === "string" ? data.provider_error : null);
+      setAssignedTotal(typeof data?.assigned_total === "number" ? data.assigned_total : 0);
       setPagination((prev) => ({
         ...prev,
         ...(data?.pagination ?? {}),
@@ -326,7 +328,7 @@ export default function AdminInboxingDomainsPage() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
             <p className="text-xs text-zinc-400">Assigned Domains</p>
             <p className="text-2xl font-semibold text-blue-400 mt-2">
-              {loading ? "—" : domains.filter((d) => d.assigned_to_company_id).length}
+              {loading ? "—" : assignedTotal}
             </p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
@@ -445,7 +447,7 @@ export default function AdminInboxingDomainsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {domain.csv_available_at ? (
+                        {domain.status === "active" ? (
                           <Button
                             size="sm"
                             variant="outline"

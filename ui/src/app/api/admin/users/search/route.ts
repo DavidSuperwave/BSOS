@@ -32,38 +32,68 @@ export async function GET(request: NextRequest) {
     }
 
     const admin = getAdmin();
+    const searchLower = query.toLowerCase();
 
-    // Get all account members
     const { data: members, error: membersError } = await admin
       .from("account_members")
-      .select("user_id, role, account_id, companies(id, name, slug)")
-      .limit(1000);
+      .select("user_id, role, account_id");
 
     if (membersError) throw membersError;
 
-    // Search through users
-    const matchingUsers = [];
-    const searchLower = query.toLowerCase();
+    const accountIds = Array.from(new Set((members || []).map((member: any) => member.account_id).filter(Boolean)));
+    const { data: companies, error: companiesError } = accountIds.length
+      ? await admin
+          .from("companies")
+          .select("id, name, slug, account_id")
+          .in("account_id", accountIds)
+      : { data: [], error: null };
 
+    if (companiesError) throw companiesError;
+
+    const companyByAccount = new Map<string, any>();
+    for (const company of companies || []) {
+      if (!companyByAccount.has(company.account_id)) {
+        companyByAccount.set(company.account_id, company);
+      }
+    }
+
+    const membershipByUser = new Map<string, any>();
     for (const member of members || []) {
-      try {
-        const { data: userData } = await admin.auth.admin.getUserById(member.user_id);
-        const email = userData?.user?.email || "";
-        const name = userData?.user?.user_metadata?.name || "";
+      if (!membershipByUser.has(member.user_id)) {
+        membershipByUser.set(member.user_id, member);
+      }
+    }
+
+    const matchingUsers = [];
+    let page = 1;
+    const perPage = 200;
+
+    while (matchingUsers.length < limit) {
+      const { data: userPage, error: usersError } = await admin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+
+      if (usersError) throw usersError;
+      const users = userPage?.users || [];
+      if (users.length === 0) break;
+
+      for (const user of users) {
+        const email = user.email || "";
+        const name = String(user.user_metadata?.name || "");
 
         if (
           email.toLowerCase().includes(searchLower) ||
           name.toLowerCase().includes(searchLower)
         ) {
-          const company = Array.isArray(member.companies)
-            ? member.companies[0]
-            : member.companies;
+          const membership = membershipByUser.get(user.id);
+          const company = membership ? companyByAccount.get(membership.account_id) : null;
 
           matchingUsers.push({
-            user_id: member.user_id,
+            user_id: user.id,
             email,
             name,
-            role: member.role,
+            role: membership?.role || null,
             company_id: company?.id || null,
             company_name: company?.name || null,
             company_slug: company?.slug || null,
@@ -71,13 +101,13 @@ export async function GET(request: NextRequest) {
 
           if (matchingUsers.length >= limit) break;
         }
-      } catch {
-        // Skip users we can't fetch
-        continue;
       }
+
+      if (users.length < perPage) break;
+      page += 1;
     }
 
-    return NextResponse.json({ users: matchingUsers });
+    return NextResponse.json({ users: matchingUsers.slice(0, limit) });
   } catch (error: any) {
     console.error("[Admin Users Search] Error:", error);
     return NextResponse.json(

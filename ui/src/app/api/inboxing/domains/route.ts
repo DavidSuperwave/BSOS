@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import * as inboxing from "@/lib/inboxing-client";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { getCompanyVisibleDomains } from "@/lib/inboxing-visible-domains";
+import { hasAvailableSlots } from "@/lib/inboxing-slots";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -87,6 +88,15 @@ export async function POST(req: NextRequest) {
     }
     const accessResult = await requireCompanyAccess(company_id);
     if ("error" in accessResult) return accessResult.error;
+
+    const domainCount = Array.isArray(domainList) ? domainList.length : 0;
+    const slotsOk = await hasAvailableSlots(company_id, domainCount);
+    if (!slotsOk) {
+      return NextResponse.json(
+        { error: "Insufficient domain slots. Contact your administrator to increase your allocation." },
+        { status: 403 }
+      );
+    }
 
     if (!domainList?.length || !names?.length) {
       return NextResponse.json(
