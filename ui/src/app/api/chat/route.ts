@@ -1,4 +1,3 @@
-import fs from "fs";
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "@/lib/env";
@@ -35,22 +34,6 @@ const limiter = createRateLimiter({ limit: 30, window: 60 });
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
 const MAX_REFERENCED_DOCS = 5;
 const MAX_REFERENCED_DOC_PREVIEW_CHARS = 1200;
-
-function appendDebugLog(entry: {
-  hypothesisId: string;
-  location: string;
-  message: string;
-  data: Record<string, any>;
-}) {
-  try {
-    fs.appendFileSync(
-      "/opt/cursor/logs/debug.log",
-      `${JSON.stringify({ ...entry, timestamp: Date.now() })}\n`
-    );
-  } catch {
-    // Non-blocking debug instrumentation
-  }
-}
 
 /**
  * POST /api/chat
@@ -277,20 +260,6 @@ async function getOrCreateSession({
     ? `company:${companySlug}:${sessionType}:${contextId}`
     : `company:${companySlug}:${sessionType}`;
 
-  // #region agent log
-  appendDebugLog({
-    hypothesisId: "D",
-    location: "src/app/api/chat/route.ts:getOrCreateSession",
-    message: "Computed OpenClaw session key",
-    data: {
-      sessionType,
-      hasIncomingSessionId: Boolean(sessionId),
-      contextId: contextId || null,
-      deterministicSessionKey,
-    },
-  });
-  // #endregion
-
   // Try to find existing session
   if (sessionId) {
     const { data: existing } = await admin
@@ -461,20 +430,6 @@ async function buildSystemPrompt({
       ...getAllowedTools(sessionType as AgentType),
     ])
   );
-  // #region agent log
-  appendDebugLog({
-    hypothesisId: "A",
-    location: "src/app/api/chat/route.ts:buildSystemPrompt:mergedAvailableTools",
-    message: "Merged allowed tool list for prompt",
-    data: {
-      sessionType,
-      availableToolsCount: mergedAvailableTools.length,
-      hasCreateReport: mergedAvailableTools.includes("create_report"),
-      hasCreateReportDocument: mergedAvailableTools.includes("create_report_document"),
-      hasScheduleDailyReport: mergedAvailableTools.includes("schedule_daily_report"),
-    },
-  });
-  // #endregion
   const promptAgent = {
     ...agent,
     available_tools: mergedAvailableTools,
@@ -510,23 +465,7 @@ async function buildSystemPrompt({
       prompt += `\n\n## REFERENCED VAULT DOCUMENTS\n${referenceContext}`;
     }
   }
-  const finalPrompt = `${prompt}\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
-  // #region agent log
-  appendDebugLog({
-    hypothesisId: "B",
-    location: "src/app/api/chat/route.ts:buildSystemPrompt:finalPrompt",
-    message: "Built final system prompt",
-    data: {
-      sessionType,
-      promptLength: finalPrompt.length,
-      reportToolIndex: finalPrompt.indexOf("create_report"),
-      reportDocumentToolIndex: finalPrompt.indexOf("create_report_document"),
-      scheduleToolIndex: finalPrompt.indexOf("schedule_daily_report"),
-      actionProtocolIndex: finalPrompt.indexOf("## ACTION PROTOCOL"),
-    },
-  });
-  // #endregion
-  return finalPrompt;
+  return `${prompt}\n\n${getDirectivePromptInstructions()}\n\n${getPresetFlowPromptInstructions()}`;
 }
 
 /**
@@ -709,24 +648,6 @@ async function executeAssistantDirectives({
     return { finalContent: content, toolCalls: [], taskIds: [] };
   }
   const parsed = parseAgentDirectives(content || "");
-  // #region agent log
-  appendDebugLog({
-    hypothesisId: "E",
-    location: "src/app/api/chat/route.ts:executeAssistantDirectives",
-    message: "Parsed assistant directives",
-    data: {
-      directiveCount: parsed.directives.length,
-      directiveKinds: parsed.directives.map((directive) => directive.kind),
-      directiveTools: parsed.directives
-        .filter((directive) => directive.kind === "tool")
-        .map((directive: any) => directive.tool),
-      mentionsUnavailable: /do not have access|unavailable/i.test(content || ""),
-      mentionsReportTools: /create_report|create_report_document|schedule_daily_report/i.test(
-        content || ""
-      ),
-    },
-  });
-  // #endregion
   const toolCalls: any[] = [];
   const taskIds: string[] = [];
   const flowContract = getPresetFlowContract(parsed.budget?.flowId);
@@ -1200,20 +1121,6 @@ async function streamChatCompletion({
         }
 
         // Execute structured tool/task directives from assistant output.
-        // #region agent log
-        appendDebugLog({
-          hypothesisId: "E",
-          location: "src/app/api/chat/route.ts:streamChatCompletion:done",
-          message: "Model stream completed before directive execution",
-          data: {
-            contentLength: fullContent.length,
-            mentionsUnavailable: /do not have access|unavailable/i.test(fullContent),
-            mentionsCreateReport: /create_report/i.test(fullContent),
-            mentionsCreateReportDocument: /create_report_document/i.test(fullContent),
-            mentionsScheduleDailyReport: /schedule_daily_report/i.test(fullContent),
-          },
-        });
-        // #endregion
         let finalContent = fullContent;
         let executedToolResults: any[] = [];
         const directiveResults = await executeAssistantDirectives({
