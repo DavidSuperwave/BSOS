@@ -172,7 +172,7 @@ export function useCampaignLeads(
     if (options?.direction) params.set("direction", options.direction);
     url = `/api/plusvibe/campaigns/${campaignId}/leads?${params.toString()}`;
   }
-  return useApiData<{ leads: CampaignLead[]; total: number; page: number; limit: number }>(url);
+  return useApiData<{ leads: CampaignLead[]; total: number; page: number; limit: number; source?: string }>(url);
 }
 
 export interface CampaignAnalyticsData {
@@ -353,6 +353,7 @@ export interface InboxMessage {
   campaign_id: string;
   campaign_name: string;
   thread_id: string;
+  plusvibe_id?: string;
   from_email: string;
   from_name: string;
   from_domain: string;

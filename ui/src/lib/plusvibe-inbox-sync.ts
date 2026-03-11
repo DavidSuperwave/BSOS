@@ -20,11 +20,12 @@ type InboxSetupResult = {
 };
 
 export async function hydratePlusVibeInboxAndWebhook(
-  companyId: string
+  companyId: string,
+  appUrlOverride?: string
 ): Promise<InboxSetupResult> {
-  const hydration = await hydrateInboxMessages(companyId);
-  const campaignIds = await fetchCampaignIds(companyId);
-  const webhook = await ensureInboxWebhook(companyId, campaignIds);
+  const campaignMetadata = await fetchCampaignMetadata(companyId);
+  const hydration = await hydrateInboxMessages(companyId, campaignMetadata.nameById);
+  const webhook = await ensureInboxWebhook(companyId, campaignMetadata.ids, appUrlOverride);
   return {
     hydratedCount: hydration.hydratedCount,
     pagesFetched: hydration.pagesFetched,
@@ -33,7 +34,7 @@ export async function hydratePlusVibeInboxAndWebhook(
   };
 }
 
-async function hydrateInboxMessages(companyId: string) {
+async function hydrateInboxMessages(companyId: string, campaignNamesById: Record<string, string>) {
   const admin = getAdmin();
   const rawEmails: any[] = [];
   const seenPageTrails = new Set<string>();
@@ -55,7 +56,7 @@ async function hydrateInboxMessages(companyId: string) {
   }
 
   const rows = rawEmails
-    .map((email) => normalizeInboxMessage(email, companyId))
+    .map((email) => normalizeInboxMessage(email, companyId, campaignNamesById))
     .filter(Boolean) as Record<string, any>[];
 
   if (rows.length === 0) {
@@ -66,16 +67,63 @@ async function hydrateInboxMessages(companyId: string) {
   const CHUNK_SIZE = 250;
   for (let i = 0; i < rows.length; i += CHUNK_SIZE) {
     const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const { error } = await admin
-      .from("inbox_messages")
-      .upsert(chunk as any, {
-        onConflict: "plusvibe_id",
+    const plusvibeIds = chunk
+      .map((row) => firstString(row?.plusvibe_id))
+      .filter((value): value is string => !!value);
+
+    const { data: existingRows, error: existingError } = plusvibeIds.length > 0
+      ? await admin
+          .from("inbox_messages")
+          .select("id, plusvibe_id, company_id, campaign_name")
+          .in("plusvibe_id", plusvibeIds)
+      : { data: [], error: null };
+
+    if (existingError) {
+      throw new Error(`Inbox lookup failed: ${existingError.message}`);
+    }
+
+    const existingByPlusVibeId = new Map<string, any>(
+      (existingRows || [])
+        .filter((row: any) => row?.id && row?.plusvibe_id)
+        .map((row: any) => [row.plusvibe_id, row])
+    );
+
+    const updates = chunk
+      .filter((row) => {
+        if (!row.plusvibe_id || !existingByPlusVibeId.has(row.plusvibe_id)) return false;
+        const existing = existingByPlusVibeId.get(row.plusvibe_id);
+        return (
+          existing?.company_id !== row.company_id ||
+          existing?.campaign_name !== row.campaign_name
+        );
+      })
+      .map((row) => ({
+        ...row,
+        id: existingByPlusVibeId.get(row.plusvibe_id)?.id,
+      }));
+
+    const inserts = chunk.filter(
+      (row) => !row.plusvibe_id || !existingByPlusVibeId.has(row.plusvibe_id)
+    );
+
+    if (updates.length > 0) {
+      const { error } = await admin.from("inbox_messages").upsert(updates as any, {
+        onConflict: "id",
         ignoreDuplicates: false,
       });
-    if (error) {
-      throw new Error(`Inbox upsert failed: ${error.message}`);
+      if (error) {
+        throw new Error(`Inbox update failed: ${error.message}`);
+      }
     }
-    hydratedCount += chunk.length;
+
+    if (inserts.length > 0) {
+      const { error } = await admin.from("inbox_messages").insert(inserts as any);
+      if (error) {
+        throw new Error(`Inbox insert failed: ${error.message}`);
+      }
+    }
+
+    hydratedCount += updates.length + inserts.length;
   }
 
   const threadRows = buildThreadRows(rows);
@@ -93,24 +141,31 @@ async function hydrateInboxMessages(companyId: string) {
   return { hydratedCount, pagesFetched };
 }
 
-async function fetchCampaignIds(companyId: string): Promise<string[]> {
+async function fetchCampaignMetadata(companyId: string): Promise<{ ids: string[]; nameById: Record<string, string> }> {
   try {
     const payload = await plusvibeFetch("/campaign/list-all", companyId, {
       method: "GET",
     });
     const list = extractArray(payload, ["value", "data", "campaigns"]);
-    return list
-      .map((campaign: any) =>
-        firstString(campaign?._id, campaign?.id, campaign?.campaign_id)
-      )
-      .filter((id: string | null): id is string => !!id);
+    const ids: string[] = [];
+    const nameById: Record<string, string> = {};
+
+    list.forEach((campaign: any) => {
+      const id = firstString(campaign?._id, campaign?.id, campaign?.campaign_id);
+      if (!id) return;
+      ids.push(id);
+      const name = firstString(campaign?.camp_name, campaign?.name, campaign?.title);
+      if (name) nameById[id] = name;
+    });
+
+    return { ids, nameById };
   } catch {
-    return [];
+    return { ids: [], nameById: {} };
   }
 }
 
-async function ensureInboxWebhook(companyId: string, campaignIds: string[]) {
-  const appUrl = resolveAppUrl();
+async function ensureInboxWebhook(companyId: string, campaignIds: string[], appUrlOverride?: string) {
+  const appUrl = resolveAppUrl(appUrlOverride);
   if (!appUrl) {
     return { registered: false, reason: "APP_URL_NOT_CONFIGURED" };
   }
@@ -133,35 +188,28 @@ async function ensureInboxWebhook(companyId: string, campaignIds: string[]) {
     }
   }
 
-  const attempts = [
-    buildWebhookPayload("webhook_url", webhookUrl, campaignIds),
-    buildWebhookPayload("hook_url", webhookUrl, campaignIds),
-    buildWebhookPayload("url", webhookUrl, campaignIds),
-  ];
-
-  for (const payload of attempts) {
-    try {
-      await plusvibeFetch("/hook/add", companyId, {
-        method: "POST",
-        body: payload,
-      });
-      return { registered: true };
-    } catch {
-      // Try next payload shape.
-    }
+  try {
+    await plusvibeFetch("/hook/add", companyId, {
+      method: "POST",
+      body: buildWebhookPayload(webhookUrl, campaignIds),
+    });
+    return { registered: true };
+  } catch {
+    return { registered: false, reason: "hook_add_failed" };
   }
-
-  return { registered: false, reason: "hook_add_failed" };
 }
 
-function buildWebhookPayload(urlKey: "webhook_url" | "hook_url" | "url", url: string, campaignIds: string[]) {
-  const payload: Record<string, any> = {
+function buildWebhookPayload(url: string, campaignIds: string[]) {
+  return {
     name: WEBHOOK_NAME,
-    [urlKey]: url,
+    url,
+    camp_ids: campaignIds.length > 0 ? campaignIds : ["ALL"],
+    event_types: ["ALL_EMAIL_REPLIES"],
+    is_slack: 0,
+    secret: "",
+    ignore_ooo: 0,
+    ignore_automatic: 0,
   };
-  if (campaignIds.length > 0) payload.campaign_ids = campaignIds;
-  if (campaignIds.length === 1) payload.campaign_id = campaignIds[0];
-  return payload;
 }
 
 function extractEmailsPage(payload: any) {
@@ -180,7 +228,7 @@ function extractEmailsPage(payload: any) {
   return { emails: mergedEmails, nextPageTrail };
 }
 
-function normalizeInboxMessage(email: any, companyId: string) {
+function normalizeInboxMessage(email: any, companyId: string, campaignNamesById: Record<string, string>) {
   if (!email || typeof email !== "object") return null;
   const plusvibeId =
     firstString(email?._id, email?.id, email?.message_id, email?.email_id, email?.unibox_id) ||
@@ -210,7 +258,7 @@ function normalizeInboxMessage(email: any, companyId: string) {
     email?.campaign_name,
     email?.camp_name,
     email?.campaign?.name
-  );
+  ) || campaignNamesById[campaignId] || null;
   const body = extractBody(email);
   const bodyText =
     firstString(email?.body_text, email?.preview_text, email?.content_preview) ||
@@ -324,8 +372,9 @@ function normalizeDate(value: string | null) {
   return parsed.toISOString();
 }
 
-function resolveAppUrl() {
+function resolveAppUrl(appUrlOverride?: string) {
   const configured =
+    appUrlOverride ||
     process.env.NEXT_PUBLIC_APP_URL ||
     process.env.APP_URL ||
     (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "");

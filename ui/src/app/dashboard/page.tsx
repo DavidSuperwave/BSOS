@@ -43,16 +43,17 @@ export default function Dashboard() {
   const userName =
     user?.user_metadata?.name || user?.email?.split("@")[0] || "there";
   const companyName = selectedCompany?.name || "your account";
+  const rangeLabel = range === "24h" ? "selected day" : range === "30d" ? "selected 30 days" : "selected 7 days";
 
   const metrics = [
     {
-      title: "Contacted Today",
+      title: "Contacted",
       value: data?.plusvibeStats?.contacted?.toLocaleString() || "0",
-      trend: { value: 0, label: "from PlusVibe", direction: "up" as const },
+      trend: { value: 0, label: rangeLabel, direction: "up" as const },
       icon: <Mail className="h-5 w-5 text-emerald-500" />,
     },
     {
-      title: "Positive Reply",
+      title: "Positive Replies",
       value:
         data?.plusvibeStats?.positive?.toLocaleString() ||
         data?.positiveReplies?.toLocaleString() ||

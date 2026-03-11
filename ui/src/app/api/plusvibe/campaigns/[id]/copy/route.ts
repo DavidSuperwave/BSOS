@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { PlusVibeError, plusvibeFetch } from "@/lib/plusvibe-client";
+import { fetchCampaignDetail } from "@/lib/plusvibe-campaigns";
 
 export async function GET(
   req: NextRequest,
@@ -18,21 +19,31 @@ export async function GET(
   if (result.error) return result.error;
 
   try {
-    const query = new URLSearchParams({ campaign_id: campaignId });
-    if (lead?.trim()) query.set("lead", lead.trim());
+    let emails: any[] = [];
+    let data: any = null;
 
-    const data = await plusvibeFetch(
-      `/unibox/campaign-emails?${query.toString()}`,
-      companyId,
-      { method: "GET" }
-    );
+    if (lead?.trim()) {
+      const query = new URLSearchParams({
+        campaign_id: campaignId,
+        lead: lead.trim(),
+      });
 
-    const emails = Array.isArray(data)
-      ? data
-      : data?.emails || data?.data || data?.value || [];
+      data = await plusvibeFetch(
+        `/unibox/campaign-emails?${query.toString()}`,
+        companyId,
+        { method: "GET" }
+      );
+
+      emails = Array.isArray(data)
+        ? data
+        : data?.emails || data?.data || data?.value || [];
+    }
+
+    const detail = await fetchCampaignDetail(companyId, campaignId);
 
     return NextResponse.json({
       emails: Array.isArray(emails) ? emails : [],
+      campaign: detail.campaign,
       data,
     });
   } catch (err: any) {

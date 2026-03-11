@@ -139,7 +139,7 @@ export async function PATCH(
     let inboxSetup: Record<string, any> | null = null;
     if (hasPlusVibe && (!hadPlusVibe || plusVibeChanged)) {
       try {
-        inboxSetup = await hydratePlusVibeInboxAndWebhook(id);
+        inboxSetup = await hydratePlusVibeInboxAndWebhook(id, req.nextUrl.origin);
       } catch (syncErr: any) {
         inboxSetup = {
           error: syncErr?.message || "Inbox setup failed",

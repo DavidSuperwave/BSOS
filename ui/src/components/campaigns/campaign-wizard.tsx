@@ -86,6 +86,17 @@ function toNumberValue(value: unknown, fallback = 0): number {
   return fallback;
 }
 
+function toBooleanValue(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string" && value.trim()) {
+    const normalized = value.trim().toLowerCase();
+    if (["yes", "true", "1", "on"].includes(normalized)) return true;
+    if (["no", "false", "0", "off"].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
 function coerceArray(input: unknown): any[] {
   if (Array.isArray(input)) return input;
   if (input && typeof input === "object") {
@@ -95,6 +106,23 @@ function coerceArray(input: unknown): any[] {
       if (Array.isArray(candidate)) return candidate;
     }
   }
+  return [];
+}
+
+function extractRawSequenceSteps(campaign: PlusVibeCampaign): any[] {
+  const candidates = [
+    campaign.sequences,
+    campaign.sequence,
+    (campaign as any)?.settings?.sequences,
+    (campaign as any)?.campaign?.sequences,
+    (campaign as any)?.steps,
+  ];
+
+  for (const candidate of candidates) {
+    const rawSteps = coerceArray(candidate);
+    if (rawSteps.length > 0) return rawSteps;
+  }
+
   return [];
 }
 
@@ -113,19 +141,7 @@ function getFallbackSequenceStep(): SequenceStepDraft {
 }
 
 function normalizeSequenceSteps(campaign: PlusVibeCampaign): SequenceStepDraft[] {
-  const candidates = [
-    campaign.sequences,
-    campaign.sequence,
-    (campaign as any)?.settings?.sequences,
-    (campaign as any)?.campaign?.sequences,
-    (campaign as any)?.steps,
-  ];
-
-  let rawSteps: any[] = [];
-  for (const candidate of candidates) {
-    rawSteps = coerceArray(candidate);
-    if (rawSteps.length > 0) break;
-  }
+  const rawSteps = extractRawSequenceSteps(campaign);
 
   if (rawSteps.length === 0) return [getFallbackSequenceStep()];
 
@@ -138,6 +154,7 @@ function normalizeSequenceSteps(campaign: PlusVibeCampaign): SequenceStepDraft[]
       id: toStringValue(step?.id, step?._id, `step-${stepNumber}`),
       title: toStringValue(step?.title, step?.name, `Step ${stepNumber}`),
       subject: toStringValue(
+        step?.variations?.[0]?.subject,
         step?.subject,
         step?.subject_line,
         step?.email_subject,
@@ -145,6 +162,7 @@ function normalizeSequenceSteps(campaign: PlusVibeCampaign): SequenceStepDraft[]
         step?.mail?.subject
       ),
       body: toStringValue(
+        step?.variations?.[0]?.body,
         step?.body,
         step?.message,
         step?.content,
@@ -161,6 +179,116 @@ function normalizeSequenceSteps(campaign: PlusVibeCampaign): SequenceStepDraft[]
   });
 
   return normalized.length > 0 ? normalized : [getFallbackSequenceStep()];
+}
+
+function normalizeVariationArray(step: Record<string, any>, stepIndex: number): SequenceVariation[] {
+  const variations = Array.isArray(step?.variations) ? step.variations : [];
+  if (variations.length === 0) {
+    const fallbackStep = normalizeSequenceSteps({
+      ...step,
+      sequences: [step],
+      id: step?.id || `step-${stepIndex + 1}`,
+      name: step?.name || step?.title,
+      status: "draft",
+      createdAt: new Date().toISOString(),
+    } as PlusVibeCampaign)[0];
+    return buildDefaultVariationsForStep(fallbackStep, stepIndex);
+  }
+
+  return variations.map((variation: Record<string, any>, variationIndex: number) => ({
+    id: toStringValue(
+      variation?.id,
+      variation?._id,
+      `${toStringValue(step?.id, step?._id, `step-${stepIndex + 1}`)}-var-${variationIndex + 1}`
+    ),
+    label: toStringValue(
+      variation?.variation,
+      variation?.label,
+      variationLabelAt(variationIndex)
+    ),
+    name: toStringValue(
+      variation?.name,
+      variation?.title,
+      `Variation Name ${stepIndex + 1}${variationLabelAt(variationIndex)}`
+    ),
+    subject: toStringValue(variation?.subject),
+    body: toStringValue(variation?.body, variation?.content, variation?.message),
+  }));
+}
+
+function buildSequenceEditorState(campaign: PlusVibeCampaign) {
+  const steps = normalizeSequenceSteps(campaign);
+  const rawSteps = extractRawSequenceSteps(campaign);
+  const stepVariations: Record<string, SequenceVariation[]> = {};
+  const activeVariationByStep: Record<string, string> = {};
+
+  steps.forEach((step, index) => {
+    const rawStep = rawSteps[index] || {};
+    const variations = normalizeVariationArray(rawStep, index);
+    stepVariations[step.id] = variations;
+    activeVariationByStep[step.id] = variations[0]?.id || "";
+  });
+
+  return {
+    steps,
+    stepVariations,
+    activeVariationByStep,
+  };
+}
+
+function normalizeScheduleDays(days: unknown): string[] {
+  const dayMap: Record<string, string> = {
+    "1": "Mon",
+    "2": "Tue",
+    "3": "Wed",
+    "4": "Thu",
+    "5": "Fri",
+    "6": "Sat",
+    "7": "Sun",
+  };
+
+  if (Array.isArray(days)) {
+    const normalized = days
+      .map((day) => String(day || "").slice(0, 3))
+      .filter(Boolean);
+    return normalized.length > 0 ? normalized : ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  }
+
+  if (days && typeof days === "object") {
+    const normalized = Object.entries(days as Record<string, unknown>)
+      .filter(([, enabled]) => toBooleanValue(enabled, false))
+      .map(([day]) => dayMap[day] || day.slice(0, 3));
+    return normalized.length > 0 ? normalized : ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  }
+
+  return ["Mon", "Tue", "Wed", "Thu", "Fri"];
+}
+
+function extractScheduleSettings(campaign: PlusVibeCampaign) {
+  const schedule = ((campaign as any)?.schedules || (campaign as any)?.schedule || {}) as Record<string, any>;
+  return {
+    dailyLimit: String(schedule?.daily_limit ?? (campaign as any)?.daily_limit ?? 200),
+    timezone: toStringValue(schedule?.timezone, (campaign as any)?.timezone, "America/New_York"),
+    startHour: toStringValue(schedule?.timing?.from, schedule?.start_time, "09:00"),
+    endHour: toStringValue(schedule?.timing?.to, schedule?.end_time, "17:00"),
+    sendingDays: normalizeScheduleDays(schedule?.days),
+    minDelayMinutes: String(schedule?.min_delay_minutes ?? (campaign as any)?.interval_limit_in_min ?? 2),
+    scheduleName: toStringValue(schedule?.name, "New schedule"),
+  };
+}
+
+function extractCampaignSettings(campaign: PlusVibeCampaign) {
+  const scheduleSettings = extractScheduleSettings(campaign);
+  return {
+    name: campaign.name || "",
+    dailyLimit: scheduleSettings.dailyLimit,
+    trackOpens: toBooleanValue((campaign as any)?.is_emailopened_tracking, true),
+    trackClicks: true,
+    stopOnReply: toBooleanValue((campaign as any)?.stop_on_lead_replied, true),
+    unsubscribeFooter: toBooleanValue((campaign as any)?.is_unsubscribed_link, true),
+    selectedSenderPool: toStringValue((campaign as any)?.sender_pool, "Primary Senders"),
+    ...scheduleSettings,
+  };
 }
 
 function variationLabelAt(index: number): string {
@@ -211,16 +339,19 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const [activeTab, setActiveTab] = useState("leads");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [campaignLoading, setCampaignLoading] = useState(false);
   const [sequenceAgentError, setSequenceAgentError] = useState<string | null>(null);
   const [sequenceAgentInput, setSequenceAgentInput] = useState("");
   const sequenceAgentEndRef = useRef<HTMLDivElement | null>(null);
+  const [campaignData, setCampaignData] = useState<PlusVibeCampaign>(campaign);
 
   const [leadSearch, setLeadSearch] = useState("");
   const [leadStatusFilter, setLeadStatusFilter] = useState("all");
   const [leadTagFilter, setLeadTagFilter] = useState("all");
   const [leadPage, setLeadPage] = useState(1);
+  const resolvedCampaign = campaignData || campaign;
 
-  const { data: leadData, mutate: mutateLeads } = useCampaignLeads(campaign.id, companyId, {
+  const { data: leadData, mutate: mutateLeads } = useCampaignLeads(resolvedCampaign.id, companyId, {
     page: leadPage,
     limit: LEADS_PAGE_SIZE,
     status: leadStatusFilter !== "all" ? leadStatusFilter : undefined,
@@ -244,7 +375,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     setAddingLead(true);
     try {
       const res = await fetch(
-        `/api/plusvibe/campaigns/${campaign.id}/leads?companyId=${companyId}`,
+        `/api/plusvibe/campaigns/${resolvedCampaign.id}/leads?companyId=${companyId}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -280,28 +411,33 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     }
   };
 
-  const initialSequenceSteps = useMemo(() => normalizeSequenceSteps(campaign), [campaign]);
-  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>(initialSequenceSteps);
+  const initialSequenceState = useMemo(() => buildSequenceEditorState(resolvedCampaign), [resolvedCampaign]);
+  const [sequenceSteps, setSequenceSteps] = useState<SequenceStepDraft[]>(initialSequenceState.steps);
   const [selectedSequenceStepId, setSelectedSequenceStepId] = useState(
-    initialSequenceSteps[0]?.id || ""
+    initialSequenceState.steps[0]?.id || ""
   );
-  const [stepVariations, setStepVariations] = useState<Record<string, SequenceVariation[]>>({});
-  const [activeVariationByStep, setActiveVariationByStep] = useState<Record<string, string>>({});
+  const [stepVariations, setStepVariations] = useState<Record<string, SequenceVariation[]>>(
+    initialSequenceState.stepVariations
+  );
+  const [activeVariationByStep, setActiveVariationByStep] = useState<Record<string, string>>(
+    initialSequenceState.activeVariationByStep
+  );
 
-  const [settingsName, setSettingsName] = useState(campaign.name || "");
-  const [dailyLimit, setDailyLimit] = useState("200");
-  const [trackOpens, setTrackOpens] = useState(true);
-  const [trackClicks, setTrackClicks] = useState(true);
-  const [stopOnReply, setStopOnReply] = useState(true);
-  const [unsubscribeFooter, setUnsubscribeFooter] = useState(true);
-  const [selectedSenderPool, setSelectedSenderPool] = useState("Primary Senders");
+  const initialSettings = useMemo(() => extractCampaignSettings(resolvedCampaign), [resolvedCampaign]);
+  const [settingsName, setSettingsName] = useState(initialSettings.name);
+  const [dailyLimit, setDailyLimit] = useState(initialSettings.dailyLimit);
+  const [trackOpens, setTrackOpens] = useState(initialSettings.trackOpens);
+  const [trackClicks, setTrackClicks] = useState(initialSettings.trackClicks);
+  const [stopOnReply, setStopOnReply] = useState(initialSettings.stopOnReply);
+  const [unsubscribeFooter, setUnsubscribeFooter] = useState(initialSettings.unsubscribeFooter);
+  const [selectedSenderPool, setSelectedSenderPool] = useState(initialSettings.selectedSenderPool);
 
-  const [timezone, setTimezone] = useState("America/New_York");
-  const [startHour, setStartHour] = useState("09:00");
-  const [endHour, setEndHour] = useState("17:00");
-  const [sendingDays, setSendingDays] = useState<string[]>(["Mon", "Tue", "Wed", "Thu", "Fri"]);
-  const [minDelayMinutes, setMinDelayMinutes] = useState("2");
-  const [scheduleName, setScheduleName] = useState("New schedule");
+  const [timezone, setTimezone] = useState(initialSettings.timezone);
+  const [startHour, setStartHour] = useState(initialSettings.startHour);
+  const [endHour, setEndHour] = useState(initialSettings.endHour);
+  const [sendingDays, setSendingDays] = useState<string[]>(initialSettings.sendingDays);
+  const [minDelayMinutes, setMinDelayMinutes] = useState(initialSettings.minDelayMinutes);
+  const [scheduleName, setScheduleName] = useState(initialSettings.scheduleName);
   const [selectedScheduleId, setSelectedScheduleId] = useState("schedule-default");
 
   const [subsequences, setSubsequences] = useState<SubsequenceDraft[]>(INITIAL_SUBSEQUENCES);
@@ -317,9 +453,10 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   const leadLimit = leadData?.limit || LEADS_PAGE_SIZE;
   const leadCurrentPage = leadData?.page || leadPage;
   const leadTotalPages = Math.max(1, Math.ceil(totalLeads / leadLimit));
+  const leadSource = leadData?.source || "plusvibe";
 
   const totalSentFromSteps = sequenceSteps.reduce((sum, step) => sum + step.sent, 0);
-  const totalSent = campaign.stats?.sent ?? totalSentFromSteps;
+  const totalSent = resolvedCampaign.stats?.sent ?? totalSentFromSteps;
   const quickLeadContext = leads.slice(0, 6);
   const selectedSequenceStep =
     sequenceSteps.find((step) => step.id === selectedSequenceStepId) || sequenceSteps[0] || null;
@@ -337,26 +474,78 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
   });
 
   useEffect(() => {
+    setCampaignData(campaign);
+  }, [campaign]);
+
+  useEffect(() => {
+    if (!companyId) {
+      setCampaignData(campaign);
+      return;
+    }
+
+    let isCancelled = false;
+    setCampaignLoading(true);
+
+    fetch(`/api/plusvibe/campaigns/${campaign.id}?companyId=${encodeURIComponent(companyId)}`)
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({ error: "Failed to load campaign" }));
+          throw new Error(payload.error || "Failed to load campaign");
+        }
+        return response.json();
+      })
+      .then((payload) => {
+        if (!isCancelled && payload?.campaign) {
+          setCampaignData(payload.campaign);
+        }
+      })
+      .catch((detailErr) => {
+        if (!isCancelled) {
+          setError(detailErr instanceof Error ? detailErr.message : "Failed to load campaign");
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setCampaignLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [campaign, companyId]);
+
+  useEffect(() => {
     sequenceAgentEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [sequenceAgentMessages]);
 
   useEffect(() => {
     setLeadPage(1);
-  }, [leadStatusFilter, leadTagFilter, leadSearch, campaign.id]);
+  }, [leadStatusFilter, leadTagFilter, leadSearch, resolvedCampaign.id]);
 
   useEffect(() => {
-    setSequenceSteps(initialSequenceSteps);
-    setSelectedSequenceStepId(initialSequenceSteps[0]?.id || "");
-    const nextVariations: Record<string, SequenceVariation[]> = {};
-    const nextActive: Record<string, string> = {};
-    initialSequenceSteps.forEach((step, index) => {
-      const variations = buildDefaultVariationsForStep(step, index);
-      nextVariations[step.id] = variations;
-      nextActive[step.id] = variations[0]?.id || "";
-    });
-    setStepVariations(nextVariations);
-    setActiveVariationByStep(nextActive);
-  }, [campaign.id, initialSequenceSteps]);
+    setSequenceSteps(initialSequenceState.steps);
+    setSelectedSequenceStepId(initialSequenceState.steps[0]?.id || "");
+    setStepVariations(initialSequenceState.stepVariations);
+    setActiveVariationByStep(initialSequenceState.activeVariationByStep);
+  }, [resolvedCampaign.id, initialSequenceState]);
+
+  useEffect(() => {
+    const settings = extractCampaignSettings(resolvedCampaign);
+    setSettingsName(settings.name);
+    setDailyLimit(settings.dailyLimit);
+    setTrackOpens(settings.trackOpens);
+    setTrackClicks(settings.trackClicks);
+    setStopOnReply(settings.stopOnReply);
+    setUnsubscribeFooter(settings.unsubscribeFooter);
+    setSelectedSenderPool(settings.selectedSenderPool);
+    setTimezone(settings.timezone);
+    setStartHour(settings.startHour);
+    setEndHour(settings.endHour);
+    setSendingDays(settings.sendingDays);
+    setMinDelayMinutes(settings.minDelayMinutes);
+    setScheduleName(settings.scheduleName);
+  }, [resolvedCampaign]);
 
   const variationsForSelectedStep = selectedSequenceStep
     ? stepVariations[selectedSequenceStep.id] || []
@@ -372,7 +561,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch(`/api/plusvibe/campaigns/${campaign.id}${companyQuery}`, {
+      const response = await fetch(`/api/plusvibe/campaigns/${resolvedCampaign.id}${companyQuery}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -490,19 +679,13 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     void savePatch({
       sequences: sequenceSteps.map((step, index) => ({
         step: index + 1,
-        subject:
-          (stepVariations[step.id] || []).find(
-            (variation) => variation.id === activeVariationByStep[step.id]
-          )?.subject ||
-          stepVariations[step.id]?.[0]?.subject ||
-          step.subject,
-        body:
-          (stepVariations[step.id] || []).find(
-            (variation) => variation.id === activeVariationByStep[step.id]
-          )?.body ||
-          stepVariations[step.id]?.[0]?.body ||
-          step.body,
-        delay_days: step.waitDays,
+        wait_time: step.waitDays,
+        variations: (stepVariations[step.id] || []).map((variation, variationIndex) => ({
+          variation: variation.label || String.fromCharCode(65 + variationIndex),
+          name: variation.name,
+          subject: variation.subject,
+          body: variation.body,
+        })),
       })),
     });
   };
@@ -545,8 +728,8 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
     await sendSequenceAgentMessage(message, {
       component: "campaign_sequences",
       data: {
-        campaignId: campaign.id,
-        campaignName: campaign.name,
+        campaignId: resolvedCampaign.id,
+        campaignName: resolvedCampaign.name,
         selectedStep: selectedSequenceStep
           ? {
               id: selectedSequenceStep.id,
@@ -575,13 +758,16 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
             Back
           </Button>
           <div className="min-w-0">
-            <h2 className="truncate text-lg font-semibold text-foreground">{campaign.name}</h2>
+            <h2 className="truncate text-lg font-semibold text-foreground">{resolvedCampaign.name}</h2>
             <p className="text-sm text-muted-foreground">Campaign Builder</p>
           </div>
         </div>
-        <Badge variant="outline" className="capitalize">
-          {campaign.status || "Draft"}
-        </Badge>
+        <div className="flex items-center gap-2">
+          {campaignLoading ? <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /> : null}
+          <Badge variant="outline" className="capitalize">
+            {resolvedCampaign.status || "Draft"}
+          </Badge>
+        </div>
       </div>
 
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
@@ -590,7 +776,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Total Leads</p>
-            <p className="text-xl font-semibold text-foreground mt-1">{campaign.stats?.leadCount || leads.length}</p>
+            <p className="text-xl font-semibold text-foreground mt-1">{resolvedCampaign.stats?.leadCount || leads.length}</p>
           </CardContent>
         </Card>
         <Card>
@@ -602,13 +788,13 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Reply Rate</p>
-            <p className="text-xl font-semibold text-foreground mt-1">{campaign.stats?.replyRate || 0}%</p>
+            <p className="text-xl font-semibold text-foreground mt-1">{resolvedCampaign.stats?.replyRate || 0}%</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4">
             <p className="text-xs text-muted-foreground">Positive Rate</p>
-            <p className="text-xl font-semibold text-foreground mt-1">{campaign.stats?.positiveRate || 0}%</p>
+            <p className="text-xl font-semibold text-foreground mt-1">{resolvedCampaign.stats?.positiveRate || 0}%</p>
           </CardContent>
         </Card>
       </div>
@@ -717,6 +903,11 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               <p className="text-xs text-muted-foreground">
                 Showing {leads.length} of {totalLeads} leads
               </p>
+              {leadSource === "inbox_fallback" ? (
+                <p className="text-xs text-amber-600">
+                  PlusVibe did not return campaign lead rows for this campaign, so replied leads are shown from Inbox history.
+                </p>
+              ) : null}
               {leadTotalPages > 1 && (
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
@@ -764,7 +955,7 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               <div className="rounded-lg border border-border bg-background p-4">
                 <p className="text-xs text-muted-foreground">Open Rate</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {campaign.stats?.openRate ?? 0}%
+                  {resolvedCampaign.stats?.openRate ?? 0}%
                 </p>
               </div>
               <div className="rounded-lg border border-border bg-background p-4">
@@ -774,13 +965,13 @@ export function CampaignWizard({ campaign, companyId, companyQuery, onClose, onR
               <div className="rounded-lg border border-border bg-background p-4">
                 <p className="text-xs text-muted-foreground">Reply Rate</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {campaign.stats?.replyRate ?? 0}%
+                  {resolvedCampaign.stats?.replyRate ?? 0}%
                 </p>
               </div>
               <div className="rounded-lg border border-border bg-background p-4">
                 <p className="text-xs text-muted-foreground">Positive Rate</p>
                 <p className="mt-2 text-2xl font-semibold text-foreground">
-                  {campaign.stats?.positiveRate ?? 0}%
+                  {resolvedCampaign.stats?.positiveRate ?? 0}%
                 </p>
               </div>
             </div>
