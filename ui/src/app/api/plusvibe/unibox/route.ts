@@ -7,10 +7,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const pathParams = new URLSearchParams();
-    const pageTrail = searchParams.get("page_trail");
-    const limit = searchParams.get("limit");
-    if (pageTrail) pathParams.set("page_trail", pageTrail);
-    if (limit) pathParams.set("limit", limit);
+    for (const key of ["page_trail", "limit", "lead", "campaign_id", "email_type", "label", "preview_only"]) {
+      const value = searchParams.get(key);
+      if (value) pathParams.set(key, value);
+    }
 
     const path = pathParams.size > 0
       ? `/unibox/emails?${pathParams.toString()}`
@@ -18,11 +18,16 @@ export async function GET(request: NextRequest) {
     const data = await plusvibeFetch(path, companyId, { method: "GET" });
     const emails = Array.isArray(data)
       ? data
-      : data?.emails || data?.data || data?.value || [];
+      : data?.emails || data?.data || data?.value || data?.items || data?.results || [];
 
     return NextResponse.json({
       emails: Array.isArray(emails) ? emails : [],
-      page_trail: data?.page_trail || data?.next_page_trail || null,
+      page_trail:
+        data?.page_trail ||
+        data?.next_page_trail ||
+        data?.data?.page_trail ||
+        data?.data?.next_page_trail ||
+        null,
     });
   } catch (err: any) {
     if (err instanceof PlusVibeError) {

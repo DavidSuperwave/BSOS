@@ -160,6 +160,7 @@ export default function InboxPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [replyText, setReplyText] = useState("");
   const [replySending, setReplySending] = useState(false);
+  const [syncingInbox, setSyncingInbox] = useState(false);
   const [isSendingToAgent, setIsSendingToAgent] = useState(false);
   const [queuedChatPrompt, setQueuedChatPrompt] = useState<{
     id: string;
@@ -231,7 +232,7 @@ export default function InboxPage() {
     if (!selected || !replyText.trim()) return;
     setReplySending(true);
     try {
-      await fetch("/api/inbox/reply", {
+      const response = await fetch("/api/inbox/reply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -240,9 +241,21 @@ export default function InboxPage() {
           body: replyText,
           thread_id: selected.thread_id,
           message_id: selected.id,
+          reply_to_id: selected.plusvibe_id,
           company_id: selected.company_id,
+          campaign_id: selected.campaign_id,
+          ...(
+            selected.to_email &&
+            !selected.to_email.endsWith("@plusvibe.local")
+              ? { from: selected.to_email }
+              : {}
+          ),
         }),
       });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: "Reply failed" }));
+        throw new Error(payload.error || "Reply failed");
+      }
       setReplyText("");
       mutate();
     } catch (err) {
@@ -336,6 +349,26 @@ export default function InboxPage() {
     }
   };
 
+  const handleSyncInbox = async () => {
+    if (!companyId) return;
+    setSyncingInbox(true);
+    try {
+      const response = await fetch(
+        `/api/inbox/sync?companyId=${encodeURIComponent(companyId)}`,
+        { method: "POST" }
+      );
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: "Sync failed" }));
+        throw new Error(payload.error || "Sync failed");
+      }
+      await mutate();
+    } catch (err) {
+      console.error("Inbox sync failed:", err);
+    } finally {
+      setSyncingInbox(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <AppShell header={{ title: "Inbox", subtitle: "Campaign email replies & conversations" }}>
@@ -350,10 +383,16 @@ export default function InboxPage() {
         title: "Inbox",
         subtitle: `${pagination?.total || 0} messages`,
         actions: (
-          <Button variant="outline" className="gap-2" onClick={() => mutate()}>
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" className="gap-2" onClick={handleSyncInbox} disabled={syncingInbox || !companyId}>
+              <RefreshCw className={cn("h-4 w-4", syncingInbox && "animate-spin")} />
+              {syncingInbox ? "Syncing..." : "Sync Replies"}
+            </Button>
+            <Button variant="outline" className="gap-2" onClick={() => mutate()}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
         ),
       }}
     >

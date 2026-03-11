@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PlusVibeError, plusvibeFetch } from "@/lib/plusvibe-client";
+import { fetchCampaignDetail, fetchCampaignsWithStats } from "@/lib/plusvibe-campaigns";
 
 function resolveCampaignName(input: Record<string, any>) {
   const candidate =
@@ -10,21 +11,11 @@ function resolveCampaignName(input: Record<string, any>) {
   return typeof candidate === "string" ? candidate.trim() : "";
 }
 
-function normalizeCampaignStatus(input: any): string {
-  const value = String(input || "").toLowerCase().trim();
-  if (["active", "running", "launched", "started", "live", "in_progress", "enabled", "on"].includes(value)) {
-    return "active";
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
-  if (["paused", "pause", "stopped", "inactive", "disabled", "off"].includes(value)) {
-    return "paused";
-  }
-  if (["complete", "completed", "finished", "done", "ended"].includes(value)) {
-    return "complete";
-  }
-  if (!value || value === "draft" || value === "new" || value === "pending") {
-    return "draft";
-  }
-  return value;
+  return "";
 }
 
 export async function GET(request: NextRequest) {
@@ -33,105 +24,9 @@ export async function GET(request: NextRequest) {
   const companyId = searchParams.get("companyId") || undefined;
 
   try {
-    const listData = await plusvibeFetch("/campaign/list-all", companyId, {
-      method: "GET",
-    });
-    const campaignsRaw = Array.isArray(listData)
-      ? listData
-      : listData?.value || listData?.data || [];
-    const campaigns = Array.isArray(campaignsRaw) ? campaignsRaw : [];
-
-    const startDate = "2020-01-01";
-    const endDate = "2030-12-31";
-    let statsMap: Record<string, any> = {};
-
-    try {
-      const statsData = await plusvibeFetch(
-        `/analytics/campaign/stats?start_date=${startDate}&end_date=${endDate}`,
-        companyId,
-        { method: "GET" }
-      );
-      const statsArr = Array.isArray(statsData) ? statsData : (typeof statsData === "object" && statsData !== null ? Object.values(statsData) : []);
-      statsMap = statsArr.reduce((acc: Record<string, any>, stat: any) => {
-        if (stat?._id) acc[stat._id] = stat;
-        return acc;
-      }, {});
-    } catch {
-      // Non-fatal: render campaigns even when stats endpoint is temporarily unavailable.
-    }
-
-    // Merge stats into campaigns
-    const campaignsWithStats = campaigns.map((campaign: any) => {
-      const campaignId = campaign._id || campaign.id;
-      const stats = statsMap[campaignId];
-      const normalizedName = campaign?.name || campaign?.camp_name || "Untitled Campaign";
-      const normalizedCreatedAt =
-        campaign?.createdAt ||
-        campaign?.created_at ||
-        campaign?.created_on ||
-        new Date().toISOString();
-      
-      if (stats) {
-        const sent = stats.sent_count || 0;
-        const replies = stats.replied_count || 0;
-        const positive = stats.positive_reply_count || 0;
-        const opened = stats.unique_opened_count || 0;
-        const leadCount = stats.lead_count || 0;
-        const contacted = stats.lead_contacted_count || 0;
-        
-        return {
-          ...campaign,
-          id: campaignId,
-          name: normalizedName,
-          status: normalizeCampaignStatus(
-            campaign?.status || campaign?.campaign_status || campaign?.state
-          ),
-          createdAt: normalizedCreatedAt,
-          stats: {
-            sent,
-            replies,
-            positive,
-            opened,
-            leadCount,
-            contacted,
-            // Calculated rates for UI
-            replyRate: sent > 0 ? Math.round((replies / sent) * 100) : 0,
-            positiveRate: replies > 0 ? Math.round((positive / replies) * 100) : 0,
-            openRate: sent > 0 ? Math.round((opened / sent) * 100) : 0,
-            contactedRate: leadCount > 0 ? Math.round((contacted / leadCount) * 100) : 0,
-            // Additional detailed stats
-            completed: stats.completed_lead_count || 0,
-            bounced: stats.bounced_count || 0,
-            unsubscribed: stats.unsubscribed_count || 0,
-          }
-        };
-      }
-      
-      return {
-        ...campaign,
-        id: campaignId,
-        name: normalizedName,
-        status: normalizeCampaignStatus(
-          campaign?.status || campaign?.campaign_status || campaign?.state
-        ),
-        createdAt: normalizedCreatedAt,
-        stats: {
-          leadCount: 0,
-          contacted: 0,
-          sent: 0,
-          replies: 0,
-          positive: 0,
-          opened: 0,
-          replyRate: 0,
-          positiveRate: 0,
-          openRate: 0,
-          contactedRate: 0,
-        }
-      };
-    });
-    
+    const { campaigns } = await fetchCampaignsWithStats(companyId);
     return NextResponse.json({
-      campaigns: campaignsWithStats,
+      campaigns,
     });
   } catch (err: any) {
     if (err instanceof PlusVibeError) {
@@ -173,6 +68,61 @@ export async function POST(req: NextRequest) {
       method: "POST",
       body: payload,
     });
+
+    const sourceCampaignId = firstString(body?.source_campaign_id);
+    const createdCampaignId = firstString(data?._id, data?.id, data?.campaign_id);
+
+    if (sourceCampaignId && createdCampaignId) {
+      const { campaign: sourceCampaign } = await fetchCampaignDetail(companyId, sourceCampaignId);
+      if (sourceCampaign) {
+        const clonePayload: Record<string, any> = {
+          campaign_id: createdCampaignId,
+          camp_name: campName,
+        };
+
+        const cloneKeys = [
+          "schedules",
+          "sequences",
+          "first_wait_time",
+          "first_wait_time_unit",
+          "email_accounts",
+          "send_priority",
+          "ignore_mailbox_limit",
+          "template_id",
+          "stop_on_lead_replied",
+          "is_emailopened_tracking",
+          "is_unsubscribed_link",
+          "send_as_txt",
+          "exclude_ooo",
+          "ooo_nr_opt",
+          "ooo_nr_ai_d",
+          "ooo_nr_d",
+          "is_acc_based_sending",
+          "is_pause_on_bouncerate",
+          "bounce_rate_limit",
+          "send_risky_email",
+          "unsub_blocklist",
+          "other_email_acc",
+          "is_esp_match",
+        ];
+
+        for (const key of cloneKeys) {
+          if (sourceCampaign[key] !== undefined) clonePayload[key] = sourceCampaign[key];
+        }
+
+        if (!clonePayload.schedules && sourceCampaign.schedule) {
+          clonePayload.schedules = sourceCampaign.schedule;
+        }
+
+        if (Object.keys(clonePayload).length > 2) {
+          await plusvibeFetch("/campaign/update/campaign", companyId, {
+            method: "PATCH",
+            body: clonePayload,
+          });
+        }
+      }
+    }
+
     return NextResponse.json(data);
   } catch (err: any) {
     if (err instanceof PlusVibeError) {

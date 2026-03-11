@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCompanyCredentials } from "@/lib/company-credentials";
 import { requireCompanyAccess } from "@/lib/api-auth";
+import { fetchCampaignsWithStats, summarizeCampaignStats } from "@/lib/plusvibe-campaigns";
 
 export const dynamic = "force-dynamic";
 
-const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
 const CALENDLY_BASE = "https://api.calendly.com";
 const EXTERNAL_FETCH_TIMEOUT_MS = 3500;
 
@@ -20,14 +20,6 @@ async function fetchWithTimeout(
   } finally {
     clearTimeout(timeout);
   }
-}
-
-function parseCampaignList(rawData: any): any[] {
-  if (Array.isArray(rawData)) return rawData;
-  if (Array.isArray(rawData?.value)) return rawData.value;
-  if (Array.isArray(rawData?.data)) return rawData.data;
-  if (Array.isArray(rawData?.collection)) return rawData.collection;
-  return [];
 }
 
 function rangeToDays(range: string): number {
@@ -115,142 +107,54 @@ export async function GET(req: NextRequest) {
     try {
       const endDate = new Date().toISOString().split("T")[0];
       const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-      const [campaignResult, statsResult] = await Promise.allSettled([
-        fetchWithTimeout(
-          `${PLUSVIBE_BASE}/campaign/list?workspace_id=${pvWorkspace}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-key": pvKey,
-            },
-          }
-        ),
-        fetchWithTimeout(
-          `${PLUSVIBE_BASE}/campaign/stats?workspace_id=${pvWorkspace}&start_date=${startDate}&end_date=${endDate}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-              "x-api-key": pvKey,
-            },
-          }
-        ),
-      ]);
+      const { campaigns } = await fetchCampaignsWithStats(companyId, {
+        startDate,
+        endDate,
+      });
+      const totals = summarizeCampaignStats(campaigns);
 
-      if (campaignResult.status === "fulfilled" && campaignResult.value.ok) {
-        const rawData = await campaignResult.value.json();
-        const campaigns = parseCampaignList(rawData);
+      totalCampaigns = campaigns.length;
+      totalSends = totals.sent;
+      totalReplies = totals.replies;
+      positiveReplies = totals.positive;
+      activeLeads = totals.contacted;
 
-        totalCampaigns = campaigns.length;
+      plusvibeStats = {
+        totalLeads: totals.leadCount,
+        contacted: totals.contacted,
+        finished: totals.completed,
+        replied: totals.replies,
+        positive: totals.positive,
+        bounced: totals.bounced,
+        openRate: Math.round(totals.openRate),
+      };
 
-        for (const c of campaigns) {
-          // PlusVibe campaign list doesn't include stats, so we count by status
-          const isActive = c.status === "ACTIVE" || c.status === "active";
-          const hasReplied = !!c.last_lead_replied;
-          const sendCount = c.sent_count || c.total_sent || 0;
-
-          if (isActive) {
-            activeCampaigns.push({
-              id: c._id || c.id,
-              name: c.name,
-              status: c.status,
-              lastSent: c.last_lead_sent,
-              lastReplied: c.last_lead_replied,
-              createdAt: c.created_at,
-              sends: sendCount,
-            });
-          }
-
-          // Aggregate total sends
-          totalSends += typeof sendCount === "number" ? sendCount : 0;
-
-          // Count campaigns with replies as proxy for reply count
-          if (hasReplied) {
-            totalReplies++;
-          }
-        }
-
-        // Active leads = campaigns that have sent leads recently
-        activeLeads = campaigns.filter((c: any) => c.last_lead_sent).length;
-      } else if (campaignResult.status === "fulfilled") {
-        const errorText = await campaignResult.value.text();
-        if (
-          campaignResult.value.status === 401 ||
-          errorText.toLowerCase().includes("invalid")
-        ) {
-          errors.push("PlusVibe API key invalid - check integration_credentials");
-        } else {
-          errors.push(`PlusVibe API error: ${campaignResult.value.status}`);
-        }
-      } else if (!errors.some((e) => e.includes("PlusVibe"))) {
-        errors.push("PlusVibe campaign API timeout/unreachable");
-      }
-
-      if (statsResult.status === "fulfilled" && statsResult.value.ok) {
-        const statsData = await statsResult.value.json();
-
-        if (Array.isArray(statsData)) {
-          // Aggregate stats across all campaigns
-          let totalLeads = 0;
-          let totalContacted = 0;
-          let totalFinished = 0;
-          let totalRepliedCount = 0;
-          let totalPositive = 0;
-          let totalBounced = 0;
-          let totalOpened = 0;
-          let totalSent = 0;
-
-          statsData.forEach((c: any) => {
-            totalLeads += c.lead_count || 0;
-            totalContacted += c.lead_contacted_count || 0;
-            totalFinished += c.completed_lead_count || 0;
-            totalRepliedCount += c.replied_count || 0;
-            totalPositive += c.positive_reply_count || 0;
-            totalBounced += c.bounced_count || 0;
-            totalOpened += c.unique_opened_count || 0;
-            totalSent += c.sent_count || 0;
+      for (const campaign of campaigns) {
+        if (campaign.status === "active") {
+          activeCampaigns.push({
+            id: campaign.id,
+            name: campaign.name,
+            status: campaign.status,
+            lastSent: campaign.last_lead_sent || campaign.lastSent || campaign.modifiedAt,
+            lastReplied: campaign.last_lead_replied || campaign.lastReplied,
+            createdAt: campaign.createdAt,
+            sends: campaign.stats.sent,
+            replyRate: campaign.stats.replyRate,
           });
-
-          plusvibeStats = {
-            totalLeads,
-            contacted: totalContacted,
-            finished: totalFinished,
-            replied: totalRepliedCount,
-            positive: totalPositive,
-            bounced: totalBounced,
-            openRate:
-              totalSent > 0 ? Math.round((totalOpened / totalSent) * 100) : 0,
-          };
-
-          // Update totals for backward compatibility
-          totalReplies = totalRepliedCount;
-          positiveReplies = totalPositive;
-
-          // Build per-campaign performance
-          for (const c of statsData) {
-            const cSent = c.sent_count || 0;
-            const cReplied = c.replied_count || 0;
-            const cPositive = c.positive_reply_count || 0;
-            if (cSent > 0) {
-              campaignPerformance.push({
-                name: c.campaign_name || c.name || c._id || "Unknown",
-                sent: cSent,
-                replies: cReplied,
-                positive: cPositive,
-                rate: parseFloat(((cReplied / cSent) * 100).toFixed(1)),
-              });
-            }
-          }
-          // Sort by sent count descending
-          campaignPerformance.sort((a, b) => b.sent - a.sent);
         }
-      } else if (
-        statsResult.status === "fulfilled" &&
-        !errors.some((e) => e.includes("PlusVibe API error"))
-      ) {
-        errors.push(`PlusVibe stats API error: ${statsResult.value.status}`);
-      } else if (!errors.some((e) => e.includes("PlusVibe stats"))) {
-        errors.push("PlusVibe stats API timeout/unreachable");
+
+        if (campaign.stats.sent > 0) {
+          campaignPerformance.push({
+            name: campaign.name,
+            sent: campaign.stats.sent,
+            replies: campaign.stats.replies,
+            positive: campaign.stats.positive,
+            rate: campaign.stats.replyRate,
+          });
+        }
       }
+
+      campaignPerformance.sort((a, b) => b.sent - a.sent);
     } catch (err: any) {
       console.error("Dashboard PlusVibe fetch error:", {
         companyId,

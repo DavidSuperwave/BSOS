@@ -313,7 +313,7 @@ Pain points: ${(onboardingData.pain_points || []).join(", ")}`,
       integrationCredentials.plusvibe_workspace_id
     ) {
       try {
-        inboxSetup = await hydratePlusVibeInboxAndWebhook(id);
+        inboxSetup = await hydratePlusVibeInboxAndWebhook(id, req.nextUrl.origin);
       } catch (syncErr: any) {
         inboxSetup = {
           error: syncErr?.message || "Inbox setup failed",
