@@ -15,6 +15,7 @@ import {
 import { parseAgentDirectives, getDirectivePromptInstructions } from "@/lib/chat/agent-protocol";
 import { executeGatewayTool, getAllowedTools, type AgentType } from "@/lib/chat/tool-gateway";
 import { getPresetFlowPromptInstructions } from "@/lib/chat/preset-flows";
+import { formatReportAutomationToolDescriptions } from "@/lib/reports/report-automation";
 
 const QUEUED_STALE_MS = 1000 * 60 * 10;
 const RUNNING_STALE_MS = 1000 * 60 * 5;
@@ -212,6 +213,8 @@ async function resolveExecutionContext(task: TaskRecord) {
   });
   const systemPrompt = [
     agentPrompt,
+    "## AVAILABLE REPORT AUTOMATION TOOLS",
+    formatReportAutomationToolDescriptions(),
     getDirectivePromptInstructions(),
     getPresetFlowPromptInstructions(),
   ].join("\n\n");

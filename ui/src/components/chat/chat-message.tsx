@@ -10,6 +10,9 @@ import { ReasoningPanel } from "./reasoning-panel";
 import { SkillExecution } from "./skill-execution";
 import { DocumentCreatedCard } from "./document-created-card";
 import { TaskCard } from "./task-card";
+import { ReportArtifactCard } from "./report-artifact-card";
+import { DocumentArtifactCard } from "./document-artifact-card";
+import { ScheduleArtifactCard } from "./schedule-artifact-card";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -113,6 +116,57 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
     !message.reasoning?.trim() &&
     normalizedToolCalls.length === 0 &&
     normalizedTasks.length === 0;
+
+  const renderStructuredArtifact = (tool: (typeof normalizedToolCalls)[number]) => {
+    if (!tool.result) return null;
+
+    try {
+      const parsed = JSON.parse(tool.result);
+      if (!parsed || typeof parsed !== "object") return null;
+
+      if (tool.name === "create_report" && parsed.reportId) {
+        return (
+          <ReportArtifactCard
+            key={`report-${parsed.reportId}`}
+            reportId={parsed.reportId}
+            title={parsed.title || "Untitled report"}
+            description={parsed.description}
+            chartType={parsed.chartType}
+            dataSource={parsed.dataSource}
+          />
+        );
+      }
+
+      if (tool.name === "create_report_document" && parsed.documentId) {
+        return (
+          <DocumentArtifactCard
+            key={`structured-document-${parsed.documentId}`}
+            title={parsed.title || "Untitled document"}
+            markdown={parsed.markdown || ""}
+            reportIds={Array.isArray(parsed.reportIds) ? parsed.reportIds : []}
+            status={parsed.status}
+            category={parsed.category}
+          />
+        );
+      }
+
+      if (tool.name === "schedule_daily_report" && parsed.automationId) {
+        return (
+          <ScheduleArtifactCard
+            key={`schedule-${parsed.automationId}`}
+            title={parsed.title || "Daily report"}
+            deliveryHourUtc={parsed.deliveryHourUtc || 8}
+            enabled={parsed.enabled !== false}
+            reportId={parsed.reportId}
+          />
+        );
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  };
 
   const resolveTask = async (taskId: string, decision: "approved" | "rejected") => {
     try {
@@ -323,6 +377,9 @@ export function ChatMessage({ message, onSaveToKnowledge, variant = "default" }:
                 }
                 return null;
               })}
+
+            {normalizedToolCalls.length > 0 &&
+              normalizedToolCalls.map((tool) => renderStructuredArtifact(tool))}
 
             {message.content.includes("Running skill") && (
               <div className="mt-3">

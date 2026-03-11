@@ -533,7 +533,10 @@ function getToolsForAgentType(agentType: string): string[] {
       "create_contact",
       "get_inbox_messages",
       "research_company",
-      "add_to_memory"
+      "add_to_memory",
+      "create_report",
+      "create_report_document",
+      "schedule_daily_report"
     ],
     campaigns: [
       "search_knowledge",
@@ -542,7 +545,8 @@ function getToolsForAgentType(agentType: string): string[] {
       "update_campaign",
       "get_campaign_stats",
       "compare_campaigns",
-      "add_to_memory"
+      "add_to_memory",
+      "create_report"
     ],
     crm: [
       "search_knowledge",
@@ -563,7 +567,8 @@ function getToolsForAgentType(agentType: string): string[] {
       "suggest_reply",
       "create_draft",
       "get_sentiment_breakdown",
-      "add_to_memory"
+      "add_to_memory",
+      "create_report"
     ]
   };
   return tools[agentType] || tools.main;

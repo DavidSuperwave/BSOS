@@ -1,5 +1,9 @@
 import { executeTool } from "@/lib/agent-tools";
 import { executeKnowledgeTool } from "@/lib/knowledge/knowledge-tools";
+import {
+  executeReportAutomationTool,
+  REPORT_AUTOMATION_TOOL_NAMES,
+} from "@/lib/reports/report-automation";
 import { logInvocation } from "@/lib/tool-logger";
 
 export type AgentType = "main" | "campaigns" | "crm" | "inbox" | "research" | "knowledge";
@@ -22,6 +26,9 @@ export interface ToolExecutionResult {
 
 const TOOL_POLICIES: Record<AgentType, string[]> = {
   main: [
+    "create_report",
+    "create_report_document",
+    "schedule_daily_report",
     "create_document",
     "update_document",
     "search_documents",
@@ -49,6 +56,9 @@ const TOOL_POLICIES: Record<AgentType, string[]> = {
     "get_knowledge_doc",
   ],
   knowledge: [
+    "create_report",
+    "create_report_document",
+    "schedule_daily_report",
     "create_document",
     "update_document",
     "search_documents",
@@ -107,6 +117,15 @@ export async function executeGatewayTool(
       });
       if (!result.success) {
         throw new Error(result.error || "Knowledge tool failed");
+      }
+      data = result.data;
+    } else if (REPORT_AUTOMATION_TOOL_NAMES.has(toolName)) {
+      const result = await executeReportAutomationTool(toolName, params, {
+        companyId: context.companyId,
+        sessionId: context.sessionId,
+      });
+      if (!result.success) {
+        throw new Error(result.error || "Report automation tool failed");
       }
       data = result.data;
     } else {
