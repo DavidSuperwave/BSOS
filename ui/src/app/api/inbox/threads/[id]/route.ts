@@ -22,19 +22,6 @@ export async function GET(
   const admin = getAdmin();
 
   try {
-    // Get the thread
-    const { data: thread, error: threadError } = await admin
-      .from("email_threads")
-      .select("*")
-      .eq("id", id)
-      .single();
-
-    if (threadError) throw threadError;
-    if (!thread) {
-      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
-    }
-
-    // Get all messages in this thread
     const { data: messages, error: messagesError } = await admin
       .from("inbox_messages")
       .select("*")
@@ -42,6 +29,32 @@ export async function GET(
       .order("created_at", { ascending: true });
 
     if (messagesError) throw messagesError;
+    if (!messages || messages.length === 0) {
+      return NextResponse.json({ error: "Thread not found" }, { status: 404 });
+    }
+
+    const firstMessage = messages[0];
+    const latestMessage = messages[messages.length - 1];
+    let thread: any = null;
+
+    const { data: existingThread } = await admin
+      .from("email_threads")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    thread = existingThread || {
+      id,
+      thread_id: id,
+      company_id: firstMessage.company_id,
+      campaign_id: firstMessage.campaign_id,
+      prospect_email: firstMessage.from_email,
+      prospect_name: firstMessage.from_name,
+      subject: firstMessage.subject,
+      status: "active",
+      message_count: messages.length,
+      last_activity: latestMessage.created_at,
+    };
 
     return NextResponse.json({
       thread,
@@ -84,7 +97,12 @@ export async function PATCH(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      return NextResponse.json(
+        { error: "Thread updates are unavailable for this thread record" },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({ thread: data });
   } catch (err: any) {

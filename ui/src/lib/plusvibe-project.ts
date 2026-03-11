@@ -141,7 +141,7 @@ export async function testCredentials(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch(
-      `https://api.plusvibe.ai/api/v1/campaign/list?workspace_id=${credentials.workspaceId}`,
+      `https://api.plusvibe.ai/api/v1/campaign/list-all?workspace_id=${credentials.workspaceId}`,
       {
         headers: {
           "Content-Type": "application/json",

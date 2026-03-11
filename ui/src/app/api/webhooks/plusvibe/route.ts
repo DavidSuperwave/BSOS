@@ -194,27 +194,44 @@ export async function POST(req: NextRequest) {
       created_at: payload.timestamp || undefined,
     };
 
-    // Upsert into inbox_messages
-    const { data: message, error: insertError } = await admin
-      .from("inbox_messages")
-      .upsert(messageData as any, {
-        onConflict: "plusvibe_id",
-        ignoreDuplicates: false,
-      })
-      .select("id")
-      .single();
-
     let messageId: string | undefined;
-    if (insertError) {
-      // If upsert fails (e.g. no plusvibe_id), try insert
-      const { data: inserted, error: fallbackError } = await admin
+    let existingMessageId: string | null = null;
+
+    if (messageData.plusvibe_id) {
+      const { data: existingMessage } = await admin
+        .from("inbox_messages")
+        .select("id")
+        .eq("plusvibe_id", messageData.plusvibe_id)
+        .maybeSingle();
+      existingMessageId = existingMessage?.id || null;
+    }
+
+    if (existingMessageId) {
+      const { data: updated, error: updateError } = await admin
+        .from("inbox_messages")
+        .update(messageData as any)
+        .eq("id", existingMessageId)
+        .select("id")
+        .single();
+
+      if (updateError) {
+        console.error("[Webhook PlusVibe] Update error:", updateError);
+        return NextResponse.json(
+          { error: "Failed to update message" },
+          { status: 500 }
+        );
+      }
+
+      messageId = updated?.id;
+    } else {
+      const { data: inserted, error: insertError } = await admin
         .from("inbox_messages")
         .insert(messageData as any)
         .select("id")
         .single();
 
-      if (fallbackError) {
-        console.error("[Webhook PlusVibe] Insert error:", fallbackError);
+      if (insertError) {
+        console.error("[Webhook PlusVibe] Insert error:", insertError);
         return NextResponse.json(
           { error: "Failed to save message" },
           { status: 500 }
@@ -222,8 +239,6 @@ export async function POST(req: NextRequest) {
       }
 
       messageId = inserted?.id;
-    } else {
-      messageId = message?.id;
     }
 
     // Update email thread if thread_id exists
@@ -277,10 +292,11 @@ export async function POST(req: NextRequest) {
 
     const settings = (company as any)?.settings || {};
     const agentStatus = (company as any)?.agent_status;
+    const agentId = (company as any)?.agent_config?.agent_id;
 
-    if (settings.auto_analyze && agentStatus === "active" && messageId) {
+    if (settings.auto_analyze && agentStatus === "active" && agentId && messageId) {
       // Spawn async OpenClaw inbox session for analysis
-      spawnAnalysis(admin, companyId, messageId, from_email, subject, emailBody).catch(
+      spawnAnalysis(admin, agentId, companyId, messageId, from_email, subject, emailBody).catch(
         (err) => console.error("[Webhook PlusVibe] Auto-analyze error:", err)
       );
     }
@@ -315,6 +331,7 @@ export async function POST(req: NextRequest) {
  */
 async function spawnAnalysis(
   admin: any,
+  agentId: string,
   companyId: string,
   messageId: string,
   fromEmail: string,
@@ -350,7 +367,7 @@ Body:
 ${body}`;
 
   try {
-    const result = await sendMessage(companyId, prompt, session.id);
+    const result = await sendMessage(agentId, prompt, session.id);
     if (!result) return;
 
     // Parse result and update inbox_messages

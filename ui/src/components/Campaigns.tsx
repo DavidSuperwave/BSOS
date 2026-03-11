@@ -286,7 +286,7 @@ export default function Campaigns() {
   const [analyticsCampaignId, setAnalyticsCampaignId] = useState<string | null>(null);
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [createCampaignName, setCreateCampaignName] = useState('');
-  const [createCampaignType, setCreateCampaignType] = useState<'learning' | 'basic'>('learning');
+  const [createCampaignType, setCreateCampaignType] = useState<'learning' | 'traditional'>('learning');
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -993,10 +993,10 @@ export default function Campaigns() {
               </button>
               <button
                 type="button"
-                onClick={() => setCreateCampaignType('basic')}
+                onClick={() => setCreateCampaignType('traditional')}
                 className={cn(
                   'flex flex-col items-start gap-2 rounded-xl border p-4 text-left transition-all',
-                  createCampaignType === 'basic'
+                  createCampaignType === 'traditional'
                     ? 'border-primary bg-primary/5 ring-2 ring-primary/20'
                     : 'border-border bg-card hover:border-border/80 hover:bg-muted/30'
                 )}
@@ -1005,9 +1005,9 @@ export default function Campaigns() {
                   <Zap className="h-4 w-4" />
                 </div>
                 <div>
-                  <p className="font-semibold text-foreground">Basic Campaign</p>
+                  <p className="font-semibold text-foreground">Traditional Campaign</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    No learning. Runs exactly as configured—no AI suggestions or optimization.
+                    No learning or optimization mode is attached. This creates a standard PlusVibe campaign that runs exactly as configured.
                   </p>
                 </div>
               </button>

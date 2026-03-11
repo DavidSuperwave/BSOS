@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { PlusVibeError, plusvibeFetch } from "@/lib/plusvibe-client";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+let adminClient: ReturnType<typeof createClient> | null = null;
+function getAdmin() {
+  if (!adminClient) adminClient = createClient(supabaseUrl, supabaseServiceKey);
+  return adminClient;
+}
 
 export async function GET(
   req: NextRequest,
@@ -24,10 +34,24 @@ export async function GET(
       page: String(page),
       limit: String(limit),
     });
-    for (const key of ["status", "search", "q", "tag", "label", "step", "sort", "direction"]) {
-      const value = req.nextUrl.searchParams.get(key);
-      if (value) query.set(key, value);
+    const status = req.nextUrl.searchParams.get("status");
+    const label = req.nextUrl.searchParams.get("label") || req.nextUrl.searchParams.get("tag");
+    const search =
+      req.nextUrl.searchParams.get("search") || req.nextUrl.searchParams.get("q");
+    const sort = req.nextUrl.searchParams.get("sort");
+    const direction = req.nextUrl.searchParams.get("direction");
+
+    if (status) query.set("status", status);
+    if (label) query.set("label", label);
+    if (search) {
+      if (search.includes("@")) {
+        query.set("email", search);
+      } else {
+        query.set("first_name", search);
+      }
     }
+    if (sort) query.set("sort", sort);
+    if (direction) query.set("direction", direction);
 
     const data = await plusvibeFetch(
       `/lead/workspace-leads?${query.toString()}`,
@@ -52,11 +76,29 @@ export async function GET(
       })
     );
 
+    if (leads.length > 0) {
+      return NextResponse.json({
+        leads,
+        total: normalized.total,
+        page: normalized.page,
+        limit: normalized.limit,
+        source: "plusvibe",
+      });
+    }
+
+    const fallback = await buildInboxLeadFallback({
+      companyId,
+      campaignId,
+      page,
+      limit,
+    });
+
     return NextResponse.json({
-      leads,
-      total: normalized.total,
-      page: normalized.page,
-      limit: normalized.limit,
+      leads: fallback.leads,
+      total: fallback.total,
+      page,
+      limit,
+      source: fallback.total > 0 ? "inbox_fallback" : "plusvibe",
     });
   } catch (err: any) {
     if (err instanceof PlusVibeError) {
@@ -195,4 +237,47 @@ function readNumber(value: unknown): number | null {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+async function buildInboxLeadFallback(params: {
+  companyId: string;
+  campaignId: string;
+  page: number;
+  limit: number;
+}) {
+  const admin = getAdmin();
+  const { data, error } = await admin
+    .from("inbox_messages")
+    .select("from_email, from_name, subject, created_at")
+    .eq("company_id", params.companyId)
+    .eq("campaign_id", params.campaignId)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (error || !data) {
+    return { leads: [], total: 0 };
+  }
+
+  const unique = new Map<string, any>();
+  for (const row of data) {
+    if (!row.from_email || unique.has(row.from_email)) continue;
+    unique.set(row.from_email, {
+      id: row.from_email,
+      name: row.from_name || row.from_email,
+      email: row.from_email,
+      company: "",
+      title: "",
+      status: "Replied",
+      tag: "Inbox reply",
+      step: "Replied",
+      lastActivity: row.created_at || "",
+    });
+  }
+
+  const allLeads = Array.from(unique.values());
+  const start = (params.page - 1) * params.limit;
+  return {
+    leads: allLeads.slice(start, start + params.limit),
+    total: allLeads.length,
+  };
 }

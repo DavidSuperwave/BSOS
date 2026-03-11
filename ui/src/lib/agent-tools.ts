@@ -7,6 +7,13 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { plusvibeFetch } from "@/lib/plusvibe-client";
+import {
+  fetchCampaignDetail,
+  fetchCampaignsWithStats,
+  summarizeCampaignStats,
+} from "@/lib/plusvibe-campaigns";
+import { setOptimizationMode } from "@/lib/bsos/phase-manager";
 
 let supabaseClient: ReturnType<typeof createClient> | null = null;
 
@@ -20,8 +27,6 @@ function getSupabase() {
   return supabaseClient;
 }
 
-const PLUSVIBE_BASE = "https://api.plusvibe.ai/api/v1";
-
 export interface Tool {
   name: string;
   description: string;
@@ -32,38 +37,11 @@ export interface Tool {
   execute: (params: Record<string, any>) => Promise<any>;
 }
 
-/**
- * Get PlusVibe credentials for a company, falling back to env vars.
- */
-async function getPlusVibeKeys(companyId?: string) {
-  if (companyId) {
-    const supabase = getSupabase();
-    const { data } = await supabase
-      .from("companies")
-      .select(
-        "integration_credentials, plusvibe_api_key, plusvibe_workspace_id"
-      )
-      .eq("id", companyId)
-      .single();
-
-    if (data) {
-      const row = data as any;
-      const apiKey =
-        row.integration_credentials?.plusvibe_api_key ||
-        row.plusvibe_api_key ||
-        process.env.PLUSVIBE_API_KEY;
-      const workspaceId =
-        row.integration_credentials?.plusvibe_workspace_id ||
-        row.plusvibe_workspace_id ||
-        process.env.PLUSVIBE_WORKSPACE_ID;
-      return { apiKey, workspaceId };
-    }
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
   }
-
-  return {
-    apiKey: process.env.PLUSVIBE_API_KEY,
-    workspaceId: process.env.PLUSVIBE_WORKSPACE_ID,
-  };
+  return "";
 }
 
 export const tools: Tool[] = [
@@ -86,28 +64,11 @@ export const tools: Tool[] = [
       limit: { type: "number", description: "Maximum campaigns to return" },
     },
     execute: async (params) => {
-      const { apiKey, workspaceId } = await getPlusVibeKeys(params.companyId);
-
-      const res = await fetch(
-        `${PLUSVIBE_BASE}/campaign/list?workspace_id=${workspaceId}`,
-        {
-          headers: {
-            "x-api-key": apiKey!,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!res.ok) throw new Error(`PlusVibe API error: ${res.status}`);
-
-      const data = await res.json();
-      let campaigns = Array.isArray(data)
-        ? data
-        : data.value || data.data || [];
+      let campaigns = (await fetchCampaignsWithStats(params.companyId)).campaigns;
 
       if (params.status) {
         campaigns = campaigns.filter(
-          (c: any) => c.status === params.status
+          (c: any) => c.status.toLowerCase() === String(params.status).toLowerCase()
         );
       }
 
@@ -118,12 +79,13 @@ export const tools: Tool[] = [
       return {
         count: campaigns.length,
         campaigns: campaigns.map((c: any) => ({
-          id: c._id || c.id,
+          id: c.id,
           name: c.name,
           status: c.status,
-          createdAt: c.created_at,
-          lastSent: c.last_lead_sent,
-          lastReplied: c.last_lead_replied,
+          createdAt: c.createdAt,
+          lastSent: c.last_lead_sent || c.lastSent,
+          lastReplied: c.last_lead_replied || c.lastReplied,
+          stats: c.stats,
         })),
       };
     },
@@ -144,28 +106,169 @@ export const tools: Tool[] = [
       },
     },
     execute: async (params) => {
-      const { apiKey, workspaceId } = await getPlusVibeKeys(params.companyId);
-
-      const listRes = await fetch(
-        `${PLUSVIBE_BASE}/campaign/list?workspace_id=${workspaceId}`,
-        {
-          headers: {
-            "x-api-key": apiKey!,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      const listData = await listRes.json();
-      const campaigns = Array.isArray(listData)
-        ? listData
-        : listData.value || [];
-      const campaign = campaigns.find(
-        (c: any) =>
-          c._id === params.campaignId || c.id === params.campaignId
-      );
-
+      const { campaign } = await fetchCampaignDetail(params.companyId, params.campaignId);
       if (!campaign) throw new Error("Campaign not found");
       return campaign;
+    },
+  },
+  {
+    name: "create_campaign",
+    description: "Create a new campaign in PlusVibe",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+      campaignName: {
+        type: "string",
+        description: "Campaign name",
+        required: true,
+      },
+      mode: {
+        type: "string",
+        description: "Campaign mode: learning or traditional",
+      },
+      sourceCampaignId: {
+        type: "string",
+        description: "Optional source campaign ID to duplicate from",
+      },
+    },
+    execute: async (params) => {
+      const campaignName = firstString(params.campaignName, params.name, params.camp_name);
+      if (!campaignName) throw new Error("campaignName is required");
+
+      const created = await plusvibeFetch("/campaign/add/campaign", params.companyId, {
+        method: "POST",
+        body: { camp_name: campaignName },
+      });
+      const campaignId = firstString(created?._id, created?.id, created?.campaign_id);
+      if (!campaignId) throw new Error("Campaign created but no campaign ID returned");
+
+      if (params.sourceCampaignId) {
+        const { campaign: sourceCampaign } = await fetchCampaignDetail(params.companyId, params.sourceCampaignId);
+        if (sourceCampaign) {
+          const clonePayload: Record<string, any> = {
+            campaign_id: campaignId,
+            camp_name: campaignName,
+          };
+
+          for (const key of [
+            "schedules",
+            "sequences",
+            "first_wait_time",
+            "first_wait_time_unit",
+            "email_accounts",
+            "send_priority",
+            "ignore_mailbox_limit",
+            "template_id",
+            "stop_on_lead_replied",
+            "is_emailopened_tracking",
+            "is_unsubscribed_link",
+            "send_as_txt",
+            "exclude_ooo",
+            "ooo_nr_opt",
+            "ooo_nr_ai_d",
+            "ooo_nr_d",
+            "is_acc_based_sending",
+            "is_pause_on_bouncerate",
+            "bounce_rate_limit",
+            "send_risky_email",
+            "unsub_blocklist",
+            "other_email_acc",
+            "is_esp_match",
+          ]) {
+            if (sourceCampaign[key] !== undefined) clonePayload[key] = sourceCampaign[key];
+          }
+
+          if (!clonePayload.schedules && sourceCampaign.schedule) {
+            clonePayload.schedules = sourceCampaign.schedule;
+          }
+
+          if (Object.keys(clonePayload).length > 2) {
+            await plusvibeFetch("/campaign/update/campaign", params.companyId, {
+              method: "PATCH",
+              body: clonePayload,
+            });
+          }
+        }
+      }
+
+      if (params.mode) {
+        const mode = String(params.mode).toLowerCase() === "learning" ? "suggest" : "manual";
+        await setOptimizationMode(params.companyId, campaignId, mode);
+      }
+
+      const { campaign } = await fetchCampaignDetail(params.companyId, campaignId);
+      return campaign || { id: campaignId, name: campaignName, status: "draft" };
+    },
+  },
+  {
+    name: "update_campaign",
+    description: "Update an existing PlusVibe campaign",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+      campaignId: {
+        type: "string",
+        description: "Campaign ID",
+        required: true,
+      },
+      updates: {
+        type: "object",
+        description: "Update payload for PlusVibe campaign/update/campaign",
+        required: true,
+      },
+    },
+    execute: async (params) => {
+      if (!params?.updates || typeof params.updates !== "object") {
+        throw new Error("updates object is required");
+      }
+
+      const payload = {
+        ...params.updates,
+        campaign_id: params.campaignId,
+        ...(params.updates?.campaignName ? { camp_name: params.updates.campaignName } : {}),
+      };
+
+      await plusvibeFetch("/campaign/update/campaign", params.companyId, {
+        method: "PATCH",
+        body: payload,
+      });
+
+      const { campaign } = await fetchCampaignDetail(params.companyId, params.campaignId);
+      return campaign;
+    },
+  },
+  {
+    name: "get_campaign_stats",
+    description: "Get stats for one campaign or all campaigns",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+      campaignId: {
+        type: "string",
+        description: "Optional campaign ID",
+      },
+    },
+    execute: async (params) => {
+      if (params.campaignId) {
+        const { campaign } = await fetchCampaignDetail(params.companyId, params.campaignId);
+        if (!campaign) throw new Error("Campaign not found");
+        return { campaignId: params.campaignId, stats: campaign.stats };
+      }
+
+      const { campaigns } = await fetchCampaignsWithStats(params.companyId);
+      return {
+        count: campaigns.length,
+        totals: summarizeCampaignStats(campaigns),
+      };
     },
   },
 
@@ -401,4 +504,6 @@ export function getToolDescriptions(): string {
     .join("\n");
 }
 
-export default { tools, executeTool, getToolDescriptions };
+const agentTools = { tools, executeTool, getToolDescriptions };
+
+export default agentTools;
