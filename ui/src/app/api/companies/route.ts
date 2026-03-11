@@ -4,6 +4,10 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { envConfig } from "@/lib/env";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 import { hydratePlusVibeInboxAndWebhook } from "@/lib/plusvibe-inbox-sync";
+import { seedCompanyProjects } from "@/lib/knowledge/project-seeder";
+import { BsosSupermemoryClient } from "@/lib/supermemory/client";
+import { seedSupermemoryForCompany } from "@/lib/supermemory/onboarding-seeder";
+import { bsosCompanyContainerTag } from "@/lib/supermemory/bsos-tags";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -177,7 +181,7 @@ export async function POST(req: NextRequest) {
         slug,
         domain: domain || null,
         status: "onboarding",
-        supermemory_namespace: `blitzscale:company:${slug}`,
+        supermemory_namespace: bsosCompanyContainerTag(slug),
         settings: { auto_analyze: false },
       })
       .select()
@@ -193,23 +197,22 @@ export async function POST(req: NextRequest) {
       throw error;
     }
 
-    // Initialize Supermemory namespace
+    try {
+      await seedCompanyProjects(company.id, admin, user.id);
+    } catch (seedErr: any) {
+      console.warn("[Companies API] Project seed skipped:", seedErr?.message || seedErr);
+    }
+
     const smKey = envConfig.supermemory.apiKey();
     if (smKey) {
       try {
-        await fetch("https://api.supermemory.ai/v3/memories", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${smKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: `# Company: ${name}\nSlug: ${slug}\nCreated: ${new Date().toISOString()}`,
-            containerTags: [`blitzscale:company:${slug}`, "company-info"],
-          }),
+        await seedSupermemoryForCompany({
+          companySlug: slug,
+          companyName: name,
+          supermemoryClient: BsosSupermemoryClient.getInstance(smKey),
         });
-      } catch {
-        // Non-blocking
+      } catch (seedError: any) {
+        console.warn("[Companies API] Supermemory seed skipped:", seedError?.message || seedError);
       }
     }
 

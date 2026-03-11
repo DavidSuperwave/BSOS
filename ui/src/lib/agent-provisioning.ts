@@ -1,5 +1,5 @@
 import { envConfig } from "./env";
-import { companyContainerTag } from "./supermemory-client";
+import { bsosCompanyContainerTag } from "./supermemory/bsos-tags";
 
 interface CompanyData {
   id: string;
@@ -14,7 +14,7 @@ interface CompanyData {
  */
 export function generateWorkspace(company: CompanyData) {
   const od = company.onboarding_data;
-  const containerTag = companyContainerTag(company.slug);
+  const containerTag = bsosCompanyContainerTag(company.slug);
 
   // Build customer fit sections
   const bestFitSection = (od.best_fit_customers || []).length > 0
@@ -197,7 +197,7 @@ You can create new tool integrations as skills:
  * Includes Supermemory plugin settings with autoCapture disabled.
  */
 export function generateAgentConfig(company: CompanyData) {
-  const containerTag = companyContainerTag(company.slug);
+  const containerTag = bsosCompanyContainerTag(company.slug);
 
   return {
     model: "openrouter/moonshotai/kimi-k2.5",
@@ -251,6 +251,6 @@ export function provisionAgent(company: CompanyData) {
     token,
     workspace,
     agentConfig,
-    containerTag: companyContainerTag(company.slug),
+    containerTag: bsosCompanyContainerTag(company.slug),
   };
 }

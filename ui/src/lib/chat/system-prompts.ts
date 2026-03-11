@@ -1,10 +1,8 @@
 import fs from "fs";
 import path from "path";
-import {
-  searchInsights,
-  companyContainerTag,
-} from "@/lib/supermemory-client";
 import { envConfig } from "@/lib/env";
+import { BsosSupermemoryClient } from "@/lib/supermemory/client";
+import { getSkillContext } from "@/lib/supermemory/profile-context";
 
 // ── SOUL.md cache ────────────────────────────────────────────────
 let soulMdCache: string | null = null;
@@ -45,24 +43,7 @@ async function fetchCompanyProfile(slug: string): Promise<string> {
   const now = Date.now();
   const cached = profileCache.get(slug);
   if (cached && now - cached.ts < PROFILE_TTL_MS) return cached.text;
-
-  const apiKey = envConfig.supermemory.apiKey();
-  if (!apiKey) return "";
-
-  try {
-    const containerTag = companyContainerTag(slug);
-    const results = await searchInsights(apiKey, containerTag, {
-      query: "company profile overview",
-      category: "company_profile",
-      limit: 1,
-    });
-
-    const text = results.length > 0 ? results[0].content : "";
-    profileCache.set(slug, { text, ts: now });
-    return text;
-  } catch {
-    return "";
-  }
+  return "";
 }
 
 // ── Prompt building blocks ───────────────────────────────────────
@@ -190,9 +171,25 @@ export async function buildAgentSystemPrompt(params: PromptParams): Promise<stri
   let profileContent = "";
   if (params.company?.slug) {
     try {
-      profileContent = await fetchCompanyProfile(params.company.slug);
+      const apiKey =
+        params.company.integration_credentials?.supermemory_api_key ||
+        envConfig.supermemory.apiKey();
+
+      if (apiKey) {
+        const context = await getSkillContext({
+          companySlug: params.company.slug,
+          skillCategory: "agent",
+          query: "company profile, ICP, onboarding summary, GTM strategy",
+          supermemoryClient: BsosSupermemoryClient.getInstance(apiKey),
+        });
+        profileContent = context.systemPromptBlock;
+        profileCache.set(params.company.slug, { text: profileContent, ts: Date.now() });
+      } else {
+        profileContent = await fetchCompanyProfile(params.company.slug);
+      }
     } catch {
       // Non-blocking — fall back to DB data
+      profileContent = await fetchCompanyProfile(params.company.slug);
     }
   }
 
