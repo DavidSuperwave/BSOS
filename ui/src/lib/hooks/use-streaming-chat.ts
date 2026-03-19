@@ -194,14 +194,23 @@ export function useStreamingChat({
       let pendingSseBuffer = "";
       let taskMap: Record<string, TaskView> = {};
       let flowBudget: FlowBudgetView | undefined;
+      let sessionIdSet = false;
+      let streamError: string | null = null;
 
       const finalizeStream = () => {
+        let displayContent = fullContent;
+        if (!displayContent && streamError) {
+          displayContent = streamError;
+        } else if (!displayContent) {
+          displayContent = "No response received. The agent may be unavailable — please try again.";
+        }
+
         setMessages(prev =>
           prev.map(m =>
             m.id === assistantMessage.id
               ? {
                   ...m,
-                  content: fullContent,
+                  content: displayContent,
                   reasoning: reasoning || undefined,
                   reasoningDuration,
                   contentParts,
@@ -533,11 +542,24 @@ export function useStreamingChat({
               );
             }
 
+            if (parsed.type === "session" && parsed.sessionId) {
+              setCurrentSessionId(parsed.sessionId);
+              sessionIdSet = true;
+            }
+
             if (parsed.type === "done") {
-              // Capture session ID if new
-              if (parsed.sessionId && !currentSessionId) {
+              if (parsed.sessionId && !currentSessionId && !sessionIdSet) {
                 setCurrentSessionId(parsed.sessionId);
+                sessionIdSet = true;
               }
+            }
+
+            if (parsed.type === "error") {
+              const errorMsg = typeof parsed.error === "string"
+                ? parsed.error
+                : "An unexpected error occurred";
+              streamError = errorMsg;
+              fullContent = "";
             }
           } catch {
             // Ignore parse errors

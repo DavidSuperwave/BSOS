@@ -1111,6 +1111,13 @@ async function streamChatCompletion({
   };
 
   const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({ type: "session", sessionId })}\n\n`
+        )
+      );
+    },
     async pull(controller) {
       const { done, value } = await reader.read();
       if (done) {
