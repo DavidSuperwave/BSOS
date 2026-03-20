@@ -5,6 +5,7 @@ import { mapFormToContract } from "@/lib/intake";
 import { OnboardingFormData } from "@/lib/intake/profile-builder";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
+import { ensureProjectExists, seedCompanyProjects } from "@/lib/knowledge/project-seeder";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -16,35 +17,40 @@ function getAdmin() {
 }
 
 async function ensureDefaultProject(admin: ReturnType<typeof createClient>, companyId: string, userId: string) {
-  const { data: existing } = await admin
-    .from("knowledge_projects")
-    .select("id")
-    .eq("company_id", companyId)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  try {
+    await seedCompanyProjects(companyId, admin, userId);
+    return await ensureProjectExists("company-playbook", companyId, admin);
+  } catch {
+    const { data: existing } = await admin
+      .from("knowledge_projects")
+      .select("id")
+      .eq("company_id", companyId)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
-  if (existing?.id) return existing.id;
+    if (existing?.id) return existing.id;
 
-  const { data: created, error } = await admin
-    .from("knowledge_projects")
-    .insert({
-      company_id: companyId,
-      name: "General",
-      slug: "default",
-      description: "Default project for onboarding intake knowledge",
-      type: "vault",
-      container_tag_suffix: "default",
-      created_by: userId,
-      folder_structure: ["Profile", "ICP", "Campaigns", "Assets", "Analysis"],
-    })
-    .select("id")
-    .single();
+    const { data: created, error } = await admin
+      .from("knowledge_projects")
+      .insert({
+        company_id: companyId,
+        name: "General",
+        slug: "default",
+        description: "Default project for onboarding intake knowledge",
+        type: "vault",
+        container_tag_suffix: "default",
+        created_by: userId,
+        folder_structure: ["Profile", "ICP", "Campaigns", "Assets", "Analysis"],
+      })
+      .select("id")
+      .single();
 
-  if (error || !created?.id) {
-    throw new Error(`Failed to ensure default project: ${error?.message || "unknown error"}`);
+    if (error || !created?.id) {
+      throw new Error(`Failed to ensure default project: ${error?.message || "unknown error"}`);
+    }
+    return created.id;
   }
-  return created.id;
 }
 
 const limiter = createRateLimiter({ limit: 5, window: 300 }); // 5 requests per 5 minutes

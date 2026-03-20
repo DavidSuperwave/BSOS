@@ -2,9 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "../env";
 import { CompanyProfile } from "./profile-builder";
 import {
-  storeDocument as storeTaggedDocument,
+  BsosSupermemoryClient,
   type DocumentMetadata,
-} from "@/lib/supermemory/storage";
+} from "@/lib/supermemory/client";
 import { projectContainerTag } from "@/lib/supermemory-client";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -167,13 +167,13 @@ export async function storeDocument(
     metadata: DocumentMetadata;
   }
 ): Promise<boolean> {
-  const result = await storeTaggedDocument(apiKey, {
+  const result = await BsosSupermemoryClient.getInstance(apiKey).addDocument({
     content: params.content,
     containerTag: params.containerTag,
     customId: params.customId,
     metadata: params.metadata,
   });
-  return result.success;
+  return Boolean(result?.id);
 }
 
 async function storeAndCache(params: {
@@ -185,14 +185,14 @@ async function storeAndCache(params: {
   projectId: string;
   companyId: string;
 }) {
-  const result = await storeTaggedDocument(params.apiKey, {
+  const result = await BsosSupermemoryClient.getInstance(params.apiKey).addDocument({
     content: params.content,
     containerTag: params.containerTag,
     customId: params.customId,
     metadata: params.metadata,
   });
 
-  if (!result.success) return false;
+  if (!result?.id) return false;
 
   await cacheDocumentRef({
     projectId: params.projectId,

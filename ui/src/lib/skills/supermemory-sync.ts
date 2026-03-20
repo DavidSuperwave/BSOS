@@ -1,4 +1,4 @@
-import { storeDocument } from "@/lib/supermemory/storage";
+import { BsosSupermemoryClient, type DocumentMetadata } from "@/lib/supermemory/client";
 
 export interface DataPoint {
   name: string;
@@ -43,7 +43,31 @@ export async function storeInsight(
   companyId: string
 ): Promise<{ success: boolean; docId?: string }> {
   const now = new Date().toISOString();
-  const response = await storeDocument(apiKey, {
+  const metadata: DocumentMetadata = {
+    project_id: projectId,
+    company_id: companyId,
+    tags: {
+      primary: "analysis",
+      secondary: [insight.category, insight.pattern || "pattern_unknown"],
+      stage: insight.validity.reviewStatus,
+    },
+    relationships: {
+      derived_from: sourceDocIds,
+      analysis_of: sourceDocIds,
+    },
+    title: insight.statement.slice(0, 100),
+    type: "skill_insight",
+    source: "agent_generated",
+    execution_id: insight.lineage.executionId,
+    skill_id: insight.lineage.skillId,
+    confidence: insight.validity.confidence,
+    review_status: insight.validity.reviewStatus,
+    created_at: now,
+    updated_at: now,
+    version: 1,
+  };
+
+  const response = await BsosSupermemoryClient.getInstance(apiKey).addDocument({
     content: [
       `# Insight`,
       "",
@@ -59,30 +83,8 @@ export async function storeInsight(
       ...(insight.nuance.caveats.length > 0 ? insight.nuance.caveats.map((c) => `- ${c}`) : ["- none"]),
     ].join("\n"),
     containerTag,
-    metadata: {
-      project_id: projectId,
-      company_id: companyId,
-      tags: {
-        primary: "analysis",
-        secondary: [insight.category, insight.pattern || "pattern_unknown"],
-        stage: insight.validity.reviewStatus,
-      },
-      relationships: {
-        derived_from: sourceDocIds,
-        analysis_of: sourceDocIds,
-      },
-      title: insight.statement.slice(0, 100),
-      type: "skill_insight",
-      source: "agent_generated",
-      execution_id: insight.lineage.executionId,
-      skill_id: insight.lineage.skillId,
-      confidence: insight.validity.confidence,
-      review_status: insight.validity.reviewStatus,
-      created_at: now,
-      updated_at: now,
-      version: 1,
-    },
+    metadata,
   });
 
-  return response.success ? { success: true, docId: response.id } : { success: false };
+  return response?.id ? { success: true, docId: response.id } : { success: false };
 }

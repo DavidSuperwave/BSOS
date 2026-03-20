@@ -1,7 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { envConfig } from "@/lib/env";
 import { assessChatValue } from "./value-assessment";
-import { storeDocument } from "@/lib/supermemory/storage";
+import { BsosSupermemoryClient, type DocumentMetadata } from "@/lib/supermemory/client";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -101,27 +101,29 @@ export async function compactChatSession(options: CompactOptions): Promise<{
     .eq("id", options.sessionId);
 
   if (assessment.recommendation !== "discard" && options.supermemoryApiKey) {
-    await storeDocument(options.supermemoryApiKey, {
+    const metadata: DocumentMetadata = {
+      project_id: "default",
+      company_id: options.companyId,
+      tags: {
+        primary: "analysis",
+        secondary: ["chat_compaction", assessment.recommendation],
+        stage: "approved",
+      },
+      relationships: {
+        related_to: [options.sessionKey],
+      },
+      title: `Chat Compaction ${options.sessionKey}`,
+      type: "chat_compaction",
+      source: "agent_generated",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      version: 1,
+    };
+
+    await BsosSupermemoryClient.getInstance(options.supermemoryApiKey).addDocument({
       content: summary,
       containerTag: options.projectContainerTag,
-      metadata: {
-        project_id: "default",
-        company_id: options.companyId,
-        tags: {
-          primary: "analysis",
-          secondary: ["chat_compaction", assessment.recommendation],
-          stage: "approved",
-        },
-        relationships: {
-          related_to: [options.sessionKey],
-        },
-        title: `Chat Compaction ${options.sessionKey}`,
-        type: "chat_compaction",
-        source: "agent_generated",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        version: 1,
-      },
+      metadata,
     });
   }
 

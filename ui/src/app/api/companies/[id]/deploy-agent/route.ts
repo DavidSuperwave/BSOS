@@ -6,16 +6,15 @@ import {
   createAgent,
   setAgentFile,
 } from "@/lib/openclaw-client";
-import {
-  seedCompanyProfile,
-  storeInsight,
-} from "@/lib/supermemory-client";
 import { ensureCompanySupermemoryKey } from "@/lib/supermemory-key-pool";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
 import { runIntakePipeline, mapFormToContract } from "@/lib/intake";
 import { hydratePlusVibeInboxAndWebhook } from "@/lib/plusvibe-inbox-sync";
+import { seedCompanyProjects } from "@/lib/knowledge/project-seeder";
+import { BsosSupermemoryClient } from "@/lib/supermemory/client";
+import { seedSupermemoryForCompany } from "@/lib/supermemory/onboarding-seeder";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -187,6 +186,12 @@ export async function POST(
 
     if (updateError) throw updateError;
 
+    try {
+      await seedCompanyProjects(id, admin, result.auth.userId);
+    } catch (seedErr: any) {
+      console.warn("[Deploy Agent] Project seed skipped:", seedErr?.message || seedErr);
+    }
+
     // Create agent in OpenClaw via RPC
     let openclawCreated = false;
     try {
@@ -210,37 +215,18 @@ export async function POST(
       );
     }
 
-    // Seed Supermemory with company profile + ICP using company key first.
+    // Seed Supermemory with canonical BSOS containers using company key first.
     const smKey =
       integrationCredentials.supermemory_api_key || envConfig.supermemory.apiKey();
     if (smKey) {
-      const containerTag = agent.containerTag;
-
-      // Seed company profile
-      await seedCompanyProfile(
-        smKey,
-        containerTag,
-        agent.workspace.agentsMd,
-        company.id
-      );
-
-      // Seed ICP as separate insight for better recall
-      if (onboardingData.icp_titles || onboardingData.icp_verticals) {
-        await storeInsight(smKey, containerTag, {
-          content: `ICP Definition for ${company.name}:
-Titles: ${(onboardingData.icp_titles || []).join(", ")}
-Company size: ${onboardingData.icp_company_size || "N/A"}
-Verticals: ${(onboardingData.icp_verticals || []).join(", ")}
-Geography: ${(onboardingData.icp_geo || []).join(", ")}
-Pain points: ${(onboardingData.pain_points || []).join(", ")}`,
-          category: "icp_refinement",
-          customId: `icp_baseline_${company.id}`,
-          metadata: {
-            company_id: company.id,
-            source: "onboarding",
-            version: 1,
-          },
+      try {
+        await seedSupermemoryForCompany({
+          companySlug: company.slug,
+          companyName: company.name,
+          supermemoryClient: BsosSupermemoryClient.getInstance(smKey),
         });
+      } catch (seedError: any) {
+        console.warn("[Deploy Agent] Supermemory seed failed:", seedError?.message || seedError);
       }
     }
 

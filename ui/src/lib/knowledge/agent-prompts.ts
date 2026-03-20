@@ -2,7 +2,7 @@
  * System Prompts for Knowledge Base Agents
  */
 
-import type { PrimaryTag } from "@/lib/supermemory/storage";
+import type { PrimaryTag } from "@/lib/supermemory/client";
 
 interface KnowledgeContext {
   primaryTag?: PrimaryTag;
