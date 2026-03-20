@@ -51,7 +51,7 @@ export function PlatformConnectionsPanel({
   const onSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/inboxing/platforms", {
+      const res = await fetch("/api/domains/platforms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -75,7 +75,7 @@ export function PlatformConnectionsPanel({
   const onDelete = async (id: string) => {
     if (!window.confirm("Delete this platform connection?")) return;
     const res = await fetch(
-      `/api/inboxing/platforms/${id}?companyId=${encodeURIComponent(companyId)}`,
+      `/api/domains/platforms/${id}?companyId=${encodeURIComponent(companyId)}`,
       { method: "DELETE" }
     );
     if (!res.ok) {

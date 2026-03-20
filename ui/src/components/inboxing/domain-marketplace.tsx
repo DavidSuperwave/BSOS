@@ -61,7 +61,7 @@ export function DomainMarketplace({ companyId }: DomainMarketplaceProps) {
       if (activeTab !== "all") params.set("domain_type", activeTab);
       if (search) params.set("search", search);
 
-      const res = await fetch(`/api/inboxing/request-domain?${params}`);
+      const res = await fetch(`/api/domains/request?${params}`);
       if (!res.ok) throw new Error("Failed to load domains");
       const data = await res.json();
       setDomains(data.domains || []);
@@ -85,7 +85,7 @@ export function DomainMarketplace({ companyId }: DomainMarketplaceProps) {
       if (domainId) reserveBody.domain_inventory_id = domainId;
       else if (domainType) reserveBody.domain_type = domainType;
 
-      const reserveRes = await fetch("/api/inboxing/request-domain", {
+      const reserveRes = await fetch("/api/domains/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reserveBody),

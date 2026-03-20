@@ -20,9 +20,12 @@ interface DomainActionsMenuProps {
 }
 
 async function downloadCsv(companyId: string, domain: DomainRecord) {
-  const res = await fetch(
-    `/api/inboxing/domains/${domain.id}/csv?companyId=${encodeURIComponent(companyId)}`
-  );
+  const providerDomainId = domain.inboxing_id || domain.id;
+  const requestUrl =
+    domain.access_mode === "assignment"
+      ? `/api/domains/protected/${providerDomainId}/csv?companyId=${encodeURIComponent(companyId)}`
+      : `/api/domains/${domain.id}/csv?companyId=${encodeURIComponent(companyId)}`;
+  const res = await fetch(requestUrl);
   if (!res.ok) {
     const payload = await res.json().catch(() => ({ error: "Download failed" }));
     alert(payload.error || "Download failed");
@@ -30,12 +33,12 @@ async function downloadCsv(companyId: string, domain: DomainRecord) {
   }
 
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
+  const downloadUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
+  a.href = downloadUrl;
   a.download = `${domain.domain}-credentials.csv`;
   a.click();
-  URL.revokeObjectURL(url);
+  URL.revokeObjectURL(downloadUrl);
 }
 
 export function DomainActionsMenu({
@@ -44,13 +47,20 @@ export function DomainActionsMenu({
   onUpload,
   onChanged,
 }: DomainActionsMenuProps) {
+  const isAssignmentDomain = domain.access_mode === "assignment";
+  const providerDomainId = domain.inboxing_id || domain.id;
+
   const onCopyDomain = async () => {
     await navigator.clipboard.writeText(domain.domain);
   };
 
   const onViewNameservers = async () => {
+    const url =
+      isAssignmentDomain
+        ? `/api/domains/protected/${providerDomainId}/nameservers?companyId=${encodeURIComponent(companyId)}`
+        : `/api/domains/${domain.id}/nameservers?companyId=${encodeURIComponent(companyId)}`;
     const res = await fetch(
-      `/api/inboxing/domains/${domain.id}/nameservers?companyId=${encodeURIComponent(companyId)}`
+      url
     );
     const payload = await res.json();
     if (!res.ok) {
@@ -76,7 +86,7 @@ export function DomainActionsMenu({
       .map((tag) => tag.trim())
       .filter(Boolean);
 
-    const res = await fetch(`/api/inboxing/domains/${domain.id}`, {
+    const res = await fetch(`/api/domains/${domain.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyId, tags }),
@@ -97,7 +107,7 @@ export function DomainActionsMenu({
     const redirectType = window.prompt("Redirect type: NONE | REGULAR | MASKED", "REGULAR");
     if (redirectType === null) return;
 
-    const res = await fetch(`/api/inboxing/domains/${domain.id}`, {
+    const res = await fetch(`/api/domains/${domain.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -129,7 +139,7 @@ export function DomainActionsMenu({
         return { first_name, last_name: rest.join(" ") || "Sender" };
       });
 
-    const res = await fetch(`/api/inboxing/domains/${domain.id}`, {
+    const res = await fetch(`/api/domains/${domain.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyId, names }),
@@ -146,7 +156,7 @@ export function DomainActionsMenu({
     if (!window.confirm(`Delete ${domain.domain}?`)) return;
 
     const res = await fetch(
-      `/api/inboxing/domains/${domain.id}?companyId=${encodeURIComponent(companyId)}`,
+      `/api/domains/${domain.id}?companyId=${encodeURIComponent(companyId)}`,
       { method: "DELETE" }
     );
     if (!res.ok) {
@@ -165,24 +175,34 @@ export function DomainActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>Mailboxes</DropdownMenuLabel>
-        <DropdownMenuItem onClick={() => downloadCsv(companyId, domain)}>
-          Download CSV
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => onUpload(domain)}>
-          Upload to Platform
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onViewNameservers}>View Nameservers</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Settings</DropdownMenuLabel>
-        <DropdownMenuItem onClick={onEditTags}>Edit Tags</DropdownMenuItem>
-        <DropdownMenuItem onClick={onUpdateRedirect}>Update Redirect</DropdownMenuItem>
-        <DropdownMenuItem onClick={onChangeNames}>Change Names & Emails</DropdownMenuItem>
+        <DropdownMenuLabel>Domain</DropdownMenuLabel>
+        {domain.can_download_csv !== false ? (
+          <DropdownMenuItem onClick={() => downloadCsv(companyId, domain)}>
+            Download CSV
+          </DropdownMenuItem>
+        ) : null}
+        {domain.can_upload !== false ? (
+          <DropdownMenuItem onClick={() => onUpload(domain)}>
+            Upload to Platform
+          </DropdownMenuItem>
+        ) : null}
+        {domain.can_view_nameservers !== false ? (
+          <DropdownMenuItem onClick={onViewNameservers}>View Nameservers</DropdownMenuItem>
+        ) : null}
+        {domain.can_manage !== false ? <DropdownMenuSeparator /> : null}
+        {domain.can_manage !== false ? <DropdownMenuLabel>Settings</DropdownMenuLabel> : null}
+        {domain.can_manage !== false ? <DropdownMenuItem onClick={onEditTags}>Edit Tags</DropdownMenuItem> : null}
+        {domain.can_manage !== false ? <DropdownMenuItem onClick={onUpdateRedirect}>Update Redirect</DropdownMenuItem> : null}
+        {domain.can_manage !== false ? (
+          <DropdownMenuItem onClick={onChangeNames}>Change Names & Emails</DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onClick={onCopyDomain}>Copy Domain</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="text-destructive" onClick={onDelete}>
-          Delete Domain
-        </DropdownMenuItem>
+        {domain.can_manage !== false ? <DropdownMenuSeparator /> : null}
+        {domain.can_manage !== false ? (
+          <DropdownMenuItem className="text-destructive" onClick={onDelete}>
+            Delete Domain
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

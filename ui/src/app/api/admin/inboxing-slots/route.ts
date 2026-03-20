@@ -14,10 +14,15 @@ export async function GET() {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    // Get slots from Inboxing API using platform key
-    const slots = await inboxing.getSlots({ usePlatformKey: true });
-
-    return NextResponse.json({ slots });
+    try {
+      const slots = await inboxing.getSlots({ usePlatformKey: true });
+      return NextResponse.json({ slots });
+    } catch (error: any) {
+      return NextResponse.json({
+        slots: null,
+        provider_error: error.message || "Live Inboxing sync unavailable",
+      });
+    }
   } catch (error: any) {
     console.error("[Admin Inboxing Slots] Error:", error);
     return NextResponse.json(

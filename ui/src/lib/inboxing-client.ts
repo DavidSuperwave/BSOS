@@ -1,18 +1,9 @@
 /**
- * Inboxing API v2 Client — Refactored for Distribution System
- * 
- * DUAL-MODE API KEY RESOLUTION:
- * 1. Platform Key (INBOXING_API_KEY env var) — used by admin for bulk operations
- *    and by the distribution system when provisioning from the Superwave pool.
- * 2. Company Key (from companies.integration_credentials) — used when a company
- *    brings their own Inboxing account (BYO mode).
- * 
- * SECURITY: All list/get operations go through Supabase (company_id scoped),
- * never expose raw Inboxing API responses to end users.
- * 
- * Base URL: https://v2.inboxing.com/api/v2
- * Auth: X-API-Key header
- * Rate Limit: 120 req/min
+ * Inboxing API v2 Client
+ *
+ * Uses the platform-level Inboxing API key for all managed domain operations.
+ * Routes that talk to the provider should pass `{ usePlatformKey: true }`
+ * for clarity, while explicit `apiKey` remains available for one-off overrides.
  */
 
 const INBOXING_BASE = "https://v2.inboxing.com/api/v2";
@@ -32,17 +23,11 @@ function getPlatformApiKey(): string | null {
 /**
  * Resolve the correct API key for a request.
  * Priority:
- *   1. Explicit key passed in (for admin/platform operations)
- *   2. Company key from integration_credentials (BYO mode)
- *   3. Platform key (managed mode — Superwave controls the domains)
- * 
- * @param opts.apiKey - Explicit key override
- * @param opts.companyInboxingKey - Company's own Inboxing key (from DB)
- * @param opts.usePlatformKey - Force platform key (admin operations)
+ *   1. Explicit key passed in
+ *   2. Platform key from environment
  */
 function resolveApiKey(opts?: {
   apiKey?: string;
-  companyInboxingKey?: string | null;
   usePlatformKey?: boolean;
 }): string {
   // Explicit override
@@ -54,9 +39,6 @@ function resolveApiKey(opts?: {
     if (!platformKey) throw new Error("INBOXING_API_KEY not configured in environment");
     return platformKey;
   }
-  
-  // Company's own key (BYO mode)
-  if (opts?.companyInboxingKey) return opts.companyInboxingKey;
   
   // Default: platform key
   const platformKey = getPlatformApiKey();
@@ -78,8 +60,6 @@ function buildHeaders(apiKey: string): Record<string, string> {
 export interface InboxingRequestContext {
   /** Explicit API key override */
   apiKey?: string;
-  /** Company's own Inboxing API key (from integration_credentials) */
-  companyInboxingKey?: string | null;
   /** Force use of Superwave's platform key (admin/managed operations) */
   usePlatformKey?: boolean;
 }
@@ -132,8 +112,6 @@ export interface InboxingPagination {
 
 /**
  * Create a domain with mailboxes via Inboxing.com.
- * For managed mode: uses platform key (admin buying inventory).
- * For BYO mode: uses company's own key.
  */
 export async function createDomain(
   data: CreateDomainRequest,

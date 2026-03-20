@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import * as inboxing from "@/lib/inboxing-client";
 import { requireCompanyAccess } from "@/lib/api-auth";
+import { getCompanyVisibleDomains } from "@/lib/inboxing-visible-domains";
+import { hasAvailableSlots } from "@/lib/inboxing-slots";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -22,7 +24,10 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get("status");
   const search = searchParams.get("search");
   const page = parseInt(searchParams.get("page") || "1");
-  const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
+  const limit = Math.min(
+    parseInt(searchParams.get("per_page") || searchParams.get("limit") || "50"),
+    100
+  );
   const offset = (page - 1) * limit;
 
   if (!companyId) {
@@ -32,28 +37,23 @@ export async function GET(request: NextRequest) {
   const accessResult = await requireCompanyAccess(companyId);
   if ("error" in accessResult) return accessResult.error;
 
-  const admin = getAdmin();
   try {
-    let query = admin
-      .from("inboxing_domains")
-      .select("*", { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    query = query.eq("company_id", companyId);
-    if (status) query = query.eq("status", status);
-    if (search) query = query.ilike("domain", `%${search}%`);
-
-    const { data, error, count } = await query;
-    if (error) throw error;
+    const visibleDomains = await getCompanyVisibleDomains(companyId);
+    const filteredDomains = visibleDomains.filter((domain) => {
+      const matchesStatus = !status || domain.status === status;
+      const matchesSearch =
+        !search || domain.domain.toLowerCase().includes(search.trim().toLowerCase());
+      return matchesStatus && matchesSearch;
+    });
+    const paginatedDomains = filteredDomains.slice(offset, offset + limit);
 
     return NextResponse.json({
-      domains: data || [],
+      domains: paginatedDomains,
       pagination: {
         page,
         limit,
-        total: count || 0,
-        pages: Math.ceil((count || 0) / limit),
+        total: filteredDomains.length,
+        pages: Math.max(1, Math.ceil(filteredDomains.length / limit)),
       },
     });
   } catch (err: any) {
@@ -91,6 +91,15 @@ export async function POST(req: NextRequest) {
     }
     const accessResult = await requireCompanyAccess(company_id);
     if ("error" in accessResult) return accessResult.error;
+
+    const domainCount = Array.isArray(domainList) ? domainList.length : 0;
+    const slotsOk = await hasAvailableSlots(company_id, domainCount);
+    if (!slotsOk) {
+      return NextResponse.json(
+        { error: "Insufficient domain slots. Contact your administrator to increase your allocation." },
+        { status: 403 }
+      );
+    }
 
     if (!domainList?.length || !names?.length) {
       return NextResponse.json(
@@ -170,6 +179,25 @@ export async function POST(req: NextRequest) {
         status: "processing",
         payload: { domain: domainName, user_count, names, auto_upload },
       });
+
+      if (data.inboxing_id) {
+        const { error: assignmentError } = await admin
+          .from("inboxing_domain_assignments")
+          .upsert(
+            {
+              company_id,
+              inboxing_domain_id: data.id,
+              inboxing_id: data.inboxing_id,
+              domain_name: domainName,
+              status: "active",
+            },
+            { onConflict: "inboxing_id,company_id" }
+          );
+
+        if (assignmentError) {
+          console.warn(`[Assignments] Failed to link ${domainName}:`, assignmentError.message);
+        }
+      }
 
       results.push({
         domain: domainName,

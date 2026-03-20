@@ -18,7 +18,7 @@ const NAV_ITEMS = [
   { href: "/admin/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/admin/users", label: "Users", icon: Users },
   { href: "/admin/campaigns", label: "Campaigns", icon: Activity },
-  { href: "/admin/inboxing-domains", label: "Inboxing Domains", icon: Globe },
+  { href: "/admin/domain-management", label: "Domain Management", icon: Globe },
   { href: "/admin/health", label: "System Health", icon: BarChart3 },
   { href: "/admin/approvals", label: "Approvals", icon: Bell },
   { href: "/admin/supermemory-keys", label: "Supermemory Keys", icon: Key },

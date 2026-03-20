@@ -4,7 +4,7 @@ import * as inboxing from "@/lib/inboxing-client";
 import { verifyDomainAccess } from "@/lib/inboxing-slots";
 
 interface RouteParams {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 /**
@@ -14,7 +14,7 @@ interface RouteParams {
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { searchParams } = new URL(request.url);
   const companyId = searchParams.get("companyId");
-  const inboxingId = params.id;
+  const { id: inboxingId } = await params;
 
   if (!companyId) {
     return NextResponse.json({ error: "companyId is required" }, { status: 400 });

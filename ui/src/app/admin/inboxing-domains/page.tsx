@@ -71,6 +71,8 @@ type SlotInfo = {
 export default function AdminInboxingDomainsPage() {
   const [domains, setDomains] = useState<InboxingDomain[]>([]);
   const [slots, setSlots] = useState<SlotInfo | null>(null);
+  const [providerWarning, setProviderWarning] = useState<string | null>(null);
+  const [assignedTotal, setAssignedTotal] = useState(0);
   const [pagination, setPagination] = useState({
     page: 1,
     per_page: 50,
@@ -83,6 +85,7 @@ export default function AdminInboxingDomainsPage() {
   const [toast, setToast] = useState<ToastState>(null);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedDomain, setSelectedDomain] = useState<InboxingDomain | null>(null);
   const [assignDialogOpen, setAssignDialogOpen] = useState(false);
   const [userSearchQuery, setUserSearchQuery] = useState("");
@@ -97,6 +100,13 @@ export default function AdminInboxingDomainsPage() {
     }, 3500);
   }, []);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery.trim());
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [searchQuery]);
+
   const fetchDomains = useCallback(async () => {
     setLoading(true);
     try {
@@ -104,14 +114,16 @@ export default function AdminInboxingDomainsPage() {
       params.set("page", String(pagination.page));
       params.set("per_page", String(pagination.per_page));
       if (statusFilter !== "all") params.set("status", statusFilter);
-      if (searchQuery.trim()) params.set("search", searchQuery.trim());
+      if (debouncedSearchQuery) params.set("search", debouncedSearchQuery);
 
-      const res = await fetch(`/api/admin/inboxing-domains?${params.toString()}`, {
+      const res = await fetch(`/api/admin/domains?${params.toString()}`, {
         cache: "no-store",
       });
       if (!res.ok) throw new Error("Failed to load domains");
       const data = await res.json();
       setDomains(Array.isArray(data?.domains) ? data.domains : []);
+      setProviderWarning(typeof data?.provider_error === "string" ? data.provider_error : null);
+      setAssignedTotal(typeof data?.assigned_total === "number" ? data.assigned_total : 0);
       setPagination((prev) => ({
         ...prev,
         ...(data?.pagination ?? {}),
@@ -122,11 +134,11 @@ export default function AdminInboxingDomainsPage() {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.per_page, statusFilter, searchQuery, showToast]);
+  }, [pagination.page, pagination.per_page, statusFilter, debouncedSearchQuery, showToast]);
 
   const fetchSlots = useCallback(async () => {
     try {
-      const res = await fetch("/api/admin/inboxing-slots", { cache: "no-store" });
+      const res = await fetch("/api/admin/domains/slots", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setSlots(data?.slots || null);
@@ -181,7 +193,7 @@ export default function AdminInboxingDomainsPage() {
 
     setAssigning(true);
     try {
-      const res = await fetch("/api/admin/inboxing-domains", {
+      const res = await fetch("/api/admin/domains", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -219,7 +231,7 @@ export default function AdminInboxingDomainsPage() {
 
     setReclaimingId(domain.id);
     try {
-      const res = await fetch("/api/admin/inboxing-domains", {
+      const res = await fetch("/api/admin/domains", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ inboxing_ids: [domain.id] }),
@@ -242,7 +254,7 @@ export default function AdminInboxingDomainsPage() {
 
   const handleDownloadCsv = useCallback(async (domain: InboxingDomain) => {
     try {
-      const res = await fetch(`/api/inboxing/domains/${domain.id}/csv`);
+      const res = await fetch(`/api/admin/domains/${domain.id}/csv`);
       if (!res.ok) {
         if (res.status === 403) {
           showToast("error", "CSV not available yet (24-hour warmup period).");
@@ -283,9 +295,9 @@ export default function AdminInboxingDomainsPage() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-white text-lg font-semibold">Inboxing Domains</h1>
+            <h1 className="text-white text-lg font-semibold">Domain Management</h1>
             <p className="text-zinc-400 text-sm mt-1">
-              Manage all domains from Inboxing API and assign them to companies.
+              Manage platform domains and assign them to companies.
             </p>
           </div>
         </div>
@@ -307,6 +319,12 @@ export default function AdminInboxingDomainsPage() {
           </div>
         )}
 
+        {providerWarning ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            Live Inboxing sync is unavailable right now. Showing locally assigned domains only.
+          </div>
+        ) : null}
+
         {/* Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
@@ -318,7 +336,7 @@ export default function AdminInboxingDomainsPage() {
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
             <p className="text-xs text-zinc-400">Assigned Domains</p>
             <p className="text-2xl font-semibold text-blue-400 mt-2">
-              {loading ? "—" : domains.filter((d) => d.assigned_to_company_id).length}
+              {loading ? "—" : assignedTotal}
             </p>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
@@ -437,7 +455,7 @@ export default function AdminInboxingDomainsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        {domain.csv_available_at ? (
+                        {domain.status === "active" ? (
                           <Button
                             size="sm"
                             variant="outline"

@@ -44,6 +44,115 @@ function firstString(...values: unknown[]) {
   return "";
 }
 
+interface AgentDomainRecord {
+  id: string;
+  record_id: string | null;
+  domain: string;
+  status: string;
+  mailbox_count: number;
+  user_count?: number;
+  health_score: number;
+  dns_spf: boolean;
+  dns_dkim: boolean;
+  dns_dmarc: boolean;
+  created_at: string;
+  assigned_at?: string | null;
+  tags: string[];
+  access_mode: "local" | "assignment";
+  nameservers?: string[];
+  redirect_url?: string | null;
+  redirect_type?: string | null;
+}
+
+async function getCompanyDomainRecords(companyId: string): Promise<AgentDomainRecord[]> {
+  const supabase = getSupabase();
+  const [{ data: localDomains, error: localError }, { data: assignments, error: assignmentError }] =
+    await Promise.all([
+      supabase
+        .from("inboxing_domains")
+        .select(
+          "id, domain, status, inboxing_id, mailbox_count, user_count, health_score, dns_spf, dns_dkim, dns_dmarc, created_at, tags, nameservers, redirect_url, redirect_type"
+        )
+        .eq("company_id", companyId),
+      supabase
+        .from("inboxing_domain_assignments")
+        .select(
+          "inboxing_id, domain_name, assigned_at, inboxing_domains(id, domain, status, inboxing_id, mailbox_count, user_count, health_score, dns_spf, dns_dkim, dns_dmarc, created_at, tags, nameservers, redirect_url, redirect_type)"
+        )
+        .eq("company_id", companyId)
+        .eq("status", "active"),
+    ]);
+
+  if (localError) throw new Error(localError.message);
+  if (assignmentError) throw new Error(assignmentError.message);
+
+  const domains = new Map<string, AgentDomainRecord>();
+
+  for (const domain of localDomains || []) {
+    domains.set(domain.inboxing_id || domain.id, {
+      id: domain.inboxing_id || domain.id,
+      record_id: domain.id,
+      domain: domain.domain,
+      status: domain.status,
+      mailbox_count: domain.mailbox_count ?? 0,
+      user_count: domain.user_count ?? undefined,
+      health_score: domain.health_score ?? 0,
+      dns_spf: domain.dns_spf ?? false,
+      dns_dkim: domain.dns_dkim ?? false,
+      dns_dmarc: domain.dns_dmarc ?? false,
+      created_at: domain.created_at,
+      assigned_at: null,
+      tags: domain.tags || [],
+      access_mode: "local",
+      nameservers: domain.nameservers || [],
+      redirect_url: domain.redirect_url || null,
+      redirect_type: domain.redirect_type || "NONE",
+    });
+  }
+
+  for (const assignment of assignments || []) {
+    const localDomain = Array.isArray((assignment as any).inboxing_domains)
+      ? (assignment as any).inboxing_domains[0]
+      : (assignment as any).inboxing_domains;
+    const key = (assignment as any).inboxing_id;
+
+    if (domains.has(key)) {
+      const existing = domains.get(key)!;
+      domains.set(key, {
+        ...existing,
+        assigned_at: (assignment as any).assigned_at || existing.assigned_at || null,
+      });
+      continue;
+    }
+
+    domains.set(key, {
+      id: key,
+      record_id: localDomain?.id || null,
+      domain: (assignment as any).domain_name || localDomain?.domain || key,
+      status: localDomain?.status || "assigned",
+      mailbox_count: localDomain?.mailbox_count ?? 0,
+      user_count: localDomain?.user_count ?? undefined,
+      health_score: localDomain?.health_score ?? 0,
+      dns_spf: localDomain?.dns_spf ?? false,
+      dns_dkim: localDomain?.dns_dkim ?? false,
+      dns_dmarc: localDomain?.dns_dmarc ?? false,
+      created_at: localDomain?.created_at || (assignment as any).assigned_at,
+      assigned_at: (assignment as any).assigned_at || null,
+      tags: localDomain?.tags || [],
+      access_mode: "assignment",
+      nameservers: localDomain?.nameservers || [],
+      redirect_url: localDomain?.redirect_url || null,
+      redirect_type: localDomain?.redirect_type || "NONE",
+    });
+  }
+
+  return Array.from(domains.values()).sort((a, b) => {
+    const aDate = new Date(a.assigned_at || a.created_at).getTime();
+    const bDate = new Date(b.assigned_at || b.created_at).getTime();
+    return bDate - aDate;
+  });
+}
+
 export const tools: Tool[] = [
   // ============================================
   // PLUSVIBE TOOLS
@@ -268,6 +377,152 @@ export const tools: Tool[] = [
       return {
         count: campaigns.length,
         totals: summarizeCampaignStats(campaigns),
+      };
+    },
+  },
+
+  // ============================================
+  // DOMAIN TOOLS
+  // ============================================
+  {
+    name: "list_domains",
+    description: "List domains available to the company",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+      status: {
+        type: "string",
+        description: "Optional status filter",
+      },
+      limit: { type: "number", description: "Maximum domains to return" },
+    },
+    execute: async (params) => {
+      if (!params.companyId) {
+        throw new Error("companyId is required");
+      }
+      let list = await getCompanyDomainRecords(params.companyId);
+
+      if (params.status) {
+        list = list.filter((domain) => domain.status === params.status);
+      }
+
+      if (params.limit) {
+        list = list.slice(0, params.limit);
+      }
+
+      return { count: list.length, domains: list };
+    },
+  },
+  {
+    name: "get_domain_details",
+    description: "Get one domain with mailbox, DNS, and health details",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+      domainId: {
+        type: "string",
+        description: "Domain identifier returned by list_domains",
+      },
+      domainName: {
+        type: "string",
+        description: "Domain name, e.g. example.com",
+      },
+    },
+    execute: async (params) => {
+      if (!params.companyId) throw new Error("companyId is required");
+      if (!params.domainId && !params.domainName) {
+        throw new Error("domainId or domainName is required");
+      }
+
+      const domains = await getCompanyDomainRecords(params.companyId);
+      const match = domains.find((domain) =>
+        params.domainId
+          ? domain.id === params.domainId
+          : domain.domain.toLowerCase() === String(params.domainName).toLowerCase()
+      );
+
+      if (!match) throw new Error("Domain not found");
+      return match;
+    },
+  },
+  {
+    name: "get_domain_slots",
+    description: "Check slot allocation for the company",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+    },
+    execute: async (params) => {
+      if (!params.companyId) throw new Error("companyId is required");
+      const supabase = getSupabase();
+      const { data, error } = await supabase
+        .from("inboxing_slot_allocations")
+        .select("total_slots, used_slots, free_slots, allocation_type, expires_at")
+        .eq("company_id", params.companyId)
+        .maybeSingle();
+
+      if (error) throw new Error(error.message);
+      if (!data) {
+        return { total: 0, used: 0, available: 0, type: "free", expires_at: null };
+      }
+
+      return {
+        total: data.total_slots,
+        used: data.used_slots,
+        available: data.free_slots ?? Math.max(0, data.total_slots - data.used_slots),
+        type: data.allocation_type,
+        expires_at: data.expires_at || null,
+      };
+    },
+  },
+  {
+    name: "get_domain_health",
+    description: "Get health summary for all company domains",
+    parameters: {
+      companyId: {
+        type: "string",
+        description: "Company ID for scoped access",
+        required: true,
+      },
+      domainId: {
+        type: "string",
+        description: "Optional single-domain filter",
+      },
+    },
+    execute: async (params) => {
+      if (!params.companyId) throw new Error("companyId is required");
+      let domains = await getCompanyDomainRecords(params.companyId);
+      if (params.domainId) {
+        domains = domains.filter((domain) => domain.id === params.domainId);
+      }
+
+      const activeDomains = domains.filter((domain) => domain.status === "active");
+      const avgHealth = activeDomains.length
+        ? Math.round(
+            activeDomains.reduce((sum, domain) => sum + (domain.health_score || 0), 0) /
+              activeDomains.length
+          )
+        : 0;
+
+      return {
+        total: domains.length,
+        active: activeDomains.length,
+        healthy: activeDomains.filter((domain) => (domain.health_score || 0) >= 80).length,
+        at_risk: activeDomains.filter(
+          (domain) => (domain.health_score || 0) >= 40 && (domain.health_score || 0) < 80
+        ).length,
+        burned: activeDomains.filter((domain) => (domain.health_score || 0) < 40).length,
+        avg_health: avgHealth,
+        domains,
       };
     },
   },
@@ -504,6 +759,6 @@ export function getToolDescriptions(): string {
     .join("\n");
 }
 
-const agentTools = { tools, executeTool, getToolDescriptions };
+const agentToolsModule = { tools, executeTool, getToolDescriptions };
 
-export default agentTools;
+export default agentToolsModule;

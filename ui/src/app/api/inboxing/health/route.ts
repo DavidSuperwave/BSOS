@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCompanyAccess } from "@/lib/api-auth";
+import { getCompanyVisibleDomains } from "@/lib/inboxing-visible-domains";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -23,20 +24,8 @@ export async function GET(request: NextRequest) {
   }
   const accessResult = await requireCompanyAccess(companyId);
   if ("error" in accessResult) return accessResult.error;
-  const admin = getAdmin();
-
   try {
-    let query = admin
-      .from("inboxing_domains")
-      .select("id, domain, status, health_score, mailbox_count, dns_spf, dns_dkim, dns_dmarc, last_health_check, tags, campaign_id, created_at")
-      .order("health_score", { ascending: true });
-
-    query = query.eq("company_id", companyId);
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    const domains = data || [];
+    const domains = await getCompanyVisibleDomains(companyId);
     const summary = {
       total: domains.length,
       healthy: domains.filter((d) => d.health_score >= 80).length,

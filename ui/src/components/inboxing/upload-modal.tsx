@@ -97,7 +97,7 @@ export function UploadModal({
               skip_verified: skipVerified,
             };
 
-      const res = await fetch("/api/inboxing/upload", {
+      const res = await fetch("/api/domains/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),

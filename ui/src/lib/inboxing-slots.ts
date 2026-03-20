@@ -84,7 +84,7 @@ export async function verifyDomainAccess(
   inboxingId: string
 ): Promise<boolean> {
   const admin = getAdmin();
-  const { data, error } = await admin
+  const { data: assignment } = await admin
     .from("inboxing_domain_assignments")
     .select("id")
     .eq("company_id", companyId)
@@ -92,7 +92,16 @@ export async function verifyDomainAccess(
     .eq("status", "active")
     .maybeSingle();
 
-  return !error && !!data;
+  if (assignment) return true;
+
+  const { data: localDomain } = await admin
+    .from("inboxing_domains")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("inboxing_id", inboxingId)
+    .maybeSingle();
+
+  return !!localDomain;
 }
 
 /**

@@ -30,77 +30,127 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get("status");
     const search = searchParams.get("search");
 
-    // Fetch domains from Inboxing API using platform key
-    const inboxingResult = await inboxing.listDomains(
-      {
-        page,
-        per_page: perPage,
-        status: status || undefined,
-        search: search || undefined,
-      },
-      { usePlatformKey: true }
-    );
-
     const admin = getAdmin();
+    const { count: assignedTotal } = await admin
+      .from("inboxing_domain_assignments")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "active");
 
-    // Get assignment info from database
-    const inboxingIds = inboxingResult.data.map((d) => d.id);
-    const { data: assignments } = inboxingIds.length > 0
-      ? await admin
-          .from("inboxing_domain_assignments")
-          .select("inboxing_id, company_id, status, assigned_at, companies(id, name, slug)")
-          .in("inboxing_id", inboxingIds)
-          .eq("status", "active")
-      : { data: [] };
-
-    const assignmentMap = new Map(
-      (assignments || []).map((a: any) => [
-        a.inboxing_id,
+    try {
+      const inboxingResult = await inboxing.listDomains(
         {
-          company_id: a.company_id,
-          company_name: a.companies?.name,
-          company_slug: a.companies?.slug,
-          assigned_at: a.assigned_at,
-          status: a.status,
+          page,
+          per_page: perPage,
+          status: status || undefined,
+          search: search || undefined,
         },
-      ])
-    );
+        { usePlatformKey: true }
+      );
 
-    // Fetch full domain details including redirect URLs (if not in list response)
-    // Fetch in parallel batches to get redirect URLs
-    const domainDetails = await Promise.allSettled(
-      inboxingResult.data.map((d) =>
-        inboxing.getDomain(d.id, { usePlatformKey: true }).catch((err) => {
-          console.warn(`Failed to fetch details for domain ${d.id}:`, err.message);
-          return d; // Fallback to list data
+      // Get assignment info from database
+      const inboxingIds = inboxingResult.data.map((d) => d.id);
+      const { data: assignments } = inboxingIds.length > 0
+        ? await admin
+            .from("inboxing_domain_assignments")
+            .select("inboxing_id, company_id, status, assigned_at, companies(id, name, slug)")
+            .in("inboxing_id", inboxingIds)
+            .eq("status", "active")
+        : { data: [] };
+
+      const assignmentMap = new Map(
+        (assignments || []).map((a: any) => [
+          a.inboxing_id,
+          {
+            company_id: a.company_id,
+            company_name: a.companies?.name,
+            company_slug: a.companies?.slug,
+            assigned_at: a.assigned_at,
+            status: a.status,
+          },
+        ])
+      );
+
+      const enrichedDomains = inboxingResult.data.map((domain) => {
+        const assignment = assignmentMap.get(domain.id);
+        
+        return {
+          ...domain,
+          redirect_url: (domain as any)?.redirect_url ?? null,
+          redirect_type: (domain as any)?.redirect_type ?? null,
+          assigned_to_company_id: assignment?.company_id ?? null,
+          assigned_to_company_name: assignment?.company_name ?? null,
+          assigned_to_company_slug: assignment?.company_slug ?? null,
+          assigned_at: assignment?.assigned_at ?? null,
+          assignment_status: assignment?.status ?? null,
+        };
+      });
+
+      return NextResponse.json({
+        domains: enrichedDomains,
+        pagination: inboxingResult.pagination,
+        assigned_total: assignedTotal ?? 0,
+      });
+    } catch (providerError: any) {
+      const { data: assignments, error: assignmentError } = await admin
+        .from("inboxing_domain_assignments")
+        .select(
+          "inboxing_id, domain_name, assigned_at, status, company_id, companies(id, name, slug), inboxing_domains(status, mailbox_count, redirect_url, redirect_type, created_at)"
+        )
+        .eq("status", "active")
+        .order("assigned_at", { ascending: false });
+
+      if (assignmentError) {
+        throw providerError;
+      }
+
+      const fallbackDomains = (assignments || [])
+        .map((assignment: any) => {
+          const localDomain = Array.isArray(assignment.inboxing_domains)
+            ? assignment.inboxing_domains[0]
+            : assignment.inboxing_domains;
+          const domainStatus = localDomain?.status || assignment.status || "assigned";
+
+          return {
+            id: assignment.inboxing_id,
+            domain: assignment.domain_name || assignment.inboxing_id,
+            status: domainStatus,
+            user_count: 0,
+            mailbox_count: localDomain?.mailbox_count ?? 0,
+            tags: [],
+            nameservers: [],
+            csv_available_at: null,
+            created_at: localDomain?.created_at || assignment.assigned_at,
+            redirect_url: localDomain?.redirect_url || null,
+            redirect_type: localDomain?.redirect_type || null,
+            assigned_to_company_id: assignment.company_id,
+            assigned_to_company_name: assignment.companies?.name || null,
+            assigned_to_company_slug: assignment.companies?.slug || null,
+            assigned_at: assignment.assigned_at || null,
+            assignment_status: assignment.status || null,
+          };
         })
-      )
-    );
+        .filter((domain) => {
+          const matchesStatus = !status || domain.status === status;
+          const matchesSearch =
+            !search || domain.domain.toLowerCase().includes(search.trim().toLowerCase());
+          return matchesStatus && matchesSearch;
+        });
 
-    // Enrich domains with full details and assignment info
-    const enrichedDomains = inboxingResult.data.map((domain, index) => {
-      const detailResult = domainDetails[index];
-      const fullDomain = detailResult.status === "fulfilled" ? detailResult.value : domain;
-      const assignment = assignmentMap.get(domain.id);
-      
-      return {
-        ...domain,
-        // Use full domain details if available
-        ...(typeof fullDomain === "object" && fullDomain !== null ? fullDomain : {}),
-        redirect_url: (fullDomain as any)?.redirect_url || (domain as any)?.redirect_url || null,
-        redirect_type: (fullDomain as any)?.redirect_type || (domain as any)?.redirect_type || null,
-        assigned_to_company_id: assignment?.company_id || null,
-        assigned_to_company_name: assignment?.company_name || null,
-        assigned_to_company_slug: assignment?.company_slug || null,
-        assigned_at: assignment?.assigned_at || null,
-        assignment_status: assignment?.status || null,
-      };
-    });
+      const start = (page - 1) * perPage;
+      const paginatedDomains = fallbackDomains.slice(start, start + perPage);
 
-    return NextResponse.json({
-      domains: enrichedDomains,
-      pagination: inboxingResult.pagination,
-    });
+      return NextResponse.json({
+        domains: paginatedDomains,
+        pagination: {
+          page,
+          per_page: perPage,
+          total: fallbackDomains.length,
+          total_pages: Math.max(1, Math.ceil(fallbackDomains.length / perPage)),
+        },
+        assigned_total: assignedTotal ?? 0,
+        provider_error: providerError.message || "Live Inboxing sync unavailable",
+      });
+    }
   } catch (error: any) {
     console.error("[Admin Inboxing Domains] Error:", error);
     return NextResponse.json(
@@ -148,35 +198,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Company not found" }, { status: 404 });
     }
 
-    // Fetch domain details from Inboxing API
-    const domainDetails = await Promise.allSettled(
-      inboxing_ids.map((id: string) =>
-        inboxing.getDomain(id, { usePlatformKey: true })
-      )
-    );
-
     const results = [];
     for (let i = 0; i < inboxing_ids.length; i++) {
       const inboxingId = inboxing_ids[i];
-      const domainResult = domainDetails[i];
-
-      const fallbackDomainName =
+      const resolvedDomainName =
         typeof domainNameMap?.[inboxingId] === "string" && domainNameMap[inboxingId].trim()
           ? domainNameMap[inboxingId].trim()
-          : null;
-
-      if (domainResult.status === "rejected" && !fallbackDomainName) {
-        results.push({
-          inboxing_id: inboxingId,
-          success: false,
-          error: domainResult.reason?.message || "Failed to fetch domain",
-        });
-        continue;
-      }
-      const resolvedDomainName =
-        domainResult.status === "fulfilled"
-          ? domainResult.value?.domain || fallbackDomainName || `inboxing-${inboxingId}`
-          : fallbackDomainName || `inboxing-${inboxingId}`;
+          : `domain-${inboxingId}`;
 
       // Check if already assigned
       const { data: existing } = await admin

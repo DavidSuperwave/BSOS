@@ -56,7 +56,7 @@ export function PlatformUploadPanel({
 
   const clearHistory = async () => {
     if (!window.confirm("Clear upload history for this company?")) return;
-    const res = await fetch("/api/inboxing/upload/clear", {
+    const res = await fetch("/api/domains/upload/clear", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ companyId }),
@@ -72,7 +72,7 @@ export function PlatformUploadPanel({
   const retryJob = async (job: UploadJob) => {
     setWorkingJobId(job.id);
     try {
-      const res = await fetch(`/api/inboxing/upload/${job.id}/retry`, {
+      const res = await fetch(`/api/domains/upload/${job.id}/retry`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ companyId }),
@@ -92,7 +92,7 @@ export function PlatformUploadPanel({
     setWorkingJobId(job.id);
     try {
       const res = await fetch(
-        `/api/inboxing/upload/${job.id}?companyId=${encodeURIComponent(companyId)}`,
+        `/api/domains/upload/${job.id}?companyId=${encodeURIComponent(companyId)}`,
         { method: "DELETE" }
       );
       if (!res.ok) {

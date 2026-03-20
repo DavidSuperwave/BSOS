@@ -49,6 +49,10 @@ export function DomainsPanel({ companyId, domains, platforms, onChanged }: Domai
   }, [domains, search, statusFilter]);
 
   const onUpload = (domain: DomainRecord) => {
+    if (domain.can_upload === false) {
+      window.alert("This domain is not ready for platform upload yet.");
+      return;
+    }
     setUploadDomainIds([domain.id]);
     setOpenUploadModal(true);
   };
@@ -144,10 +148,10 @@ export function DomainsPanel({ companyId, domains, platforms, onChanged }: Domai
                   </div>
                 </td>
                 <td className="p-3 text-xs text-muted-foreground">
-                  {domain.tags?.length ? domain.tags.join(", ") : "Add tags"}
+                  {domain.tags?.length ? domain.tags.join(", ") : domain.access_mode === "assignment" ? "Assigned by admin" : "Add tags"}
                 </td>
                 <td className="p-3 text-xs text-muted-foreground">
-                  {new Date(domain.created_at).toLocaleDateString()}
+                  {new Date(domain.assigned_at || domain.created_at).toLocaleDateString()}
                 </td>
                 <td className="p-3">
                   <div className="flex items-center justify-end gap-1">
@@ -163,6 +167,7 @@ export function DomainsPanel({ companyId, domains, platforms, onChanged }: Domai
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7"
+                      disabled={domain.can_upload === false}
                       onClick={() => onUpload(domain)}
                     >
                       <Upload className="h-3.5 w-3.5" />
