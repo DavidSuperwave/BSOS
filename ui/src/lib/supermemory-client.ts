@@ -1,13 +1,10 @@
 /**
  * Supermemory Client
  *
- * Simple wrapper for Supermemory v3 API with company-scoped containerTags.
+ * Wrapper for Supermemory v3 API with canonical project-scoped containerTags.
  * Replaces the old stub supermemory-namespace.ts.
  *
- * Architecture:
- * - One containerTag per company: "gtm_{slug}"
- * - Metadata categorizes content within the container (not separate containers)
- * - This keeps the knowledge graph connected across categories
+ * Canonical format: gtm_{companySlug}_project_{suffix}
  */
 
 const SUPERMEMORY_BASE = "https://api.supermemory.ai/v3";
@@ -58,16 +55,25 @@ function sanitizeTagToken(input: string): string {
 }
 
 /**
- * Build the containerTag for a company.
- * Uses the company slug, sanitized for Supermemory (alphanumeric + underscore).
+ * @deprecated Use projectContainerTag() instead.
+ * All Supermemory writes should use project-scoped containers.
+ * This function produces gtm_{slug} which is a DIFFERENT container
+ * from gtm_{slug}_project_general — they can't see each other's docs.
  */
 export function companyContainerTag(slug: string): string {
   return `gtm_${sanitizeTagToken(slug)}`;
 }
 
 /**
- * Build the containerTag for a knowledge project within a company.
- * Ensures consistent sanitization across all callers.
+ * Canonical container tag for all Supermemory operations.
+ * Produces: gtm_{companySlug}_project_{suffix}
+ *
+ * This MUST match the DB function generate_project_container_tag()
+ * and the knowledge_projects.container_tag_suffix values.
+ *
+ * @param companySlug - The company's slug (e.g., "blitzscale")
+ * @param projectSuffix - The project suffix (e.g., "general", "icp", "campaigns")
+ * @returns Container tag string (e.g., "gtm_blitzscale_project_general")
  */
 export function projectContainerTag(
   companySlug: string,
