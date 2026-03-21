@@ -260,6 +260,9 @@ async function getOrCreateSession({
     ? `company:${companySlug}:${sessionType}:${contextId}`
     : `company:${companySlug}:${sessionType}`;
 
+  const buildPerSessionOpenClawKey = (idSeed: string) =>
+    `chat:${companySlug}:${sessionType}:${idSeed}`;
+
   // Try to find existing session
   if (sessionId) {
     const { data: existing } = await admin
@@ -274,26 +277,35 @@ async function getOrCreateSession({
       if (existing.user_id && existing.user_id !== userId) {
         throw new Error("You do not have access to this chat session");
       }
+      const existingKey = String(existing.openclaw_session_key || "");
+      const looksLegacyDeterministic =
+        !existingKey ||
+        existingKey === deterministicSessionKey ||
+        existingKey.startsWith(`company:${companySlug}:`);
+      const nextOpenClawKey = looksLegacyDeterministic
+        ? buildPerSessionOpenClawKey(String(existing.id))
+        : existingKey;
+
       // Update component context if provided
-      if (componentContext) {
+      if (componentContext || nextOpenClawKey !== existingKey) {
         await admin
           .from("chat_sessions")
           .update({
             component_context: componentContext,
-            openclaw_session_key: deterministicSessionKey,
+            openclaw_session_key: nextOpenClawKey,
           })
           .eq("id", sessionId);
       }
       return {
         ...existing,
-        openclaw_session_key:
-          existing.openclaw_session_key || deterministicSessionKey,
+        openclaw_session_key: nextOpenClawKey,
       };
     }
   }
 
   // Create new session
   const title = message.slice(0, 80).replace(/\n/g, " ") + "...";
+  const openclawSessionKey = buildPerSessionOpenClawKey(crypto.randomUUID());
   
   const { data: session, error } = await admin
     .from("chat_sessions")
@@ -305,7 +317,7 @@ async function getOrCreateSession({
       context_scope: buildContextScope(sessionType),
       title,
       status: "active",
-      openclaw_session_key: deterministicSessionKey,
+      openclaw_session_key: openclawSessionKey,
     })
     .select()
     .single();

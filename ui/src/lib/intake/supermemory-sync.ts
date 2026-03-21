@@ -222,8 +222,8 @@ export async function syncIntakeToSupermemory(
   const errors: string[] = [];
   let documentsCreated = 0;
 
-  const apiKey = options?.apiKey || envConfig.supermemory.apiKey();
-  if (!apiKey) {
+  const smKey = options?.apiKey || envConfig.supermemory.apiKey();
+  if (!smKey) {
     return {
       success: false,
       documentsCreated: 0,
@@ -264,7 +264,7 @@ export async function syncIntakeToSupermemory(
 
   if (
     await storeAndCache({
-      apiKey,
+      apiKey: smKey,
       content: buildProfileContent(profile),
       containerTag,
       customId: profileCustomId,
@@ -281,7 +281,7 @@ export async function syncIntakeToSupermemory(
   for (const persona of profile.icp.personas) {
     const customId = `${companySlug}_icp_persona_${sanitizeId(persona.title)}`;
     const ok = await storeAndCache({
-      apiKey,
+      apiKey: smKey,
       content: buildPersonaContent(persona, profile),
       containerTag,
       customId,
@@ -313,7 +313,7 @@ export async function syncIntakeToSupermemory(
   for (const industry of profile.icp.industries) {
     const customId = `${companySlug}_icp_industry_${sanitizeId(industry.industry)}`;
     const ok = await storeAndCache({
-      apiKey,
+      apiKey: smKey,
       content: buildIndustryContent(industry, profile),
       containerTag,
       customId,
@@ -345,7 +345,7 @@ export async function syncIntakeToSupermemory(
   const performanceCustomId = `${companySlug}_performance_baseline`;
   if (profile.performance.campaigns_analyzed > 0) {
     const ok = await storeAndCache({
-      apiKey,
+      apiKey: smKey,
       content: buildPerformanceBaselineContent(profile),
       containerTag,
       customId: performanceCustomId,
@@ -377,7 +377,7 @@ export async function syncIntakeToSupermemory(
   const servicesCustomId = `${companySlug}_services`;
   if (
     await storeAndCache({
-      apiKey,
+      apiKey: smKey,
       content: buildServiceContent(profile),
       containerTag,
       customId: servicesCustomId,
@@ -411,7 +411,7 @@ export async function syncIntakeToSupermemory(
   const competitiveCustomId = `${companySlug}_competitive`;
   if (
     await storeAndCache({
-      apiKey,
+      apiKey: smKey,
       content: buildCompetitiveContent(profile),
       containerTag,
       customId: competitiveCustomId,
@@ -441,6 +441,78 @@ export async function syncIntakeToSupermemory(
     documentsCreated += 1;
   } else {
     errors.push("Failed to store competitive intelligence");
+  }
+
+  const hasCampaignData = profile.performance?.campaigns_analyzed > 0;
+  const dealsAnalyzed =
+    (profile.performance as { deals_analyzed?: number } | undefined)?.deals_analyzed || 0;
+  const hasCrmData = dealsAnalyzed > 0;
+
+  if (!hasCampaignData && !hasCrmData) {
+    const coldstartContent = [
+      `# Coldstart Baseline - ${profile.identity?.name || companySlug}`,
+      "",
+      "No prior campaign or CRM history available at onboarding.",
+      "Agent must build performance data from scratch through initial campaigns.",
+      "",
+      "## Company Identity",
+      `Name: ${profile.identity?.name || companySlug}`,
+      `Industry: ${profile.identity?.industry || "Not specified"}`,
+      `Value proposition: ${profile.identity?.value_proposition || "Not specified"}`,
+      `Differentiators: ${(profile.identity?.differentiators || []).join(", ") || "Not specified"}`,
+      "",
+      "## Target ICP",
+      ...(profile.icp?.personas || []).map((p) => {
+        const painPoints = (p.pain_points || []).join(", ") || "Pain points not specified";
+        return `- ${p.title || "Unknown role"} at ${p.seniority || "any"} seniority: ${painPoints}`;
+      }),
+      ...(profile.icp?.industries || []).map(
+        (ind) => `- Industry: ${ind.industry || "Unknown"}`
+      ),
+      "",
+      "## Recommended Starting Strategy",
+      `Lead with: ${(profile.identity?.differentiators || [])[0] || profile.identity?.value_proposition || "Company's core value proposition"}`,
+      "Start with small batches (50-100 prospects) to establish baseline metrics.",
+      "Focus initial campaigns on the primary ICP persona above.",
+      "",
+      "## Baseline Metrics (to be established)",
+      "- Open rate target: 40-60% (industry average for cold outbound)",
+      "- Reply rate target: 3-8% (varies by ICP and industry)",
+      "- Meeting rate target: 1-3% of total sent",
+      "These targets will be updated as real campaign data comes in.",
+    ].join("\n");
+
+    try {
+      const ok = await storeAndCache({
+        apiKey: smKey,
+        content: coldstartContent,
+        containerTag,
+        customId: `${companySlug}_coldstart_baseline`,
+        metadata: {
+          project_id: projectId,
+          company_id: companyId,
+          tags: {
+            primary: "profile",
+            secondary: ["coldstart", "no_history", "baseline"],
+            stage: "approved",
+          },
+          title: `Coldstart Baseline - ${profile.identity?.name || companySlug}`,
+          type: "coldstart_baseline",
+          source: "onboarding_intake",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          version: 1,
+        },
+        projectId,
+        companyId,
+      });
+      if (ok) {
+        documentsCreated += 1;
+        console.log(`[intake] Coldstart baseline written for ${companySlug}`);
+      }
+    } catch (err) {
+      console.error(`[intake] Failed to write coldstart baseline for ${companySlug}:`, err);
+    }
   }
 
   return {

@@ -9,8 +9,8 @@ import {
 import {
   seedCompanyProfile,
   storeInsight,
+  projectContainerTag,
 } from "@/lib/supermemory-client";
-import { ensureCompanySupermemoryKey } from "@/lib/supermemory-key-pool";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 import { requireCompanyAccess } from "@/lib/api-auth";
 import { createRateLimiter, rateLimitKey, rateLimitResponse } from "@/lib/rate-limit";
@@ -44,6 +44,30 @@ async function resolveCalendlyUserUri(apiKey: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+async function resolveGeneralProjectId(
+  admin: ReturnType<typeof createClient>,
+  companyId: string
+): Promise<string | null> {
+  const { data: generalProject } = await admin
+    .from("knowledge_projects")
+    .select("id")
+    .eq("company_id", companyId)
+    .eq("slug", "general")
+    .maybeSingle();
+
+  if (generalProject?.id) return generalProject.id;
+
+  const { data: firstProject } = await admin
+    .from("knowledge_projects")
+    .select("id")
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  return firstProject?.id || null;
 }
 
 export async function POST(
@@ -102,6 +126,14 @@ export async function POST(
     const onboardingData = mapFormToContract(
       body.onboarding_data || company.onboarding_data || {}
     );
+    const smKey = envConfig.supermemory.apiKey();
+    if (!smKey) {
+      console.error("SUPERMEMORY_API_KEY not configured in environment");
+      return NextResponse.json(
+        { error: "Supermemory API key not configured. Set SUPERMEMORY_API_KEY env var." },
+        { status: 500 }
+      );
+    }
 
     // Provision agent (generates workspace files + config)
     const agent = provisionAgent({
@@ -143,17 +175,7 @@ export async function POST(
     if (onboardingData.telegram_chat_id) {
       integrationCredentials.telegram_chat_id = onboardingData.telegram_chat_id;
     }
-    if (onboardingData.supermemory_api_key) {
-      integrationCredentials.supermemory_api_key = onboardingData.supermemory_api_key;
-    }
-
-    // Auto-assign a Supermemory key from admin key pool when company has none.
-    if (!integrationCredentials.supermemory_api_key) {
-      const assignedKey = await ensureCompanySupermemoryKey(admin, id);
-      if (assignedKey) {
-        integrationCredentials.supermemory_api_key = assignedKey;
-      }
-    }
+    delete integrationCredentials.supermemory_api_key;
 
     // Update company record in Supabase
     const { error: updateError } = await admin
@@ -210,38 +232,34 @@ export async function POST(
       );
     }
 
-    // Seed Supermemory with company profile + ICP using company key first.
-    const smKey =
-      integrationCredentials.supermemory_api_key || envConfig.supermemory.apiKey();
-    if (smKey) {
-      const containerTag = agent.containerTag;
+    // Seed Supermemory with company profile + ICP in canonical "general" project container.
+    const containerTag = projectContainerTag(company.slug, "general");
 
-      // Seed company profile
-      await seedCompanyProfile(
-        smKey,
-        containerTag,
-        agent.workspace.agentsMd,
-        company.id
-      );
+    // Seed company profile
+    await seedCompanyProfile(
+      smKey,
+      containerTag,
+      agent.workspace.agentsMd,
+      company.id
+    );
 
-      // Seed ICP as separate insight for better recall
-      if (onboardingData.icp_titles || onboardingData.icp_verticals) {
-        await storeInsight(smKey, containerTag, {
-          content: `ICP Definition for ${company.name}:
+    // Seed ICP as separate insight for better recall
+    if (onboardingData.icp_titles || onboardingData.icp_verticals) {
+      await storeInsight(smKey, containerTag, {
+        content: `ICP Definition for ${company.name}:
 Titles: ${(onboardingData.icp_titles || []).join(", ")}
 Company size: ${onboardingData.icp_company_size || "N/A"}
 Verticals: ${(onboardingData.icp_verticals || []).join(", ")}
 Geography: ${(onboardingData.icp_geo || []).join(", ")}
 Pain points: ${(onboardingData.pain_points || []).join(", ")}`,
-          category: "icp_refinement",
-          customId: `icp_baseline_${company.id}`,
-          metadata: {
-            company_id: company.id,
-            source: "onboarding",
-            version: 1,
-          },
-        });
-      }
+        category: "icp_refinement",
+        customId: `icp_baseline_${company.id}`,
+        metadata: {
+          company_id: company.id,
+          source: "onboarding",
+          version: 1,
+        },
+      });
     }
 
     // Mark as active
@@ -286,10 +304,11 @@ Pain points: ${(onboardingData.pain_points || []).join(", ")}`,
           }
         : undefined;
 
+      const projectIdForIntake = await resolveGeneralProjectId(admin, id);
       intakeResult = await runIntakePipeline({
         companyId: id,
         companySlug: company.slug,
-        projectId: id,
+        projectId: projectIdForIntake || id,
         userId: result.auth.userId,
         formData: onboardingData,
         plusvibeConfig,

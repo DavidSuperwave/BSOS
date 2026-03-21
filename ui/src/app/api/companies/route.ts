@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createClient as createServerClient } from "@/lib/supabase/server";
-import { envConfig } from "@/lib/env";
 import { applyDefaultSkillPackToCompany } from "@/lib/skills/skill-catalog";
 import { hydratePlusVibeInboxAndWebhook } from "@/lib/plusvibe-inbox-sync";
 
@@ -10,6 +9,51 @@ export const revalidate = 0;
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+const DEFAULT_KNOWLEDGE_PROJECTS = [
+  {
+    name: "General",
+    slug: "general",
+    type: "knowledge_base",
+    suffix: "general",
+    desc: "Core company profile, onboarding data, baseline context",
+  },
+  {
+    name: "ICP Intelligence",
+    slug: "icp",
+    type: "knowledge_base",
+    suffix: "icp",
+    desc: "Ideal customer profiles, persona data, audience learnings",
+  },
+  {
+    name: "Campaign Intelligence",
+    slug: "campaigns",
+    type: "knowledge_base",
+    suffix: "campaigns",
+    desc: "Copy analysis, performance patterns, angle effectiveness",
+  },
+  {
+    name: "Reply Intelligence",
+    slug: "replies",
+    type: "knowledge_base",
+    suffix: "replies",
+    desc: "Reply analysis, sentiment patterns, objection mining",
+  },
+  {
+    name: "Reports & Audits",
+    slug: "reports",
+    type: "knowledge_base",
+    suffix: "reports",
+    desc: "Intelligence briefs, audit results, performance snapshots",
+  },
+  {
+    name: "Research",
+    slug: "research",
+    type: "research",
+    suffix: "research",
+    desc: "Market research, competitive intel, generated analysis",
+  },
+] as const;
 
 let adminClient: ReturnType<typeof createClient> | null = null;
 function getAdmin() {
@@ -177,7 +221,6 @@ export async function POST(req: NextRequest) {
         slug,
         domain: domain || null,
         status: "onboarding",
-        supermemory_namespace: `blitzscale:company:${slug}`,
         settings: { auto_analyze: false },
       })
       .select()
@@ -193,24 +236,61 @@ export async function POST(req: NextRequest) {
       throw error;
     }
 
-    // Initialize Supermemory namespace
-    const smKey = envConfig.supermemory.apiKey();
-    if (smKey) {
-      try {
-        await fetch("https://api.supermemory.ai/v3/memories", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${smKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            content: `# Company: ${name}\nSlug: ${slug}\nCreated: ${new Date().toISOString()}`,
-            containerTags: [`blitzscale:company:${slug}`, "company-info"],
-          }),
-        });
-      } catch {
-        // Non-blocking
+    // Seed default knowledge projects (maps to gtm_{slug}_project_{suffix} containers).
+    for (const project of DEFAULT_KNOWLEDGE_PROJECTS) {
+      const payload: Record<string, any> = {
+        company_id: company.id,
+        name: project.name,
+        slug: project.slug,
+        type: project.type,
+        container_tag_suffix: project.suffix,
+        description: project.desc,
+        created_by: user.id,
+      };
+
+      // Keep intake compatibility: deploy-agent currently passes companyId as projectId.
+      if (project.slug === "general") {
+        payload.id = company.id;
       }
+
+      const { error: projError } = await admin
+        .from("knowledge_projects")
+        .insert(payload);
+
+      if (projError) {
+        console.error(
+          `[Companies API] Failed to create knowledge project ${project.slug}:`,
+          projError
+        );
+      }
+    }
+
+    // Set canonical Supermemory container tag for the company.
+    await admin
+      .from("companies")
+      .update({
+        supermemory_container_tag: `gtm_${company.slug}_project_general`,
+      })
+      .eq("id", company.id);
+
+    // Initialize learning progress (non-fatal if table is unavailable in older schemas).
+    try {
+      await admin.from("company_learning_progress").upsert(
+        {
+          company_id: company.id,
+          days_since_onboarding: 1,
+          company_handoff_stage: "hce_100",
+        },
+        {
+          onConflict: "company_id",
+          ignoreDuplicates: true,
+        }
+      );
+    } catch (learningErr) {
+      console.warn(
+        "[Companies API] Learning progress initialization skipped:",
+        learningErr
+      );
     }
 
     // Seed default skill pack for every new company (idempotent)
